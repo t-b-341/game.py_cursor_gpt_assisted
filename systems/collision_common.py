@@ -30,6 +30,14 @@ def apply_player_damage(state, damage: int, ctx: dict) -> None:
         pf = ctx.get("play_sfx")
         if callable(pf):
             pf("player_hit")
+        # Play low health warning when HP drops below 25% (and not dead)
+        max_hp = getattr(state, "player_max_hp", 100)
+        if state.player_hp > 0 and state.player_hp <= max_hp * 0.25:
+            # Only play if we just crossed the threshold
+            prev_hp = state.player_hp + damage
+            if prev_hp > max_hp * 0.25:
+                from systems.audio_system import play_sfx
+                play_sfx("LOW HEALTH")
     state.damage_taken += damage
     state.wave_damage_taken += damage
     if state.player_hp <= 0:
@@ -53,3 +61,6 @@ def apply_player_damage(state, damage: int, ctx: dict) -> None:
             state.final_score_for_high_score = state.score
             state.game_over_wave = getattr(state, "wave_number", 1)
             state.current_screen = STATE_GAME_OVER
+            # Play player death sound
+            from systems.audio_system import play_sfx
+            play_sfx("PLAYER DEATH")

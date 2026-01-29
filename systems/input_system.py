@@ -25,6 +25,13 @@ from config_enemies import FRIENDLY_AI_TEMPLATES
 from allies import make_friendly_from_template
 
 
+def _scale_mouse_pos(pos: tuple[int, int], world_scale: float) -> tuple[float, float]:
+    """Scale mouse position from display space to world space."""
+    if world_scale > 1.0:
+        return (float(pos[0] * world_scale), float(pos[1] * world_scale))
+    return (float(pos[0]), float(pos[1]))
+
+
 def handle_gameplay_input(events, game_state, ctx) -> None:
     """Parse gameplay-only input: move, jump/dash, fire, weapon switch, abilities.
     ctx must have: controls, aiming_mode, width, height, spawn_player_bullet, spawn_laser_beam.
@@ -37,6 +44,9 @@ def handle_gameplay_input(events, game_state, ctx) -> None:
     controls = ctx.get("controls") or {}
     aiming_mode = ctx.get("aiming_mode")
     player = game_state.player_rect
+    
+    # Get world scale for mouse coordinate conversion
+    world_scale = ctx.get("world_scale", 1.0)
 
     # ---- Event-driven: direct allies, shield, overshield, grenade, missile, ally drop, weapon switch, dash ----
     direct_allies_binding = controls.get("direct_allies", MOUSE_BUTTON_RIGHT)
@@ -50,13 +60,16 @@ def handle_gameplay_input(events, game_state, ctx) -> None:
     for event in events:
         if event.type == pygame.MOUSEBUTTONDOWN:
             if direct_allies_binding == MOUSE_BUTTON_RIGHT and event.button == 3:
-                game_state.ally_command_target = (float(event.pos[0]), float(event.pos[1]))
+                # Scale mouse position to world coordinates
+                world_pos = _scale_mouse_pos(event.pos, world_scale)
+                game_state.ally_command_target = world_pos
                 game_state.ally_command_timer = 5.0
 
         if event.type == pygame.KEYDOWN:
             if direct_allies_binding != MOUSE_BUTTON_RIGHT and event.key == direct_allies_binding:
                 mx, my = pygame.mouse.get_pos()
-                game_state.ally_command_target = (float(mx), float(my))
+                world_pos = _scale_mouse_pos((mx, my), world_scale)
+                game_state.ally_command_target = world_pos
                 game_state.ally_command_timer = 5.0
 
             if event.key == pygame.K_LALT:
@@ -83,6 +96,9 @@ def handle_gameplay_input(events, game_state, ctx) -> None:
                         "timer": 0.3, "damage": grenade_damage, "source": "player",
                     })
                     game_state.grenade_time_since_used = 0.0
+                    # Play grenade sound
+                    from systems.audio_system import play_sfx
+                    play_sfx("GRENADE")
 
             if event.key == pygame.K_r and player:
                 if game_state.missile_time_since_used >= missile_cooldown_val:
@@ -100,6 +116,9 @@ def handle_gameplay_input(events, game_state, ctx) -> None:
                                 "speed": 500, "damage": missile_damage, "explosion_radius": 150,
                             })
                         game_state.missile_time_since_used = 0.0
+                        # Play rocket sound
+                        from systems.audio_system import play_sfx
+                        play_sfx("ROCKET")
 
             if event.key == controls.get("ally_drop", pygame.K_q) and player:
                 if game_state.ally_drop_timer >= ally_drop_cooldown_val:
@@ -146,6 +165,9 @@ def handle_gameplay_input(events, game_state, ctx) -> None:
                         game_state.jump_velocity = lv.normalize() * jump_speed
                     else:
                         game_state.jump_velocity = pygame.Vector2(0, -jump_speed)
+                    # Play dodge sound
+                    from systems.audio_system import play_sfx
+                    play_sfx("DODGE")
 
     # ---- Polled: movement, boost/slow, fire, laser ----
     keys = pygame.key.get_pressed()

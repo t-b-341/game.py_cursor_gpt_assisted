@@ -84,7 +84,7 @@ def _start_wave(wave_num: int, state, ctx: dict) -> None:
         state.wave_banner_text = f"WAVE {wave_num}"
     pf = ctx.get("play_sfx")
     if callable(pf):
-        pf("wave_start")
+        pf("WAVE START")
 
     state.enemies = []
     state.boss_active = False
@@ -384,7 +384,7 @@ def _update_wave_timers(state, dt: float, ctx: dict) -> None:
     state.wave_in_level += 1
     pf = ctx.get("play_sfx")
     if callable(pf):
-        pf("wave_clear")
+        pf("WAVE COMPLETE")
     if state.wave_in_level > 3:
         state.wave_in_level = 1
         state.current_level += 1

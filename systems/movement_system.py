@@ -343,14 +343,30 @@ def _missile_hits_wall(missile_rect: pygame.Rect, state: "GameState") -> bool:
 
 
 def _update_missiles(state, dt: float, ctx: dict) -> None:
-    """Update missile velocities (seek), positions; walls block missiles (explode on hit)."""
+    """Update missile velocities (seek), positions; walls block missiles (explode on hit).
+    
+    Dropped allies draw missile aggro - enemy missiles will redirect to target
+    the dropped ally instead of the player when one is active.
+    """
     player = state.player_rect
     if player is None:
         return
 
     for missile in state.missiles[:]:
         if missile.get("target_player"):
-            target_pos = pygame.Vector2(player.center)
+            # Check if there's a dropped ally to draw missile aggro
+            dropped_ally = getattr(state, "dropped_ally", None)
+            if dropped_ally and dropped_ally in state.friendly_ai and dropped_ally.get("hp", 0) > 0:
+                # Dropped ally draws missile attention - redirect to ally
+                ally_rect = dropped_ally.get("rect")
+                if ally_rect:
+                    target_pos = pygame.Vector2(ally_rect.center)
+                else:
+                    target_pos = pygame.Vector2(player.center)
+            else:
+                # No dropped ally, target player as normal
+                target_pos = pygame.Vector2(player.center)
+            
             missile_pos = pygame.Vector2(missile["rect"].center)
             d = (target_pos - missile_pos)
             if d.length_squared() > 0:

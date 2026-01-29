@@ -21,6 +21,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parent
 _ASSETS_DIR = _PROJECT_ROOT / "assets"
 _IMAGES_DIR = _ASSETS_DIR / "images"
 _SFX_DIR = _ASSETS_DIR / "sfx"
+_GAME_SFX_DIR = _PROJECT_ROOT / "Game Sound FX"  # Additional SFX folder
 _MUSIC_DIR = _ASSETS_DIR / "music"
 _FONTS_DIR = _ASSETS_DIR / "fonts"
 _DATA_DIR = _ASSETS_DIR / "data"
@@ -103,7 +104,7 @@ def get_image(name: str, convert_alpha: bool = True) -> pygame.Surface:
 
 def get_sound(name: str) -> Optional[pygame.mixer.Sound]:
     """
-    Load and cache a sound from assets/sfx/.
+    Load and cache a sound from assets/sfx/ or Game Sound FX/.
     name: filename without path (e.g. "enemy_death" -> assets/sfx/enemy_death.wav).
     Tries .wav, .ogg. Returns None if missing or if mixer not initialized.
     """
@@ -114,7 +115,10 @@ def get_sound(name: str) -> Optional[pygame.mixer.Sound]:
         return None
 
     extensions = (".wav", ".ogg")
+    # Try assets/sfx/ first, then Game Sound FX/
     path = _resolve_subpath(_SFX_DIR, name, extensions)
+    if path is None:
+        path = _resolve_subpath(_GAME_SFX_DIR, name, extensions)
     if path is None:
         _report_missing("sound", _SFX_DIR / name, "tried " + ", ".join(extensions))
         return None

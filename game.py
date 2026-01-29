@@ -283,7 +283,7 @@ def _create_window_and_clock() -> tuple[pygame.Surface, pygame.time.Clock, int, 
     return screen, clock, WIDTH, HEIGHT
 
 
-def _build_app_context(screen: pygame.Surface, clock: pygame.time.Clock, width: int, height: int, using_c_physics: bool) -> AppContext:
+def _build_app_context(screen: pygame.Surface, clock: pygame.time.Clock, display_width: int, display_height: int, using_c_physics: bool) -> AppContext:
     """Build AppContext with config, controls, and resources."""
     from event_bus import EventBus
     controls = load_controls()
@@ -306,6 +306,18 @@ def _build_app_context(screen: pygame.Surface, clock: pygame.time.Clock, width: 
         mod_custom_waves_enabled=False,
     )
     
+    # Calculate world dimensions based on world_scale
+    # World is larger than display, rendered then scaled down
+    world_scale = cfg.world_scale
+    world_width = int(display_width * world_scale)
+    world_height = int(display_height * world_scale)
+    
+    # Create world surface for rendering (larger than display)
+    world_surface = pygame.Surface((world_width, world_height))
+    
+    # Update screen dimensions used by physics/collision
+    set_screen_dimensions(world_width, world_height)
+    
     event_bus = EventBus()
     ctx = AppContext(
         screen=screen,
@@ -313,8 +325,11 @@ def _build_app_context(screen: pygame.Surface, clock: pygame.time.Clock, width: 
         font=get_font("main", 28),
         big_font=get_font("main", 56),
         small_font=get_font("main", 20),
-        width=width,
-        height=height,
+        display_width=display_width,
+        display_height=display_height,
+        width=world_width,
+        height=world_height,
+        world_surface=world_surface,
         telemetry_client=None,
         run_started_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
         controls=controls,
@@ -323,6 +338,7 @@ def _build_app_context(screen: pygame.Surface, clock: pygame.time.Clock, width: 
         event_bus=event_bus,
     )
     sync_from_config(ctx.config)
+    print(f"World scale: {world_scale}x | Display: {display_width}x{display_height} | World: {world_width}x{world_height}")
     return ctx
 
 def _build_initial_game_state(ctx: AppContext) -> GameState:
@@ -462,11 +478,14 @@ def _prompt_shader_mode(ctx: AppContext) -> None:
     if moderngl_available:
         prompt_done = False
         prompt_clock = pygame.time.Clock()
+        # Use display dimensions for the prompt (not world dimensions)
+        display_w = getattr(ctx, 'display_width', ctx.width)
+        display_h = getattr(ctx, 'display_height', ctx.height)
         while not prompt_done:
             prompt_clock.tick(60)  # Limit to 60 FPS for the prompt
             ctx.screen.fill((30, 30, 40))
-            draw_centered_text(ctx.screen, ctx.font, ctx.big_font, ctx.width, "Enable GPU shaders?", ctx.height // 2 - 50, color=(220, 220, 220), use_big=True)
-            draw_centered_text(ctx.screen, ctx.font, ctx.big_font, ctx.width, "(Y)es  /  (N)o", ctx.height // 2 + 20, (180, 180, 180))
+            draw_centered_text(ctx.screen, ctx.font, ctx.big_font, display_w, "Enable GPU shaders?", display_h // 2 - 50, color=(220, 220, 220), use_big=True)
+            draw_centered_text(ctx.screen, ctx.font, ctx.big_font, display_w, "(Y)es  /  (N)o", display_h // 2 + 20, (180, 180, 180))
             pygame.display.flip()
             for e in pygame.event.get():
                 if e.type == pygame.QUIT:
@@ -1139,10 +1158,14 @@ def _render_current_scene(
             if msg["timer"] <= 0:
                 game_state.weapon_pickup_messages.remove(msg)
     elif current_state in (STATE_TITLE, STATE_MENU, STATE_QUICK_LAUNCH, STATE_PAUSED, STATE_HIGH_SCORES, STATE_NAME_INPUT, STATE_GAME_OVER, STATE_SAVE_GAME, STATE_LOAD_GAME, "SHADER_TEST", "SHADER_SETTINGS"):
-        render_ctx = RenderContext.from_app_ctx(ctx)
+        # Use display render context for menus (not world surface)
+        render_ctx = RenderContext.for_menu(ctx)
         # When paused + enable_pause_shaders: render gameplay frame, apply pause stack, then draw UI on top
         if current_state == STATE_PAUSED and pause_shaders_enabled:
             lv = game_state.level
+            # Use display dimensions for pause overlay
+            display_w = getattr(ctx, 'display_width', ctx.width)
+            display_h = getattr(ctx, 'display_height', ctx.height)
             gameplay_ctx_pause = {
                 "level_themes": level_themes,
                 "trapezoid_blocks": lv.trapezoid_blocks if lv else [],
@@ -1156,8 +1179,8 @@ def _render_current_scene(
                 "teleporter_pads": game_state.teleporter_pads,
                 "small_font": ctx.small_font,
                 "weapon_names": WEAPON_NAMES,
-                "WIDTH": ctx.width,
-                "HEIGHT": ctx.height,
+                "WIDTH": display_w,
+                "HEIGHT": display_h,
                 "font": ctx.font,
                 "big_font": ctx.big_font,
                 "ui_show_hud": ctx.config.show_hud,
@@ -1176,10 +1199,10 @@ def _render_current_scene(
                 "screen_flash_max_alpha": getattr(ctx.config, "screen_flash_max_alpha", 100),
                 "enable_wave_banner": getattr(ctx.config, "enable_wave_banner", True),
             }
-            offscreen = pygame.Surface((ctx.width, ctx.height)).convert_alpha()
+            offscreen = pygame.Surface((display_w, display_h)).convert_alpha()
             offscreen.fill((0, 0, 0, 255))
             render_gameplay_frame_to_surface(
-                offscreen, ctx.width, ctx.height,
+                offscreen, display_w, display_h,
                 ctx.font, ctx.big_font, ctx.small_font,
                 game_state, {"app_ctx": ctx, "gameplay_ctx": gameplay_ctx_pause},
             )
@@ -2087,8 +2110,8 @@ def spawn_player_bullet_and_log(state: GameState, ctx: AppContext):
         mx = int(state.player_rect.centerx + base_dir.x * target_dist)
         my = int(state.player_rect.centery + base_dir.y * target_dist)
     else:
-        # Mouse aiming (default)
-        mx, my = pygame.mouse.get_pos()
+        # Mouse aiming (default) - use world coordinates for aiming
+        mx, my = ctx.get_world_mouse_pos()
         base_dir = vec_toward(state.player_rect.centerx, state.player_rect.centery, mx, my)
 
     shape = player_bullet_shapes[state.player_bullet_shape_index % len(player_bullet_shapes)]
@@ -2173,6 +2196,13 @@ def spawn_player_bullet_and_log(state: GameState, ctx: AppContext):
                 "is_rocket": weapon_config["is_rocket"],
             })
     state.shots_fired += 1
+    
+    # Play sound effect based on weapon mode
+    from systems.audio_system import play_sfx
+    if weapon_config["is_rocket"]:
+        play_sfx("ROCKET")
+    else:
+        play_sfx("BASIC SHOT")
 
     if ctx.config.enable_telemetry and ctx.telemetry_client:
         ctx.telemetry_client.log_shot(

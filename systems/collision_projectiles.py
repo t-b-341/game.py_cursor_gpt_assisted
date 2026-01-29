@@ -457,19 +457,33 @@ def handle_missile_collisions(state, ctx: dict) -> None:
                 state.missiles.remove(missile)
             continue
         hit = False
-        if missile.get("target_player") and player and missile["rect"].colliderect(player):
-            hit = True
-            if not state.shield_active:
-                apply_player_damage(state, missile.get("damage", md), ctx)
+        hit_ally = None  # Track which ally was hit (if any)
+        
+        if missile.get("target_player"):
+            # Check if missile hits the dropped ally (they draw missile aggro)
+            dropped_ally = getattr(state, "dropped_ally", None)
+            if dropped_ally and dropped_ally in state.friendly_ai and dropped_ally.get("hp", 0) > 0:
+                ally_rect = dropped_ally.get("rect")
+                if ally_rect and missile["rect"].colliderect(ally_rect):
+                    hit = True
+                    hit_ally = dropped_ally
+            
+            # Also check player collision (missile may still hit player if no ally intercepts)
+            if not hit and player and missile["rect"].colliderect(player):
+                hit = True
+                if not state.shield_active:
+                    apply_player_damage(state, missile.get("damage", md), ctx)
         elif missile.get("target_enemy") and missile["target_enemy"] in state.enemies:
             if missile["rect"].colliderect(missile["target_enemy"]["rect"]):
                 hit = True
         if hit:
             pos = pygame.Vector2(missile["rect"].center)
             rad = missile.get("explosion_radius", 150)
+            dmg = missile.get("damage", md)
+            
+            # Damage enemies in explosion radius
             for enemy in state.enemies[:]:
                 if (pygame.Vector2(enemy["rect"].center) - pos).length() <= rad:
-                    dmg = missile.get("damage", md)
                     enemy["hp"] -= dmg
                     set_enemy_damage_flash(enemy, ctx)
                     state.damage_numbers.append({
@@ -481,8 +495,30 @@ def handle_missile_collisions(state, ctx: dict) -> None:
                     })
                     if enemy["hp"] <= 0 and kill:
                         kill(enemy, state)
+            
+            # Damage the ally that was directly hit
+            if hit_ally:
+                hit_ally["hp"] = hit_ally.get("hp", 0) - dmg
+                ally_rect = hit_ally.get("rect")
+                if ally_rect:
+                    state.damage_numbers.append({
+                        "x": ally_rect.centerx,
+                        "y": ally_rect.y - 20,
+                        "damage": int(dmg),
+                        "timer": 2.0,
+                        "color": (100, 200, 255),  # Blue for ally damage
+                    })
+                # Remove ally if dead
+                if hit_ally["hp"] <= 0:
+                    if hit_ally in state.friendly_ai:
+                        state.friendly_ai.remove(hit_ally)
+                    if getattr(state, "dropped_ally", None) == hit_ally:
+                        state.dropped_ally = None
+            
+            # Damage player if in explosion radius (and no shield)
             if missile.get("target_player") and player:
                 if (pygame.Vector2(player.center) - pos).length() <= rad and not state.shield_active:
-                    apply_player_damage(state, missile.get("damage", md), ctx)
+                    apply_player_damage(state, dmg, ctx)
+            
             if missile in state.missiles:
                 state.missiles.remove(missile)

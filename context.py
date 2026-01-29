@@ -22,15 +22,24 @@ class AppContext:
     per-run game state.
     """
     # Display and timing (from pygame)
-    screen: pygame.Surface
+    screen: pygame.Surface  # The actual display surface
     clock: pygame.time.Clock
     font: pygame.font.Font
     big_font: pygame.font.Font
     small_font: pygame.font.Font
 
-    # Dimensions (from display mode; used by layout and helpers)
-    width: int
-    height: int
+    # Display dimensions (actual screen/window size)
+    display_width: int = 0
+    display_height: int = 0
+    
+    # World dimensions (may be larger than display if world_scale > 1.0)
+    # This is the actual playable area size
+    width: int = 0  # World width (used by game logic)
+    height: int = 0  # World height (used by game logic)
+    
+    # World render surface (larger than display when world_scale > 1.0)
+    # Render to this, then scale down to screen
+    world_surface: pygame.Surface = None
 
     # Telemetry (optional; None or no-op when disabled). Enable/disable is in config.
     telemetry_client: Optional[Any] = None  # Telemetry | NoOpTelemetry
@@ -51,3 +60,18 @@ class AppContext:
 
     # Event bus for decoupling systems (optional; None or no-op when not set)
     event_bus: Optional[Any] = None
+    
+    def get_world_mouse_pos(self) -> tuple[int, int]:
+        """Get mouse position in world coordinates (scaled from display coordinates).
+        
+        When world_scale > 1.0, the world is larger than the display.
+        This converts display mouse position to world coordinates.
+        """
+        display_x, display_y = pygame.mouse.get_pos()
+        world_scale = getattr(self.config, 'world_scale', 1.0) if self.config else 1.0
+        if world_scale > 1.0 and self.display_width > 0 and self.display_height > 0:
+            # Scale mouse position from display space to world space
+            world_x = int(display_x * world_scale)
+            world_y = int(display_y * world_scale)
+            return (world_x, world_y)
+        return (display_x, display_y)

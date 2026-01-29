@@ -39,7 +39,7 @@ fire_rate_mult = 0.55
 
 # Shield
 shield_duration = 5.0
-shield_recharge_cooldown = 5.0
+shield_recharge_cooldown = 1.25  # 0.25x original (was 5.0 -> 2.5 -> 1.25)
 
 # Overshield
 overshield_max = 37

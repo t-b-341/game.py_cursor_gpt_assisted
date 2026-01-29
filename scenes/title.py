@@ -1,6 +1,8 @@
 """TitleScene: title screen with New Game, Quick Launch, and Load Game options. ESC toggles quit dialog."""
 from __future__ import annotations
 
+import random
+
 import pygame
 
 from constants import STATE_MENU, STATE_TITLE, STATE_LOAD_GAME, STATE_QUICK_LAUNCH
@@ -11,12 +13,17 @@ from save_system import load_saves
 
 TITLE_OPTIONS = ["New Game", "Quick Launch", "Load Game"]
 
+# Ambient sound plays at random intervals between these values (seconds)
+AMBIENT_SOUND_MIN_INTERVAL = 8.0
+AMBIENT_SOUND_MAX_INTERVAL = 20.0
+
 
 class TitleScene:
     """Title screen. Select New Game, Quick Launch, or Load Game; ESC -> quit confirm or stay."""
 
     def __init__(self):
         self._title_selected = 0  # 0=New Game, 1=Quick Launch, 2=Load Game
+        self._ambient_timer = random.uniform(AMBIENT_SOUND_MIN_INTERVAL, AMBIENT_SOUND_MAX_INTERVAL)
 
     def state_id(self) -> str:
         return STATE_TITLE
@@ -57,7 +64,12 @@ class TitleScene:
         return out
 
     def update(self, dt: float, game_state, ctx: dict) -> None:
-        pass
+        # Play ambient sound at random intervals
+        self._ambient_timer -= dt
+        if self._ambient_timer <= 0:
+            from systems.audio_system import play_sfx
+            play_sfx("AMBIENT")
+            self._ambient_timer = random.uniform(AMBIENT_SOUND_MIN_INTERVAL, AMBIENT_SOUND_MAX_INTERVAL)
 
     def handle_input_transition(self, events, game_state, ctx: dict) -> SceneTransition:
         """Call existing handle_input logic and process the result. Return transition if needed."""
@@ -121,6 +133,8 @@ class TitleScene:
     def on_enter(self, game_state, ctx: dict) -> None:
         self._title_selected = 0
         game_state.ui.title_confirm_quit = False
+        # Reset ambient timer
+        self._ambient_timer = random.uniform(AMBIENT_SOUND_MIN_INTERVAL, AMBIENT_SOUND_MAX_INTERVAL)
 
     def on_exit(self, game_state, ctx: dict) -> None:
         pass

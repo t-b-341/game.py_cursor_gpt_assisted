@@ -24,9 +24,12 @@ class GameApp:
         self.simulation_accumulator = r.simulation_accumulator
         
         # Create reusable screen_ctx once (only update mutable values per frame)
+        # Use display dimensions for menus, not world dimensions
+        display_w = getattr(self.ctx, 'display_width', self.ctx.width)
+        display_h = getattr(self.ctx, 'display_height', self.ctx.height)
         self.screen_ctx = {
-            "WIDTH": self.ctx.width,
-            "HEIGHT": self.ctx.height,
+            "WIDTH": display_w,
+            "HEIGHT": display_h,
             "font": self.ctx.font,
             "big_font": self.ctx.big_font,
             "small_font": self.ctx.small_font,
@@ -125,7 +128,8 @@ class GameApp:
                     else:
                         direction = pygame.Vector2(dx, dy).normalize()
                 else:
-                    mx, my = pygame.mouse.get_pos()
+                    # Get mouse position in world coordinates
+                    mx, my = self.ctx.get_world_mouse_pos()
                     direction = vec_toward(pl.centerx, pl.centery, mx, my)
                 end_pos = pygame.Vector2(pl.center) + direction * laser_length
                 laser_dmg = int(laser_damage * UNLOCKED_WEAPON_DAMAGE_MULT) if "laser" in self.game_state.unlocked_weapons else laser_damage
@@ -134,6 +138,9 @@ class GameApp:
                     "color": (255, 50, 50), "width": 5, "damage": laser_dmg, "timer": 0.1,
                 })
                 self.game_state.laser_time_since_shot = 0.0
+                # Play laser sound
+                from systems.audio_system import play_sfx
+                play_sfx("LAZER")
 
             # Get events for gameplay input (movement, abilities, etc.)
             # Use events from process_events() (stored in self._current_events)
@@ -163,6 +170,7 @@ class GameApp:
                 "boost_regen_per_s": boost_regen_per_s,
                 "boost_speed_mult": boost_speed_mult,
                 "slow_speed_mult": slow_speed_mult,
+                "world_scale": getattr(self.ctx.config, 'world_scale', 1.0),
             }
             handle_gameplay_input(events, self.game_state, gameplay_input_ctx)
 
@@ -180,6 +188,12 @@ class GameApp:
                 game_module.update_telemetry(self.game_state, dt, self.ctx)
             self._continue_blink_t = self.game_state.ui.continue_blink_t
         
+        else:
+            # For non-gameplay states (menus), still call scene update for animations/timers
+            current_scene = self.scene_stack.current()
+            if current_scene and hasattr(current_scene, 'update'):
+                current_scene.update(dt, self.game_state, self.screen_ctx)
+        
         # Check if current_screen changed to GAME_OVER during simulation (player death)
         # If so, sync the scene stack
         if self.game_state.current_screen == STATE_GAME_OVER:
@@ -195,11 +209,31 @@ class GameApp:
     def render(self) -> None:
         """Render the current scene."""
         import game as game_module
+        from constants import STATE_PLAYING, STATE_ENDURANCE
         
+        # Determine if we're in gameplay (needs world surface scaling)
+        current_state = game_module._get_current_state(self.scene_stack) or self.game_state.current_screen
+        is_gameplay = current_state in (STATE_PLAYING, STATE_ENDURANCE)
+        
+        # Render the current scene
         game_module._render_current_scene(
             self.ctx, self.game_state, self.scene_stack, self.screen_ctx,
             self.pause_shaders_enabled, self.menu_shaders_enabled
         )
+        
+        # Scale world surface to display only for gameplay (world_scale > 1.0)
+        # Menus render directly to display and don't need scaling
+        world_scale = getattr(self.ctx.config, 'world_scale', 1.0)
+        if is_gameplay and world_scale > 1.0 and self.ctx.world_surface is not None:
+            # Scale down the world surface to fit the display
+            # Use scale() instead of smoothscale() for better performance
+            # The visual difference at 1.33x is minimal
+            pygame.transform.scale(
+                self.ctx.world_surface,
+                (self.ctx.display_width, self.ctx.display_height),
+                self.ctx.screen  # Render directly to screen (avoids creating new surface)
+            )
+        
         pygame.display.flip()
         
         # Write flow state back to GameState after this iteration

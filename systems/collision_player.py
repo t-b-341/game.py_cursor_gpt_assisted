@@ -57,6 +57,9 @@ def handle_teleporter_player(state, ctx: dict) -> None:
             continue
         player.center = link.center
         state.teleporter_cooldown = 0.5
+        # Play teleporter sound
+        from systems.audio_system import play_sfx
+        play_sfx("TELEPORTER")
         break
 
 

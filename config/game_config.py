@@ -94,6 +94,11 @@ class GameConfig:
     use_gpu_shaders: bool = False  # When True, use GPU (OpenGL) path for shader postprocess when shader_profile allows.
     use_gpu_shader_pipeline: bool = False  # When True, use GPU shader pipeline instead of CPU visual effects.
     internal_resolution_scale: float = 1.0  # Scale for CPU-based effect offscreen (e.g. 0.5 = half-res); 1.0 = full res.
+    
+    # World scale: makes the playable area larger (zoomed out view)
+    # 1.0 = normal, 1.33 = 33% larger world, 1.5 = 50% larger world
+    # The world is rendered at this scale then scaled down to fit the display
+    world_scale: float = 1.33  # Default 33% larger world
 
     # Audio (used by systems.audio_system)
     sfx_volume: float = 1.0
