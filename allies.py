@@ -39,6 +39,7 @@ def make_friendly_from_template(t: dict, hp_scale: float, speed_scale: float) ->
         "behavior": t["behavior"],
         "damage": int(t["damage"] * 1.1),  # 110% damage
         "target": None,  # Current target enemy
+        "aggro_mult": t.get("aggro_mult", 1.0),  # Multiplier for aggro radius (tank allies can have higher)
     }
     if t.get("fires_missiles"):
         data["fires_missiles"] = True

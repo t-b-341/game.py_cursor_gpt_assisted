@@ -10,7 +10,14 @@ from config_enemies import (
     ENEMY_HP_CAP,
     QUEEN_FIXED_HP,
 )
-from constants import ENEMY_COLOR, ENEMY_PROJECTILES_COLOR
+from constants import (
+    ENEMY_COLOR,
+    ENEMY_PROJECTILES_COLOR,
+    ALLY_AGGRO_RADIUS,
+    ALLY_AGGRO_PRIORITY,
+    DROPPED_ALLY_AGGRO_RADIUS,
+    DROPPED_ALLY_AGGRO_PRIORITY,
+)
 from geometry_utils import clamp_rect_to_screen
 from telemetry import EnemySpawnEvent
 
@@ -149,45 +156,86 @@ def find_nearest_threat(
     allow_player: bool = True,
 ) -> tuple[pygame.Vector2, str] | None:
     """Find the nearest threat (player or friendly AI) to an enemy.
-    Prioritizes dropped ally if within radius, otherwise player (if allow_player), else nearest friendly."""
+    
+    Aggro priority system:
+    1. Dropped allies have highest priority within their large aggro radius (400px, 90% chance)
+    2. Regular allies draw aggro within their radius (250px, 70% chance)
+    3. Player is targeted if no allies are drawing aggro or RNG favors player
+    4. Fallback to nearest friendly if player targeting not allowed
+    
+    This makes allies effective at tanking and drawing enemy fire away from the player.
+    """
     if player is None or not allow_player:
         player_pos = None
     else:
         player_pos = pygame.Vector2(player.center)
 
-    # Collect friendly AI threats
+    # Use configurable aggro radii
+    dropped_aggro_radius_sq = DROPPED_ALLY_AGGRO_RADIUS * DROPPED_ALLY_AGGRO_RADIUS
+    ally_aggro_radius_sq = ALLY_AGGRO_RADIUS * ALLY_AGGRO_RADIUS
+
+    # Collect and categorize friendly AI threats by distance
+    # Each entry: (position, distance_squared, target_type, aggro_radius_sq, aggro_priority)
     dropped_ally_threats = []
-    other_friendly_threats = []
+    regular_ally_threats = []
+    
     for f in friendly_ai:
-        if f["hp"] <= 0:
+        if f.get("hp", 0) <= 0:
             continue
         friendly_pos = pygame.Vector2(f["rect"].center)
         friendly_dist_sq = (friendly_pos - enemy_pos).length_squared()
-        friendly_dist = math.sqrt(friendly_dist_sq)
+        
+        # Get ally's aggro multiplier (tank allies can have higher values)
+        aggro_mult = f.get("aggro_mult", 1.0)
+        
         if f.get("is_dropped_ally", False):
-            dropped_ally_threats.append((friendly_pos, friendly_dist_sq, "dropped_ally", friendly_dist))
+            # Dropped allies use their own larger radius, scaled by aggro_mult
+            effective_radius_sq = (DROPPED_ALLY_AGGRO_RADIUS * aggro_mult) ** 2
+            dropped_ally_threats.append((
+                friendly_pos, friendly_dist_sq, "dropped_ally",
+                effective_radius_sq, DROPPED_ALLY_AGGRO_PRIORITY
+            ))
         else:
-            other_friendly_threats.append((friendly_pos, friendly_dist_sq, "friendly", friendly_dist))
+            # Regular allies use base radius, scaled by aggro_mult
+            effective_radius_sq = (ALLY_AGGRO_RADIUS * aggro_mult) ** 2
+            regular_ally_threats.append((
+                friendly_pos, friendly_dist_sq, "friendly",
+                effective_radius_sq, ALLY_AGGRO_PRIORITY
+            ))
     
-    # Priority: Dropped ally if within 350 pixels, otherwise player
-    ALLY_FOCUS_RADIUS = 350.0  # Enemies focus on ally if within this radius
-    ALLY_FOCUS_RADIUS_SQ = ALLY_FOCUS_RADIUS * ALLY_FOCUS_RADIUS
+    # Sort by distance (closest first)
+    dropped_ally_threats.sort(key=lambda x: x[1])
+    regular_ally_threats.sort(key=lambda x: x[1])
     
-    # Check if there's a dropped ally within focus radius
+    # Priority 1: Dropped allies within their aggro radius (highest priority)
+    # Dropped allies ALWAYS draw aggro when in range - this is a deliberate player tactic
     if dropped_ally_threats:
-        dropped_ally_threats.sort(key=lambda x: x[1])  # Sort by distance
-        nearest_ally = dropped_ally_threats[0]
-        if nearest_ally[1] <= ALLY_FOCUS_RADIUS_SQ:
-            # Focus on dropped ally if within radius
-            return (nearest_ally[0], nearest_ally[2])
-
-    # Otherwise, prioritize player (if present and allowed)
+        nearest_dropped = dropped_ally_threats[0]
+        pos, dist_sq, target_type, radius_sq, _priority = nearest_dropped
+        if dist_sq <= radius_sq:
+            return (pos, target_type)
+    
+    # Priority 2: Regular allies within their aggro radius
+    # Regular allies have a CHANCE to draw aggro, creating more dynamic combat
+    if regular_ally_threats:
+        nearest_ally = regular_ally_threats[0]
+        pos, dist_sq, target_type, radius_sq, priority = nearest_ally
+        if dist_sq <= radius_sq:
+            # Probability-based targeting creates variety in combat
+            if random.random() < priority:
+                return (pos, target_type)
+    
+    # Priority 3: Target player if allowed
     if player_pos is not None:
         return (player_pos, "player")
-    # No player; return nearest friendly if any
-    if other_friendly_threats:
-        other_friendly_threats.sort(key=lambda x: x[1])
-        return (other_friendly_threats[0][0], other_friendly_threats[0][2])
+    
+    # Fallback: target nearest friendly (any type) if player not available
+    all_friendlies = dropped_ally_threats + regular_ally_threats
+    if all_friendlies:
+        all_friendlies.sort(key=lambda x: x[1])
+        nearest = all_friendlies[0]
+        return (nearest[0], nearest[2])
+    
     return None
 
 

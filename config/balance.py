@@ -56,7 +56,13 @@ rocket_cooldown = missile_cooldown  # alias: missile = rocket
 rocket_damage = missile_damage
 
 # Ally drop
-ally_drop_cooldown = 3.0
+ally_drop_cooldown = 1.5
+
+# Ally aggro/taunt system
+ALLY_AGGRO_RADIUS = 250.0  # Base radius where allies draw enemy attention
+ALLY_AGGRO_PRIORITY = 0.7  # Chance (0-1) that enemies in range target ally instead of player
+DROPPED_ALLY_AGGRO_RADIUS = 400.0  # Dropped allies have larger aggro radius
+DROPPED_ALLY_AGGRO_PRIORITY = 0.9  # Dropped allies are more likely to draw aggro
 
 # Scoring
 SCORE_BASE_POINTS = 100
