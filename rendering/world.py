@@ -294,15 +294,15 @@ def _draw_effects(screen: pygame.Surface, state: Any) -> None:
 
 
 def _draw_player(screen: pygame.Surface, state: Any) -> None:
-    """Draw player circle (and border); shield-active uses red tint."""
+    """Draw player circle (and border); shield-active uses light blue tint."""
     player = getattr(state, "player_rect", None)
     if player is None:
         return
     player_color = (255, 255, 255)
     border_color = (200, 200, 200)
     if getattr(state, "shield_active", False):
-        player_color = (255, 100, 100)
-        border_color = (255, 150, 150)
+        player_color = (100, 200, 255)  # Light blue when shield active
+        border_color = (150, 220, 255)
     pygame.draw.circle(screen, border_color, player.center, player.w // 2 + 2, 2)
     pygame.draw.circle(screen, player_color, player.center, player.w // 2)
 
