@@ -1,0 +1,717 @@
+Alright, oh, great godking master of the universe — let’s tame this monster list 😄  
+
+I’ll do three things:
+
+1. Organize your ideas into a coherent backlog
+2. Propose a high-ROI next-steps plan (in phases)
+3. Explain how the current project works and what/where changes would be made
+
+This is grounded in your actual project structure (game.py, scenes/, systems/, telemetry, visualize.py, shader menu, build scripts, etc.).
+
+
+==================================================
+1. ORGANIZED BACKLOG (GROUPED BY THEME)
+==================================================
+
+A. CORE GAME FEEL, PACE, AND PROGRESSION
+----------------------------------------
+
+Game speed / difficulty / pacing
+- Put game at 0.75x speed
+- Lower gameplay speed, or shot speed
+- Make “easy” easier (halve enemy count, double ally count)
+- Make player less overwhelmed early, without making the game drag
+- Make all basic enemies same health
+- Organize game level path more; make game progression cohesive
+- Custom enemy spawn amount + custom wave builder / horde mode
+- Classes to play as; track best times/scores per class
+
+Checkpoints / respawn / saves
+- Respawner enemy / spawner enemy
+- 3 save files: save at most recently completed round (wave 7 complete → save state prior to wave 8; load at start of wave 8)
+- Add saves and loading in general
+- Add enemy selection and wave customizer like a horde mode
+
+Mechanics & systems
+- Verify shield mechanic vs enemy bombs; enemy bombs only hurt player
+- Fix overshield and health bar overlay
+- Add ammo system (e.g., 10 missiles + missile pickups)
+- Alt as battering ram (kills enemies on contact while dashing)
+- Grab + latch mechanic for huge enemies and cover
+- Throwing mechanic: throw grabbed objects at enemies
+- Enemies that only die to certain weapons (e.g., missile-only target)
+- BFG-like mega-shot unlocked after boss is killed
+- Enemy that sometimes runs away as the last enemy
+
+
+B. STABILITY, BUGS, AND BUILD PIPELINE
+--------------------------------------
+
+Menus / input bugs
+- Fix pause menu
+- Fix pause menu selection logic in-game to select options in ascending → descending order
+- When hitting Exit, Esc closes the “exit?” dialog (like N) and returns player back to menu
+- Fix shader menu in-game
+- Fix shader menu in main menu (text clarity, structure)
+- Fix shader menu crashing the game when selecting options
+- Fix armor health bar extending across screen
+- Review pickups list and verify all pickups still work as intended
+
+Exe / tooling / compatibility
+- Troubleshoot .exe build crashing
+- Ensure run_game.bat and game.exe setup is smooth (user just double-clicks)
+- Include a game.exe that is rebuilt/updated each time game.py is updated
+- Compatibility: run on Intel GPU; gamesetuptools; test on laptops
+- Make CUDA work again (diagnose GPU/CUDA path and integration)
+
+
+C. UI / UX, MENUS, AND HUD
+--------------------------
+
+Main structure
+- Pre-title: graphics mode selection (simple vs modern/shaders)
+- Title screen:
+  - Start
+  - Quit
+- Main menu:
+  - Quick Start (keeps settings, asks difficulty, starts game)
+  - Options (controls, telemetry/db, HUD, graphics)
+  - Stats & Charts
+  - Quit
+
+Pause / exit
+- Pause menu:
+  - Resume / Start (depending on naming)
+  - Options (controls, telemetry, HUD)
+  - Quit (to main menu)
+- Exit menu:
+  - Exit confirmation (Yes / No)
+  - Esc acts like No (returns to previous screen)
+
+HUD & on-screen info
+- HUD presets: full / meters-only / none
+- Change what HUD hides:
+  - All info
+  - Only recharge and health
+  - None
+- Add keys on screen for equipment that is ready (bomb, shield, etc.)
+- Add display at bottom of screen showing which weapon maps to key 1, key 2 (giant beam, triple beam, laser beam, etc.)
+
+Input / controls
+- Remove “Select Aiming Mode” menu; set mouse aiming as default
+- Remove “keys only” option; only support keyboard+mouse plus controller
+- Create default controller controls; allow remapping like keyboard:
+  - Right trigger: shoot
+  - Left trigger: direct allies
+- Add console commands with ~:
+  - SPAWN (enemy type) – enemy type can be RANDOM, ALL, or a specific name
+  - RAISE SPAWN LIMIT
+- Document console controls in CONSOLE_CONTROLS.md
+
+UX declutter & polish
+- Make UX/UI less cluttered, more effective
+- Organize menus more clearly; simplify nesting
+- Add main menu with “Press Enter/Spacebar to start” and welcome message (“GREETINGS, OH GREAT PLAYER” or similar)
+- Add a bank of welcome messages that can rotate
+
+
+D. SHADERS, GRAPHICS, AND 3D-ISH JUICE
+--------------------------------------
+
+Shader menus & testing
+- Fix text in shader menu to be clear and understandable
+- Fix full shader menu (structure, categories)
+- Fix shader menu(s) to prevent crashes
+- Add shader self-test and shader test scene
+- Make shaders more obvious visually (stronger or more distinct effects)
+- Add more shader effects in-game and in menus
+- 2D shader cool effect layers (scanlines, bloom, chromatic aberration, distortions)
+- Learn more about 2D shaders; refine pipeline
+
+Graphics modes & redesign
+- Graphics modes:
+  - Little layer (minimal shader usage)
+  - Some GL (moderate shader usage)
+  - Full redesign (full shader stack)
+- Make game prettier: 3D-like textures on enemies, visual shader overlays
+- Add 3D-ish effects with shaders to create depth and feel
+
+Maps & environment
+- Put game stage in ocean, lava, desert; build a map design system
+- Increase map size
+- Make screen bigger, shrink enemies and geometry
+- Add teleporters between corners of the map
+- Make environment more interactive, refresh and change after each wave
+- Draw map concept art (e.g., in OneNote), translate to geometry, then into game
+- Eventually: map maker; custom maps; custom games
+
+
+E. AUDIO, MUSIC, AND SOUND DESIGN
+---------------------------------
+
+Format & pipeline
+- Store sounds as .wav
+- Store music as .ogg
+- Integrate with FL Studio pipeline for creation
+
+Core SFX
+- Basic shot / rocket / laser for enemies
+- Enemy death
+- Player death
+- Wave start
+- Wave complete
+- Health low
+- Player takes damage
+- Player uses abilities: shield, missile, bomb, sprint/dash
+- Teleport SFX
+- “Enemy close” warning SFX
+- Initially use placeholders; refine later; ensure audio system is robust
+
+Music / ambient
+- Redo music: create random pool of different intros and in-game tracks
+- Fade music to ~60% volume when in in-game menu
+- Add menu selector sounds for option movement and selection (enter/spacebar)
+- Fix game audio loop; restart music at menu when entering from shader selection
+- Rerecord guitar and bass and fix loops
+- Record bass for in-game music
+- Revise title screen music
+- Ambient:
+  - Add ambient played randomly in menu
+  - Incorporate Lawrence sounds in ambience
+
+
+F. ENEMIES, ALLIES, ROLES, AND CHESS-THEME
+------------------------------------------
+
+Enemy design clarity
+- Names: evaluate enemy types for redundancy, clarify names
+- Make one enemy for each chess piece:
+  - Pawn – basic enemy with basic beam
+  - Rook – straight-line rush or cover-breaking enemy
+  - Bishop – diagonal movement / area denial
+  - Knight – jumping / pattern-based movement
+  - Queen – “hero” enemy similar to player (multiple abilities)
+  - King – big enemy; when killed, all enemies die; others protect it
+- Clarify chances of certain enemies spawning (probabilities, wave rules)
+- Ask: “What purpose does each enemy serve?”
+
+Allies / companions
+- Make each ally class a different color; show name at bottom; cycle as ally drop (Q) is used
+- Evaluate ally types; add scroll wheel to choose between:
+  - 1 heavy
+  - 3 medium
+  - 7 small
+- Make allies’ colors obvious and consistent, possibly size-coded
+- Game companion: AI-only ally with endearing behavior that floats near player and physically attacks enemies
+
+Bosses & special enemies
+- Final boss idea: lots of health, lots of enemies spawning, multi-phase with different mechanics
+- Boss with swirling vortex and tendrils; blocks spawn that block line-of-fire until they are destroyed or navigated around
+- Enemy that learns player behavior: tries to cut off movement, fires ahead of predicted position
+- Enemy that doesn’t die except to specific weapon (e.g., missile-only kill); missiles spawn after some delay when it appears
+- Multiple bosses on screen together by later stages
+- Counter-hero queen: enemy that generates & directs troops like player (hero RTS flavor)
+
+
+G. TUTORIALS, PROGRESSION, AND TEACHING
+---------------------------------------
+
+- Create tutorial that is optional:
+  - Each enemy introduced
+  - Each mechanic introduced (dash, ally summon, bombs, etc.)
+- “New enemy!” screen at the beginning of each wave where a new type appears; waits for enter/spacebar to start wave
+- Draw map for game like a 2D Zelda map to plan layout
+- Set weapon progression or random weapon unlocks:
+  - Select two weapons at a time (Contra-style), with active weapon swapped
+  - UI to show current weapons and swap logic
+
+
+H. TELEMETRY, VISUALIZE, AND PLAYER COACHING
+--------------------------------------------
+
+- Fix telemetry and metrics menu to be better UX
+- Telemetry and graphs:
+  - Graph lines spaced out more
+  - Choose different graphs for same data
+  - Choose scope: all data / most recent run / any run_id
+- Track:
+  - Player position and velocity
+  - Enemy position and velocity
+  - Enemies per wave (types, counts), in a dedicated table
+- Embed matplotlib visuals into the game instead of another window
+- Use visualize + stats to:
+  - Provide player improvement recommendations
+  - Identify most disliked enemy
+  - Show kill counts, performance stats
+- Change “enable/disable telemetry” to “enable/disable game database” or similar wording
+
+
+I. CUSTOMIZATION, MODDING, AND TOOLS
+------------------------------------
+
+- Create engine for level design
+- Map maker: build custom maps
+- Custom games: custom maps, enemies, classes:
+  - Colors
+  - Shapes
+  - Attributes
+  - Behaviors
+  - Weapons
+- Build debugging mode where you can select any weapons, pickups, allies, enemy respawns from a menu
+- Use visualize and telemetry to “coach” the player to improve
+
+
+J. BRANDING, COMPANY, AND STEAM
+-------------------------------
+
+- Game name: consider changing / finalizing
+- Figure out name for you and Larry’s game company: Lambda Theta (LT)
+  - Make logo
+  - Intro screen with logo
+- Prepare Steam page:
+  - Screenshots
+  - GIFs
+  - Look at other pages for reference
+
+- Long-term variants:
+  - SM: 3D third-person version of game with DOOM-like movement
+  - Soundtrack writing for the game
+
+
+==================================================
+2. HIGH-ROI NEXT STEPS (PHASED ROADMAP)
+==================================================
+
+Motto: “It’s gotta be fun before it’s pretty.”
+
+The roadmap focuses on:
+- Core feel & stability first
+- Then UX/menus + audio
+- Then telemetry-powered tuning
+- Then progression/tutorials & saves
+
+--------------------------------------
+Phase 1 – Core Feel & Stability
+--------------------------------------
+
+Goal: Make the game play better and crash less, without large new systems.
+
+1. Global pacing: 0.75x speed
+   - Likely files:
+     - config/game_config.py (GameConfig: player_base_speed, enemy speed, projectile speed)
+     - config/balance.py (bullet speeds, cooldowns, enemy speeds)
+     - systems/movement_system.py (uses dt and entity speeds)
+   - Approaches:
+     A) Add `timescale` in GameConfig (e.g. 0.75), and multiply dt by this inside systems that move or time things.
+     B) Or manually reduce speeds/cooldowns by ~25%.
+
+2. Fix pause / exit behavior
+   - Likely files:
+     - scenes/pause.py
+     - game.py (main loop; ESC handling, screen transitions)
+     - constants.py (STATE_* constants)
+   - Tasks:
+     - ESC while playing → Pause menu.
+     - ESC while on exit confirmation → behave like “No” and return to previous menu.
+     - Pause menu: ensure navigation ordering is intuitive (e.g., Resume → Options → Quit).
+
+3. Fix shader menu crashes
+   - Likely files:
+     - scenes/shader_settings.py
+     - scenes/shader_test.py
+     - visual_effects.py
+     - assets/shaders/*.frag
+     - config/game_config.py (flags for shader usage)
+   - Tasks:
+     - Add defensive checks so:
+       - If moderngl / GL context is not available → fallback to simple graphics.
+       - If shader fails to compile or uniform is missing → catch exception and show warning instead of crashing.
+     - Maintain last-known-good shader profile; revert to it on failure.
+
+4. Make .exe builds reliable
+   - Likely files:
+     - build_game.bat
+     - MyGame.spec
+     - game.py (already uses if __name__ == "__main__": main())
+   - Tasks:
+     - Ensure assets (music, sfx, shaders, config) are included in PyInstaller’s data.
+     - Add any “hidden imports” for systems or modules that PyInstaller might miss.
+     - Test dist/MyGame.exe and fix any missing-file errors.
+
+
+--------------------------------------
+Phase 2 – UX / Menus + Basic Audio
+--------------------------------------
+
+Goal: Make the game easy to start, pause, understand, and hear feedback from.
+
+5. Clean main menu / pause structure
+   - Likely files:
+     - scenes/title.py (TitleScene)
+     - scenes/options.py (OptionsScene)
+     - scenes/pause.py
+     - ui_state.py (UiState)
+   - Tasks:
+     - Title:
+       - Show: “Press Enter/Space to Start.”
+       - On press: go to Main Menu.
+     - Main Menu:
+       - Quick Start
+       - Options
+       - Stats & Charts
+       - Quit
+     - Pause Menu:
+       - Resume
+       - Options
+       - Quit to Main Menu
+
+6. HUD presets and uncluttered UI
+   - Likely files:
+     - ui_state.py (add hud_mode)
+     - rendering.py (HUD drawing logic)
+   - Tasks:
+     - Add `hud_mode` enum: FULL, METERS_ONLY, NONE.
+     - Options scene: menu item to switch between them.
+     - In HUD drawing:
+       - FULL: health, overshield, ammo, ability cooldowns, ally status, etc.
+       - METERS_ONLY: only health/overshield/ability bars.
+       - NONE: nothing drawn; pure game view.
+
+7. Standardize audio pipeline + core SFX
+   - Likely files:
+     - systems/audio_system.py
+     - asset_manager.py
+     - assets/music/*.ogg, assets/sfx/*.wav
+   - Tasks:
+     - Confirm music uses .ogg, SFX uses .wav.
+     - Implement event-based play:
+       - enemy_killed → enemy death sound
+       - player_hit → damage SFX
+       - wave_start/wave_complete → SFX
+       - ability usage → associated SFX
+   - Benefit: Huge moment-to-moment juice with modest code.
+
+8. Fix and reuse music loop logic
+   - Likely files:
+     - systems/audio_system.py
+     - game.py (state transitions: TITLE/MENU/PLAYING/SHADER)
+   - Tasks:
+     - Create helpers:
+       - play_menu_music()
+       - play_ingame_music()
+       - play_boss_music()
+     - Call them at screen transitions instead of manually toggling loops in many places.
+   - Result: Music resets cleanly when returning from shader selection or menus.
+
+
+--------------------------------------
+Phase 3 – Telemetry & In-Game Stats
+--------------------------------------
+
+Goal: Use your existing telemetry and visualize system as a design tool and player-feedback tool.
+
+9. Fix telemetry UX & run selection
+   - Likely files:
+     - telemetry_system.py / telemetry.py
+     - visualize.py
+     - telemetry_viz/* helper modules
+     - scenes/options.py or a new StatsScene
+   - Tasks:
+     - Options / Stats:
+       - Toggle “Game database: ON/OFF.”
+       - Stats menu: Latest run / All runs / Choose run.
+     - Wire visualize.py to respect those choices and generate correct plots.
+
+10. Embed matplotlib graphs into the game
+    - Likely files:
+      - visualize.py
+      - rendering.py or stats_scene.py
+    - Approach:
+      - Use visualize.py to generate charts as PNGs in a folder.
+      - Load PNGs with pygame.image.load and display in a Stats scene.
+    - Result: “Stats & Charts” accessible from main menu; no external windows.
+
+11. Extend telemetry schema: positions, velocities, enemy mix
+    - Likely files:
+      - telemetry_system.py
+      - state.py (GameState)
+    - Tasks:
+      - New DB table for wave summaries:
+        - wave_id, run_id
+        - counts of each enemy type
+        - maybe simple aggregate metrics for player/enemy positions and velocities
+      - Use this data later for:
+        - most disliked enemy (deaths caused, damage taken)
+        - player improvement suggestions (where they die, movement patterns)
+
+
+--------------------------------------
+Phase 4 – Progression, Tutorial, and First “Complete Loop”
+--------------------------------------
+
+Goal: Finish a vertical slice that feels like a complete game from title to credits.
+
+12. Early-game smoothing + basic difficulty curve
+    - Likely files:
+      - config/enemy_data.py / enemy_defs.py
+      - systems/spawn_system.py
+    - Tasks:
+      - Easy mode:
+        - 0.5x enemy count
+        - 2x ally count or easier ally access
+      - Early waves:
+        - Very small mix of enemy types
+        - Basic enemies share same HP
+      - Gradually introduce enemy variety as waves progress.
+
+13. Optional tutorial waves
+    - Likely files:
+      - scenes/gameplay.py (or separate TutorialScene)
+      - state.py (flags: tutorial_seen)
+    - Tasks:
+      - Ask “Play tutorial? Y/N” before first run.
+      - Tutorial waves each introduce a mechanic or enemy:
+        - Movement & shooting
+        - Allies & bombs
+        - Dash / grab / cover
+        - New enemy with dedicated “New enemy!” intro card
+
+14. Basic checkpoint/save between waves
+    - Likely files:
+      - state.py (GameState; define saveable subset)
+      - save_load.py (new module for JSON or DB-based save slots)
+      - game.py (hook wave-complete → save)
+    - Design:
+      - Up to 3 save slots.
+      - Store:
+        - wave_number
+        - difficulty
+        - class
+        - maybe basic stats (lives, unlocked weapons)
+      - After each completed wave, update save slot.
+      - Main menu → Continue from slot (wave X).
+
+
+==================================================
+3. HOW THE PROGRAM WORKS (AND WHERE CHANGES LIVE)
+==================================================
+
+High-level mental model of your project and how it ties to your ideas.
+
+
+3.1 Entry Point and Main Loop
+-----------------------------
+
+Key files:
+- game.py – main entry point
+- context.py – AppContext: screen, config, resources, telemetry
+- state.py – GameState: all mutable game state
+
+Flow:
+1) game.py:
+   - if __name__ == "__main__": main()
+2) main():
+   - Initializes Pygame (window, clock).
+   - Creates AppContext (GameConfig, asset manager, shaders config, telemetry connection).
+   - Creates GameState; sets current_screen to TITLE.
+   - Creates SceneStack with TitleScene as top.
+3) _run_loop(ctx, game_state, scene_stack):
+   - Event loop:
+     - Poll events, pass to top scene(s).
+     - Update game according to game_state.current_screen.
+     - Run systems: movement, collision, AI, audio, telemetry, UI.
+     - Render: call draw() on top scene with RenderContext.
+
+Where “game at 0.75x speed” fits:
+- dt is passed to systems like movement_system.update(dt, state).
+- Add `timescale` to GameConfig and multiply dt in system calls, or scale speeds/cooldowns in config/balance.py and config/game_config.py.
+
+
+3.2 Game State, ECS, and Systems
+--------------------------------
+
+Key files:
+- state.py – GameState
+- ecs_components.py – data structures for entities
+- systems/:
+  - movement_system.py
+  - collision_* modules
+  - ai_system.py
+  - spawn_system.py
+  - audio_system.py
+  - telemetry_system.py
+  - ui_system.py
+  - registry.py – system ordering
+
+Concept:
+- Entities (player, enemies, bullets, pickups) live in lists or ECS structures on GameState.
+- Each frame:
+  - Movement system applies velocities using dt.
+  - Collision systems detect and resolve hits and pickups.
+  - Spawn system controls wave logic and spawners.
+  - AI system drives enemy behavior.
+  - Telemetry system logs events when enabled.
+
+Where your ideas go:
+- Respawner enemy / spawner enemy:
+  - config/enemy_defs.py and enemy_data: define enemy type with spawn-on-death behavior.
+  - systems/spawn_system.py: implement logic that, when that enemy dies, spawns children.
+- Chess-piece enemies and special bosses:
+  - Add enemy definitions and behavior patterns in enemy config + ai_system.
+  - Adjust spawn rules in spawn_system per wave/difficulty.
+
+
+3.3 Scenes, Menus, and Screen Flow
+----------------------------------
+
+Key files:
+- scenes/:
+  - title.py
+  - options.py
+  - gameplay.py
+  - pause.py
+  - shader_settings.py
+  - shader_test.py
+  - transitions.py
+- constants.py – screen state constants (STATE_TITLE, STATE_MENU, STATE_PLAYING, etc.)
+- ui_state.py – UiState for selected menu entries, HUD choices, etc.
+
+Concept:
+- GameState.current_screen holds a state constant.
+- _sync_scene_stack in game.py maps that to a stack of Scene objects, e.g.:
+  - TITLE → [TitleScene]
+  - MENU → [TitleScene, OptionsScene]
+  - PLAYING → [GameplayScene]
+  - PAUSED → [GameplayScene, PauseScene]
+- Each Scene:
+  - handle_event(event, ctx, state, scene_stack)
+  - update(dt, ctx, state, scene_stack)
+  - draw(surface, ctx, state)
+
+Where changes go:
+- Main menu reorganization:
+  - scenes/title.py and scenes/options.py plus UiState.
+- Pause menu logic & order:
+  - scenes/pause.py.
+- Exit dialog:
+  - Scenes that manage quitting and the relevant branch in game.py.
+- HUD modes:
+  - ui_state.py for the mode; rendering.py for conditional drawing; options scene for editing the mode.
+
+
+3.4 Shaders and Visual Effects
+------------------------------
+
+Key files:
+- scenes/shader_settings.py – shader selection UI
+- scenes/shader_test.py – test scene
+- visual_effects.py – post-processing stack
+- assets/shaders/*.frag – GLSL fragment shaders
+- gpu_gl_utils.py – helper for GL context, textures, etc.
+- config/game_config.py – settings: use_shaders, shader_profile, graphics_mode
+
+Concept:
+- When shaders are enabled and the GL context works:
+  - Scenes draw into a texture; shader pipeline processes it; final image is blitted to the screen.
+- Shader settings screen:
+  - Exposes shader profiles and toggles.
+  - Adjusts uniforms (intensity, color, distortion, etc.).
+  - May preview the effect.
+
+Where your tasks land:
+- Fix shader menu text & categories:
+  - scenes/shader_settings.py and the shader registry definitions.
+- Prevent crashes when switching shaders:
+  - Add try/except around shader compilation and uniform updates.
+  - If a shader fails, revert to last good shader profile and show a warning.
+- Graphics modes (little layer / some GL / full redesign):
+  - config/game_config.py: add graphics_mode.
+  - visual_effects.py: build different shader pipelines based on mode.
+
+
+3.5 Audio and Music
+-------------------
+
+Key files:
+- systems/audio_system.py
+- asset_manager.py
+- assets/music/*.ogg
+- assets/sfx/*.wav
+
+Concept:
+- The audio system:
+  - Subscribes to gameplay events (enemy death, player hit, wave start, ability use).
+  - Plays appropriate SFX and BGM.
+- Scenes or main loop:
+  - Call convenience functions like play_menu_music(), play_ingame_music() on transitions.
+
+Your tasks:
+- Normalize formats: SFX as .wav, music as .ogg.
+- Hook SFX into event flow via audio_system.
+- Add simple music state machine to ensure loops restart cleanly when returning from menus or shader modes.
+
+
+3.6 Telemetry and Visualization
+-------------------------------
+
+Key files:
+- telemetry_system.py / telemetry.py
+- visualize.py
+- telemetry_viz/core.py, db_utils.py, viewer.py
+- SQLite DB: game_telemetry.db
+
+Concept:
+- When telemetry is enabled:
+  - Game logs run info, wave info, kills, deaths, etc. to SQLite.
+- visualize.py:
+  - Loads DB, asks which data to show (latest/all).
+  - Generates matplotlib plots and either shows them externally or saves images.
+
+Where your ideas map:
+- Extended telemetry schema:
+  - New tables for wave summaries, enemy types, positions.
+- Better graphs:
+  - visualize.py chooses graph types and scopes (latest run/all runs/by run_id).
+- Embedded stats:
+  - Stats scene in scenes/stats.py or inside options/stats; display PNG graphs inside Pygame window.
+
+
+3.7 Build, Profiling, and CUDA
+------------------------------
+
+Key files:
+- run_game.bat – dev launcher
+- build_game.bat – PyInstaller build script
+- MyGame.spec – PyInstaller spec config
+- profile_game.py, display_profiling_results.py – profiling
+- diagnose_cuda.py – CUDA diagnostics
+- GPU/C extension source files (if present in repo)
+
+Concept:
+- run_game.bat simplifies launching the game in dev.
+- build_game.bat + MyGame.spec:
+  - Package everything into a single executable for Windows users.
+- diagnose_cuda.py:
+  - Checks if CUDA + GPU features are correctly installed and usable.
+
+Your tasks:
+- Use diagnose_cuda.py to figure out why CUDA is not working (driver mismatch, missing module).
+- Ensure CUDA-related modules and DLLs are packaged into the .exe if you want GPU physics in the build.
+
+
+==================================================
+SUMMARY
+==================================================
+
+You now have:
+- A structured backlog of all your ideas, grouped by theme.
+- A phased roadmap that respects “fun before pretty,” focusing on high-ROI work:
+  - Phase 1: Core feel & stability (speed, pause/exit, shader crash fixes, exe build pipeline).
+  - Phase 2: UX & audio polish (menus, HUD, basic SFX + music discipline).
+  - Phase 3: Telemetry and in-game stats (your secret design tool).
+  - Phase 4: Progression, tutorial, and saves (a complete vertical slice).
+- A mental model of how your codebase hangs together, and which files to touch for each kind of change.
+
+Next practical step if you want to keep going:
+- Start with Phase 1, Task 1 (global pacing / 0.75x feel) and then Phase 1, Task 2 (pause/exit).
+- From there, you can move straight through the phases or bounce between them depending on what’s most motivating in the moment.

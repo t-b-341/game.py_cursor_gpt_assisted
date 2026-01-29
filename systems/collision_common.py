@@ -1,7 +1,7 @@
 """Shared collision helpers: enemy damage flash, player damage application."""
 from __future__ import annotations
 
-from constants import STATE_NAME_INPUT
+from constants import STATE_GAME_OVER
 
 
 def set_enemy_damage_flash(enemy: dict, ctx: dict) -> None:
@@ -49,7 +49,7 @@ def apply_player_damage(state, damage: int, ctx: dict) -> None:
             state.lives -= 1
             reset(state)
         else:
+            # Game over - store score and wave for game over screen
             state.final_score_for_high_score = state.score
-            state.player_name_input = ""
-            state.name_input_active = True
-            state.current_screen = STATE_NAME_INPUT
+            state.game_over_wave = getattr(state, "wave_number", 1)
+            state.current_screen = STATE_GAME_OVER

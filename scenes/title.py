@@ -1,15 +1,22 @@
-"""TitleScene: title screen and quit-confirm. ESC toggles quit dialog; Enter/Space to options."""
+"""TitleScene: title screen with New Game and Load Game options. ESC toggles quit dialog."""
 from __future__ import annotations
 
 import pygame
 
-from constants import STATE_MENU, STATE_TITLE
+from constants import STATE_MENU, STATE_TITLE, STATE_LOAD_GAME
 from rendering import RenderContext, draw_centered_text
 from scenes.transitions import SceneTransition
+from save_system import load_saves
+
+
+TITLE_OPTIONS = ["New Game", "Load Game"]
 
 
 class TitleScene:
-    """Title screen. Enter/Space -> MENU; ESC -> quit confirm or stay."""
+    """Title screen. Select New Game or Load Game; ESC -> quit confirm or stay."""
+
+    def __init__(self):
+        self._title_selected = 0  # 0=New Game, 1=Load Game
 
     def state_id(self) -> str:
         return STATE_TITLE
@@ -32,8 +39,17 @@ class TitleScene:
                 if event.key == pygame.K_n:
                     game_state.ui.title_confirm_quit = False
             else:
-                if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
-                    out["screen"] = STATE_MENU
+                if event.key in (pygame.K_UP, pygame.K_w):
+                    self._title_selected = (self._title_selected - 1) % len(TITLE_OPTIONS)
+                elif event.key in (pygame.K_DOWN, pygame.K_s):
+                    self._title_selected = (self._title_selected + 1) % len(TITLE_OPTIONS)
+                elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
+                    if self._title_selected == 0:
+                        # New Game
+                        out["screen"] = STATE_MENU
+                    else:
+                        # Load Game
+                        out["screen"] = STATE_LOAD_GAME
                     return out
         return out
 
@@ -51,6 +67,8 @@ class TitleScene:
             screen = result["screen"]
             if screen == STATE_MENU:
                 return SceneTransition.replace(STATE_MENU)
+            elif screen == STATE_LOAD_GAME:
+                return SceneTransition.push(STATE_LOAD_GAME)
         return SceneTransition.none()
 
     def update_transition(self, dt: float, game_state, ctx: dict) -> SceneTransition:
@@ -62,18 +80,42 @@ class TitleScene:
         screen = render_ctx.screen
         w, h = render_ctx.width, render_ctx.height
         font, big_font = render_ctx.font, render_ctx.big_font
+        
         if game_state.ui.title_confirm_quit:
             draw_centered_text(screen, font, big_font, w, "Are you sure you want to exit?", h // 2 - 40, color=(220, 220, 220))
             draw_centered_text(screen, font, big_font, w, "ENTER or Y to quit", h // 2 + 20, (180, 180, 180))
             draw_centered_text(screen, font, big_font, w, "ESC or N to stay", h // 2 + 60, (180, 180, 180))
         else:
-            draw_centered_text(screen, font, big_font, w, "GAME", h // 2 - 80, color=(220, 220, 220), use_big=True)
-            draw_centered_text(screen, font, big_font, w, "Main Menu", h // 2 - 30, (180, 180, 180))
-            draw_centered_text(screen, font, big_font, w, "Press ENTER or SPACE for options", h // 2 + 30, (180, 180, 180))
-            draw_centered_text(screen, font, big_font, w, "ESC to quit", h // 2 + 70, (180, 180, 180))
+            # Title
+            draw_centered_text(screen, font, big_font, w, "GAME", h // 2 - 100, color=(220, 220, 220), use_big=True)
+            
+            # Check if any saves exist to show indicator
+            saves = load_saves()
+            has_saves = any(saves.get(i) is not None for i in range(3))
+            
+            # Menu options
+            y_start = h // 2 - 10
+            for i, option in enumerate(TITLE_OPTIONS):
+                if i == self._title_selected:
+                    color = (255, 255, 0)
+                    prefix = "-> "
+                else:
+                    color = (200, 200, 200)
+                    prefix = "   "
+                
+                # Add indicator for Load Game if saves exist
+                suffix = ""
+                if i == 1 and has_saves:
+                    suffix = " *"
+                
+                draw_centered_text(screen, font, big_font, w, f"{prefix}{option}{suffix}", y_start + i * 45, color)
+            
+            # Instructions
+            draw_centered_text(screen, font, big_font, w, "UP/DOWN: Select | ENTER: Confirm | ESC: Quit", h - 60, (150, 150, 150))
 
     def on_enter(self, game_state, ctx: dict) -> None:
-        pass
+        self._title_selected = 0
+        game_state.ui.title_confirm_quit = False
 
     def on_exit(self, game_state, ctx: dict) -> None:
         pass

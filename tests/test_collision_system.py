@@ -7,7 +7,7 @@ from __future__ import annotations
 import pygame
 import pytest
 
-from constants import STATE_NAME_INPUT
+from constants import STATE_GAME_OVER
 from level_state import LevelState
 from state import GameState
 from systems.collision_system import update as collision_update
@@ -230,12 +230,13 @@ class TestDeathWhenHealthReachesZero:
         assert state.player_hp == state.player_max_hp
         assert state.lives == 0
 
-    def test_health_reaches_zero_no_lives_transitions_to_name_input(self, state_for_collisions):
+    def test_health_reaches_zero_no_lives_transitions_to_game_over(self, state_for_collisions):
         state = state_for_collisions
         state.player_hp = 25
         state.player_max_hp = 1000
         state.lives = 0
         state.score = 5000
+        state.wave_number = 3  # Track which wave player died on
         state.level_context["reset_after_death"] = None
         state.level_context["log_player_death"] = None
         proj = {"rect": pygame.Rect(100, 100, 12, 12), "damage": 25}
@@ -244,9 +245,9 @@ class TestDeathWhenHealthReachesZero:
         collision_update(state, 0.016)
 
         assert state.player_hp <= 0
-        assert state.current_screen == STATE_NAME_INPUT
+        assert state.current_screen == STATE_GAME_OVER
         assert state.final_score_for_high_score == 5000
-        assert state.name_input_active is True
+        assert state.game_over_wave == 3  # Should store the wave where player died
 
 
 class TestModuleLevelPlayerBulletOffscreen:

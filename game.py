@@ -128,10 +128,12 @@ from constants import (
     STATE_ENDURANCE,
     STATE_GAME_OVER,
     STATE_HIGH_SCORES,
+    STATE_LOAD_GAME,
     STATE_MENU,
     STATE_NAME_INPUT,
     STATE_PAUSED,
     STATE_PLAYING,
+    STATE_SAVE_GAME,
     STATE_TITLE,
     STATE_VICTORY,
     UNLOCKED_WEAPON_DAMAGE_MULT,
@@ -214,6 +216,9 @@ from config import GameConfig
 from screens.gameplay import render as gameplay_render
 from rendering_shaders import render_gameplay_with_optional_shaders, render_gameplay_frame_to_surface
 from scenes import SceneStack, GameplayScene, PauseScene, HighScoreScene, NameInputScene, ShaderTestScene, TitleScene, OptionsScene
+from scenes.game_over import GameOverScene
+from scenes.save_game import SaveGameScene
+from scenes.load_game import LoadGameScene
 from scenes.transitions import SceneTransition, KIND_NONE, KIND_PUSH, KIND_POP, KIND_REPLACE, KIND_QUIT_GAME
 from visual_effects import apply_menu_effects, apply_pause_effects
 from shader_effects import get_menu_shader_stack, get_pause_shader_stack, get_gameplay_shader_stack
@@ -620,6 +625,12 @@ def _apply_scene_transition(transition: SceneTransition, scene_stack: SceneStack
             scene_stack.push(NameInputScene())
         elif scene_name == STATE_HIGH_SCORES:
             scene_stack.push(HighScoreScene())
+        elif scene_name == STATE_GAME_OVER:
+            scene_stack.push(GameOverScene())
+        elif scene_name == STATE_SAVE_GAME:
+            scene_stack.push(SaveGameScene())
+        elif scene_name == STATE_LOAD_GAME:
+            scene_stack.push(LoadGameScene())
         elif scene_name in (STATE_PLAYING, STATE_ENDURANCE):
             scene_stack.push(GameplayScene(scene_name))
         elif scene_name == "SHADER_TEST":
@@ -646,6 +657,12 @@ def _apply_scene_transition(transition: SceneTransition, scene_stack: SceneStack
             scene_stack.push(NameInputScene())
         elif scene_name == STATE_HIGH_SCORES:
             scene_stack.push(HighScoreScene())
+        elif scene_name == STATE_GAME_OVER:
+            scene_stack.push(GameOverScene())
+        elif scene_name == STATE_SAVE_GAME:
+            scene_stack.push(SaveGameScene())
+        elif scene_name == STATE_LOAD_GAME:
+            scene_stack.push(LoadGameScene())
         elif scene_name in (STATE_PLAYING, STATE_ENDURANCE):
             scene_stack.push(GameplayScene(scene_name))
         elif scene_name == "SHADER_TEST":
@@ -854,9 +871,9 @@ def _handle_events(
     transition = handle_scene_events(events, ctx, game_state, game_state.ui, scene_stack, screen_ctx, previous_game_state)
     
     if transition is not None:
-        # Get the result from handle_input to check for start_game flag
-        # handle_input_transition calls handle_input internally, but we need the result
-        if current_state == "SHADER_SETTINGS":
+        # Get the result from handle_input to check for flags like start_game, try_again, load_game
+        # handle_input_transition calls handle_input internally, but we need the result for fallback processing
+        if current_state in ("SHADER_SETTINGS", STATE_GAME_OVER, STATE_SAVE_GAME, STATE_LOAD_GAME):
             scene_result = current_scene.handle_input(events, game_state, screen_ctx) if current_scene else None
         
         if transition.kind != KIND_NONE:
@@ -877,10 +894,14 @@ def _handle_events(
                     handled_by_screen = True  # Scene handled its own input
             elif current_state in (STATE_HIGH_SCORES, STATE_NAME_INPUT, "SHADER_TEST", STATE_TITLE, STATE_PAUSED):
                 handled_by_screen = True  # Scene handled its own input
+            elif current_state in (STATE_GAME_OVER, STATE_SAVE_GAME, STATE_LOAD_GAME):
+                # These scenes return SceneTransition.none() for actions like "try_again" or "load_game"
+                # that need to be processed by the fallback handler, so don't mark as handled
+                handled_by_screen = False
     
     # Fallback to old input handling if scene path didn't handle it
     current_state = _get_current_state(scene_stack) or game_state.current_screen
-    if not handled_by_screen and current_state in (STATE_PAUSED, STATE_HIGH_SCORES, STATE_NAME_INPUT, "SHADER_TEST", "SHADER_SETTINGS", STATE_TITLE, STATE_MENU):
+    if not handled_by_screen and current_state in (STATE_PAUSED, STATE_HIGH_SCORES, STATE_NAME_INPUT, "SHADER_TEST", "SHADER_SETTINGS", STATE_TITLE, STATE_MENU, STATE_GAME_OVER, STATE_SAVE_GAME, STATE_LOAD_GAME):
         # Use scene_result if we already got it, otherwise get it now
         if scene_result is not None:
             result = scene_result
@@ -946,7 +967,34 @@ def _handle_events(
         # Sync pause_selected from game_state (handler may have updated it)
         if current_state == STATE_PAUSED:
             pause_selected = game_state.ui.pause_selected
-        if result.get("screen") is not None and not result.get("start_game"):
+        # Handle "try_again" from game over screen - restart at game_over_wave
+        if result.get("try_again"):
+            wave_to_restart = getattr(game_state, "game_over_wave", 1)
+            game_state.reset_run(ctx)
+            game_state.wave_start_reason = "try_again"
+            spawn_system_start_wave(wave_to_restart, game_state)
+            scene_stack.clear()
+            scene_stack.push(GameplayScene(STATE_PLAYING))
+            game_state.current_screen = STATE_PLAYING
+            play_music("in-game", loop=True)
+        # Handle "load_game" from load game screen
+        elif result.get("load_game") and result.get("load_slot"):
+            from constants import difficulty_options, player_class_options
+            slot = result["load_slot"]
+            # Apply saved config
+            if hasattr(ctx, "config"):
+                ctx.config.difficulty = slot.difficulty
+                ctx.config.player_class = slot.player_class
+            # Reset and start at saved wave
+            game_state.reset_run(ctx)
+            game_state.wave_start_reason = "load_game"
+            spawn_system_start_wave(slot.wave_number, game_state)
+            game_state.score = slot.score  # Restore score
+            scene_stack.clear()
+            scene_stack.push(GameplayScene(STATE_PLAYING))
+            game_state.current_screen = STATE_PLAYING
+            play_music("in-game", loop=True)
+        elif result.get("screen") is not None and not result.get("start_game"):
             new_screen = result["screen"]
             game_state.current_screen = new_screen
             if new_screen == STATE_MENU:
@@ -962,6 +1010,13 @@ def _handle_events(
                 scene_stack.push(NameInputScene())
             elif new_screen == STATE_HIGH_SCORES:
                 scene_stack.push(HighScoreScene())
+            elif new_screen == STATE_GAME_OVER:
+                scene_stack.clear()
+                scene_stack.push(GameOverScene())
+            elif new_screen == STATE_SAVE_GAME:
+                scene_stack.push(SaveGameScene())
+            elif new_screen == STATE_LOAD_GAME:
+                scene_stack.push(LoadGameScene())
             elif new_screen in (STATE_PLAYING, STATE_ENDURANCE):
                 if current_state == STATE_PAUSED:
                     scene_stack.pop()
@@ -1075,7 +1130,7 @@ def _render_current_scene(
         for msg in game_state.weapon_pickup_messages[:]:
             if msg["timer"] <= 0:
                 game_state.weapon_pickup_messages.remove(msg)
-    elif current_state in (STATE_TITLE, STATE_MENU, STATE_PAUSED, STATE_HIGH_SCORES, STATE_NAME_INPUT, "SHADER_TEST", "SHADER_SETTINGS"):
+    elif current_state in (STATE_TITLE, STATE_MENU, STATE_PAUSED, STATE_HIGH_SCORES, STATE_NAME_INPUT, STATE_GAME_OVER, STATE_SAVE_GAME, STATE_LOAD_GAME, "SHADER_TEST", "SHADER_SETTINGS"):
         render_ctx = RenderContext.from_app_ctx(ctx)
         # When paused + enable_pause_shaders: render gameplay frame, apply pause stack, then draw UI on top
         if current_state == STATE_PAUSED and pause_shaders_enabled:
@@ -1155,10 +1210,6 @@ def _render_current_scene(
                 print(f"[Menu shader] Error applying shader stack: {e}")
                 import traceback
                 traceback.print_exc()
-    elif current_state == STATE_GAME_OVER:
-        # Game over screen
-        # (Game over rendering would go here)
-        pass
     elif current_state == STATE_VICTORY:
         # Victory screen
         # (Victory rendering would go here)

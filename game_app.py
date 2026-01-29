@@ -80,7 +80,7 @@ class GameApp:
     def update(self, dt: float) -> bool:
         """Run simulation updates. Returns False if the game should stop running."""
         import game as game_module
-        from constants import STATE_PLAYING, STATE_ENDURANCE
+        from constants import STATE_PLAYING, STATE_ENDURANCE, STATE_GAME_OVER
         
         # Update run time
         self.game_state.run_time += dt
@@ -179,6 +179,16 @@ class GameApp:
             if self.telemetry_enabled:
                 game_module.update_telemetry(self.game_state, dt, self.ctx)
             self._continue_blink_t = self.game_state.ui.continue_blink_t
+        
+        # Check if current_screen changed to GAME_OVER during simulation (player death)
+        # If so, sync the scene stack
+        if self.game_state.current_screen == STATE_GAME_OVER:
+            scene_state = game_module._get_current_state(self.scene_stack)
+            if scene_state != STATE_GAME_OVER:
+                # Player died - push game over scene
+                from scenes.game_over import GameOverScene
+                self.scene_stack.clear()
+                self.scene_stack.push(GameOverScene())
         
         return True
 

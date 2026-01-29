@@ -46,3 +46,13 @@ class UiState:
     # Confirmation dialogs
     title_confirm_quit: bool = False
     menu_confirm_quit: bool = False
+    
+    # Game over menu state
+    game_over_selected: int = 0  # 0=Try Again, 1=Save, 2=Quit
+    
+    # Save/Load menu state
+    save_slot_selected: int = 0  # 0, 1, or 2
+    save_name_input: str = ""  # Name input for save slot
+    save_name_active: bool = False  # Whether name input is active
+    load_slot_selected: int = 0  # 0, 1, or 2
+    save_and_quit: bool = False  # If True, go to title after saving (from pause menu)

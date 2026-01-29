@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import pygame
-from constants import STATE_PLAYING, STATE_ENDURANCE, STATE_MENU, pause_options
+from constants import STATE_PLAYING, STATE_ENDURANCE, STATE_MENU, STATE_SAVE_GAME, pause_options
 from rendering import RenderContext, draw_centered_text
 
 
@@ -144,6 +144,11 @@ def handle_events(events, game_state, ctx):
                         game_state.ui.pause_shader_options_row = 0
                     else:
                         game_state.ui.pause_shader_options_row = 0  # Reset to first option
+            elif choice == "Save & Quit":
+                if game_state is not None:
+                    game_state.ui.save_and_quit = True  # Flag to go to title after saving
+                    out["screen"] = STATE_SAVE_GAME
+                    out["save_and_quit"] = True
             elif choice == "Exit to main menu":
                 out["screen"] = STATE_MENU
             elif choice == "Quit":

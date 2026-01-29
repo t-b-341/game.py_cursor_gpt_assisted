@@ -1,7 +1,7 @@
 """PauseScene: pause overlay and menu. Wraps screens.pause handle_events and render."""
 from __future__ import annotations
 
-from constants import STATE_PAUSED, STATE_PLAYING, STATE_ENDURANCE, STATE_MENU
+from constants import STATE_PAUSED, STATE_PLAYING, STATE_ENDURANCE, STATE_MENU, STATE_SAVE_GAME
 from rendering import RenderContext
 from screens import pause as pause_screen
 from scenes.transitions import SceneTransition
@@ -35,6 +35,9 @@ class PauseScene:
                 return SceneTransition.pop()
             elif screen == STATE_MENU:
                 return SceneTransition.replace(STATE_MENU)
+            elif screen == STATE_SAVE_GAME:
+                # Save & Quit - open save screen
+                return SceneTransition.push(STATE_SAVE_GAME)
             elif screen == "SHADER_SETTINGS":
                 # Open shader settings screen
                 return SceneTransition.push("SHADER_SETTINGS")
