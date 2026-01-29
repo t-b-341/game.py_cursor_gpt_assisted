@@ -106,7 +106,7 @@ custom_profile_stats_keys = ["hp_mult", "speed_mult", "damage_mult", "firerate_m
 # ----------------------------
 # UI constants
 # ----------------------------
-pause_options = ["Continue", "Restart (Wave 1)", "Shader options", "Save & Quit", "Exit to main menu", "Quit"]
+pause_options = ["Continue", "Restart (Wave 1)", "Audio options", "Shader options", "Save & Quit", "Exit to main menu", "Quit"]
 controls_actions = ["move_left", "move_right", "move_up", "move_down", "boost", "slow", "dash", "ally_drop", "direct_allies"]
 
 # ----------------------------

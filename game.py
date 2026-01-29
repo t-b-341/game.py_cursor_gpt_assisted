@@ -212,8 +212,26 @@ from state import GameState
 from context import AppContext
 from event_bus import EventBus, GameEvent
 from config import GameConfig
-# TODO: Remove SCREEN_HANDLERS import once all screens are fully migrated to scenes
+from config.projectile_defs import get_projectile_def
+# -----------------------------------------------------------------------------
+# LEGACY SCREEN HANDLER MIGRATION PATH:
+# -----------------------------------------------------------------------------
+# TODO: Remove SCREEN_HANDLERS import once all screens are fully migrated to scenes.
+# 
+# Migration plan:
+# 1. All game states should eventually have corresponding Scene classes in scenes/.
+# 2. Once every state (PAUSED, HIGH_SCORES, NAME_INPUT, etc.) is fully represented 
+#    as a scene with handle_input_transition() and render():
+#    - Remove SCREEN_HANDLERS dictionary from screens/__init__.py
+#    - Remove handle_legacy_state_events() from game.py
+#    - Remove screen_ctx dict (replaced by AppContext/RenderContext)
+# 3. _handle_events becomes a thin coordinator calling only handle_global_events 
+#    and handle_scene_events.
+#
+# Current status: SCREEN_HANDLERS is no longer imported (scenes are primary).
+# Legacy state handling still exists in handle_legacy_state_events for edge cases.
 # from screens import SCREEN_HANDLERS  # Deprecated - use scenes instead
+# -----------------------------------------------------------------------------
 from screens.gameplay import render as gameplay_render
 from rendering_shaders import render_gameplay_with_optional_shaders, render_gameplay_frame_to_surface
 from scenes import SceneStack, GameplayScene, PauseScene, HighScoreScene, NameInputScene, ShaderTestScene, TitleScene, OptionsScene, QuickLaunchScene
@@ -228,6 +246,13 @@ from systems.spawn_system import start_wave as spawn_system_start_wave
 from systems.input_system import handle_gameplay_input
 from systems.telemetry_system import update_telemetry
 from systems.audio_system import init_mixer, sync_from_config, play_sfx, play_music, stop_music
+from systems.projectile_spawning import (
+    spawn_player_bullet_and_log,
+    spawn_enemy_projectile,
+    spawn_enemy_projectile_predictive,
+    spawn_boss_projectile,
+    spawn_ally_missile,
+)
 from pickups import apply_pickup_effect
 from systems.collision_movement import move_player_with_push, move_enemy_with_push
 try:
@@ -249,7 +274,16 @@ from level_utils import filter_blocks_no_overlap, clone_enemies_from_templates
 from hazards import hazard_obstacles, check_point_in_hazard
 from level_state import LevelState
 
-# Placeholder WIDTH/HEIGHT for module-level geometry (trapezoids, etc.). Runtime dimensions live in AppContext (ctx.width, ctx.height).
+# -----------------------------------------------------------------------------
+# TODO: LEGACY PLACEHOLDER DIMENSIONS
+# These module-level WIDTH/HEIGHT are placeholder values used only for initial
+# geometry definitions (trapezoids, blocks, etc.) before AppContext is created.
+# All runtime code should use ctx.width/ctx.height (world dimensions) or 
+# ctx.display_width/ctx.display_height (screen dimensions).
+# 
+# Once build_level_geometry() is moved to level_builder.py and accepts 
+# explicit width/height parameters, these placeholders can be removed.
+# -----------------------------------------------------------------------------
 WIDTH = 1920
 HEIGHT = 1080
 
@@ -264,6 +298,16 @@ def _init_pygame_and_mixer() -> None:
     pygame.init()
     init_mixer()
     print("welcome to my game! :D")
+    
+    # Verify sound files can be loaded
+    from asset_manager import get_sound
+    test_sounds = ["BASIC SHOT", "DODGE", "WAVE START"]
+    for name in test_sounds:
+        snd = get_sound(name)
+        if snd:
+            print(f"[audio] Sound loaded OK: {name}")
+        else:
+            print(f"[audio] WARNING: Could not load sound: {name}")
 
 
 def _create_window_and_clock() -> tuple[pygame.Surface, pygame.time.Clock, int, int]:
@@ -285,7 +329,7 @@ def _create_window_and_clock() -> tuple[pygame.Surface, pygame.time.Clock, int, 
 
 def _build_app_context(screen: pygame.Surface, clock: pygame.time.Clock, display_width: int, display_height: int, using_c_physics: bool) -> AppContext:
     """Build AppContext with config, controls, and resources."""
-    from event_bus import EventBus
+    # EventBus is imported at module level
     controls = load_controls()
     
     cfg = GameConfig(
@@ -554,35 +598,6 @@ def _create_app():
     r.simulation_accumulator = 0.0
     return r
 
-    # Fixed-step simulation: deterministic updates, robust to frame spikes
-    FPS = 60
-    FIXED_DT = 1.0 / 60.0
-    MAX_SIMULATION_STEPS = 6  # cap to avoid spiral of death when dt is large
-    simulation_accumulator = 0.0
-
-    def _update_simulation(sim_dt: float, gs: GameState, app_ctx: AppContext) -> None:
-        """Run one fixed timestep of gameplay (timers, movement, collision, spawn, AI)."""
-        for system in SIMULATION_SYSTEMS:
-            system(gs, sim_dt, app_ctx)
-
-    # _sync_scene_stack removed: scene transitions now handle stack management directly
-
-    scene_stack = SceneStack()
-    # Initialize with TitleScene since game_state.current_screen is STATE_TITLE
-    scene_stack.push(TitleScene())
-    class _AppRes:
-        pass
-    r = _AppRes()
-    r.ctx = ctx
-    r.game_state = game_state
-    r.scene_stack = scene_stack
-    r.fps = FPS
-    r.fixed_dt = FIXED_DT
-    r.max_sim_steps = MAX_SIMULATION_STEPS
-    r.update_simulation = _update_simulation
-    r.simulation_accumulator = 0.0
-    return r
-
 
 def _print_active_shader_profiles(config) -> None:
     """Debug-only: print currently active shader profile names and stack lengths. Does not change config."""
@@ -712,6 +727,9 @@ def handle_global_events(events: list, ctx: AppContext, game_state: GameState, u
     
     Returns False if the game should stop running (e.g., QUIT event), True otherwise.
     This function is PURELY about "does the game keep running?" and truly global shortcuts.
+    
+    Future: Move this helper into a dedicated input routing module (e.g. input_handlers.py
+    or systems/input_routing.py) and keep _handle_events as a thin coordinator.
     """
     for event in events:
         if event.type == pygame.QUIT:
@@ -725,6 +743,9 @@ def handle_scene_events(events: list, ctx: AppContext, game_state: GameState, ui
     
     Returns a SceneTransition object (or None) describing what should happen (push, pop, quit, replace, none).
     Does NOT handle legacy game_state.current_screen states - that's in handle_legacy_state_events.
+    
+    Future: Move this helper into a dedicated input routing module (e.g. input_handlers.py
+    or systems/input_routing.py) and keep _handle_events as a thin coordinator.
     """
     current_scene = _get_current_scene(scene_stack)
     if current_scene is None:
@@ -751,6 +772,10 @@ def handle_legacy_state_events(events: list, ctx: AppContext, game_state: GameSt
     
     Handles legacy input that still uses game_state.current_screen, STATE_* constants, etc.
     Returns (running, previous_game_state, pause_selected, controls_selected, controls_rebinding, result_dict).
+    
+    Future: Move this helper into a dedicated input routing module (e.g. input_handlers.py
+    or systems/input_routing.py) and keep _handle_events as a thin coordinator.
+    Once every state is fully represented as a scene, we can remove this function entirely.
     """
     running = True
     result = {"screen": None, "quit": False, "restart": False, "restart_to_wave1": False, "replay": False, "pop": False, "start_game": False}
@@ -857,6 +882,14 @@ def handle_legacy_state_events(events: list, ctx: AppContext, game_state: GameSt
     return running, previous_game_state, pause_selected, controls_selected, controls_rebinding, result
 
 
+# -----------------------------------------------------------------------------
+# EVENT HANDLING - _handle_events is the coordinator
+# Future: Move helper functions (handle_global_events, handle_scene_events, 
+# handle_legacy_state_events) into a dedicated input routing module 
+# (e.g. input_handlers.py or systems/input_routing.py) and keep _handle_events
+# as a thin coordinator.
+# -----------------------------------------------------------------------------
+
 def _handle_events(
     events: list,
     ctx: AppContext,
@@ -871,13 +904,16 @@ def _handle_events(
     """
     Handle all input events. Returns (running, previous_game_state, pause_selected, controls_selected, controls_rebinding).
     
-    This function coordinates three helper functions:
+    This function is the COORDINATOR for input handling. It delegates to three helpers:
     1. handle_global_events: Handles truly global events (QUIT, etc.)
     2. handle_scene_events: Delegates to the modern scene system
     3. handle_legacy_state_events: Handles legacy screen-based input (TODO: remove once migration complete)
     
     Migration path: As screens are fully migrated to scenes, handle_legacy_state_events will be removed,
     and this function will become a thin coordinator of global and scene events only.
+    
+    Future: Move the helper functions into a dedicated input routing module and keep this
+    function as a thin coordinator in game.py.
     """
     # Step 1: Handle global events (QUIT, etc.)
     running = handle_global_events(events, ctx, game_state, game_state.ui, scene_stack, screen_ctx)
@@ -2076,297 +2112,12 @@ def create_pickup_collection_effect(x: int, y: int, color: tuple[int, int, int],
 
 
 # Rendering helper functions are now imported from rendering.py
-
-
-def spawn_player_bullet_and_log(state: GameState, ctx: AppContext):
-    if state.player_rect is None:
-        return
-    # Determine aiming direction based on aiming mode
-    if ctx.config.aim_mode == AIM_ARROWS:
-        # Arrow key aiming
-        keys = pygame.key.get_pressed()
-        dx = 0
-        dy = 0
-        if keys[pygame.K_LEFT]:
-            dx = -1
-        if keys[pygame.K_RIGHT]:
-            dx = 1
-        if keys[pygame.K_UP]:
-            dy = -1
-        if keys[pygame.K_DOWN]:
-            dy = 1
-        
-        if dx == 0 and dy == 0:
-            # No arrow keys pressed, use last movement direction or default
-            if state.last_move_velocity.length_squared() > 0:
-                base_dir = state.last_move_velocity.normalize()
-            else:
-                base_dir = pygame.Vector2(1, 0)  # Default right
-        else:
-            base_dir = pygame.Vector2(dx, dy).normalize()
-        
-        # Calculate target position for telemetry (extend direction from player)
-        target_dist = 100  # Distance to calculate target point
-        mx = int(state.player_rect.centerx + base_dir.x * target_dist)
-        my = int(state.player_rect.centery + base_dir.y * target_dist)
-    else:
-        # Mouse aiming (default) - use world coordinates for aiming
-        mx, my = ctx.get_world_mouse_pos()
-        base_dir = vec_toward(state.player_rect.centerx, state.player_rect.centery, mx, my)
-
-    shape = player_bullet_shapes[state.player_bullet_shape_index % len(player_bullet_shapes)]
-    state.player_bullet_shape_index = (state.player_bullet_shape_index + 1) % len(player_bullet_shapes)
-
-    # Resolve weapon params from data-driven def when available, else WEAPON_CONFIGS
-    from config.projectile_defs import get_projectile_def
-    weapon_mode = state.current_weapon_mode
-    pd = get_projectile_def("player_" + weapon_mode) if weapon_mode != "laser" else None
-    if pd:
-        base_speed = pd["speed"]
-        base_size = pd["size"]
-        weapon_config = {
-            "damage_multiplier": pd["damage_multiplier"],
-            "size_multiplier": pd["size_multiplier"],
-            "speed_multiplier": 1.0,
-            "spread_angle_deg": pd["spread_angle_deg"],
-            "num_projectiles": pd["num_projectiles"],
-            "color": pd["color"],
-            "explosion_radius": pd["explosion_radius"],
-            "max_bounces": pd["max_bounces"],
-            "is_rocket": pd["is_rocket"],
-        }
-    else:
-        weapon_config = WEAPON_CONFIGS.get(weapon_mode, WEAPON_CONFIGS["basic"])
-        base_speed = player_bullet_speed * weapon_config["speed_multiplier"]
-        base_size = player_bullet_size
-
-    # Determine shot pattern based on weapon mode
-    if weapon_config["num_projectiles"] > 1:
-        # Multi-projectile weapons (triple, basic)
-        spread_angle_deg = weapon_config["spread_angle_deg"]
-        directions = [
-            base_dir,  # center
-            base_dir.rotate(-spread_angle_deg),  # left
-            base_dir.rotate(spread_angle_deg),  # right
-        ]
-    else:
-        directions = [base_dir]
-
-    # Spawn bullets for each direction
-    for d in directions:
-        # Apply stat multipliers and weapon-specific multipliers
-        size_mult = state.player_stat_multipliers["bullet_size"] * weapon_config["size_multiplier"]
-        effective_size = (
-            int(base_size[0] * size_mult),
-            int(base_size[1] * size_mult),
-        )
-        effective_speed = base_speed * state.player_stat_multipliers["bullet_speed"]
-        base_damage = int(state.player_bullet_damage * state.player_stat_multipliers["bullet_damage"])
-        # Apply weapon damage multiplier
-        effective_damage = int(base_damage * weapon_config["damage_multiplier"])
-        # Unlocked-weapon shots deal 1.75x damage
-        if state.current_weapon_mode in state.unlocked_weapons:
-            effective_damage = int(effective_damage * UNLOCKED_WEAPON_DAMAGE_MULT)
-        
-        # Apply random damage multiplier (from random_damage pickup)
-        effective_damage = int(effective_damage * state.random_damage_multiplier)
-        
-        # Rocket launcher: always has explosion
-        if weapon_config["is_rocket"]:
-            rocket_explosion = max(weapon_config["explosion_radius"], state.player_stat_multipliers["bullet_explosion_radius"] + 100.0)
-        else:
-            rocket_explosion = max(weapon_config["explosion_radius"], state.player_stat_multipliers["bullet_explosion_radius"])
-
-    r = pygame.Rect(
-        state.player_rect.centerx - effective_size[0] // 2,
-        state.player_rect.centery - effective_size[1] // 2,
-        effective_size[0],
-        effective_size[1],
-    )
-    state.player_bullets.append({
-        "rect": r,
-        "vel": d * effective_speed,
-        "shape": shape,
-        "color": weapon_config.get("color", player_bullets_color),  # Use weapon color from config
-            "damage": effective_damage,
-                "penetration": int(state.player_stat_multipliers["bullet_penetration"]),
-                "explosion_radius": rocket_explosion,
-                "knockback": state.player_stat_multipliers["bullet_knockback"],
-                "bounces": weapon_config["max_bounces"],  # Max bounces from config
-                "is_rocket": weapon_config["is_rocket"],
-            })
-    state.shots_fired += 1
-    
-    # Play sound effect based on weapon mode
-    from systems.audio_system import play_sfx
-    if weapon_config["is_rocket"]:
-        play_sfx("ROCKET")
-    else:
-        play_sfx("BASIC SHOT")
-
-    if ctx.config.enable_telemetry and ctx.telemetry_client:
-        ctx.telemetry_client.log_shot(
-        ShotEvent(
-                t=state.run_time,
-                origin_x=state.player_rect.centerx,
-                origin_y=state.player_rect.centery,
-            target_x=mx,
-            target_y=my,
-            dir_x=float(d.x),
-            dir_y=float(d.y),
-        )
-    )
-    
-    # Log bullet metadata
-        ctx.telemetry_client.log_bullet_metadata(
-        BulletMetadataEvent(
-                t=state.run_time,
-            bullet_type="player",
-            shape=shape,
-            color_r=player_bullets_color[0],
-            color_g=player_bullets_color[1],
-            color_b=player_bullets_color[2],
-        )
-    )
-
-
-def spawn_enemy_projectile(enemy: dict, state: GameState, telemetry_client=None, telemetry_enabled: bool = False):
-    """Spawn projectile from enemy targeting nearest threat (player or friendly AI). Respects max-enemies-targeting-player cap."""
-    if state.player_rect is None:
-        return
-    e_pos = pygame.Vector2(enemy["rect"].center)
-    ctx = getattr(state, "level_context", None)
-    allow_player = id(enemy) in ctx.get("_player_targeting_slots", set()) if ctx else True
-    threat_result = find_nearest_threat(e_pos, state.player_rect, state.friendly_ai, allow_player=allow_player)
-    
-    # Calculate direction
-    if threat_result:
-        threat_pos, threat_type = threat_result
-        d = vec_toward(e_pos.x, e_pos.y, threat_pos.x, threat_pos.y)
-    elif allow_player:
-        # Fallback to player if no threats and this enemy may target player
-        d = vec_toward(enemy["rect"].centerx, enemy["rect"].centery, state.player_rect.centerx, state.player_rect.centery)
-    else:
-        # No threat and not allowed to target player; fire in a neutral direction
-        d = pygame.Vector2(1, 0)
-    
-    from config.projectile_defs import get_projectile_def
-    edef = get_projectile_def("enemy_default")
-    proj_size = edef["size"] if edef else enemy_projectile_size
-    default_color = edef["color"] if edef else enemy_projectiles_color
-    # Create projectile rect and properties (used regardless of threat result)
-    r = pygame.Rect(
-        enemy["rect"].centerx - proj_size[0] // 2,
-        enemy["rect"].centery - proj_size[1] // 2,
-        proj_size[0],
-        proj_size[1],
-    )
-    proj_color = enemy.get("projectile_color", default_color)
-    proj_shape = enemy.get("projectile_shape", "circle")
-    bounces = enemy.get("bouncing_projectiles", False)
-    
-    proj_damage = enemy.get("flame_damage", enemy.get("damage", 10))
-    state.enemy_projectiles.append({
-        "rect": r,
-        "vel": d * enemy["projectile_speed"],
-        "enemy_type": enemy["type"],
-        "color": proj_color,
-        "shape": proj_shape,
-        "bounces": 10 if bounces else 0,
-        "damage": proj_damage,
-    })
-    
-    # Log enemy projectile metadata
-    if telemetry_enabled and telemetry_client:
-        telemetry_client.log_bullet_metadata(
-            BulletMetadataEvent(
-                t=state.run_time,
-                bullet_type="enemy",
-                shape=proj_shape,
-                color_r=proj_color[0],
-                color_g=proj_color[1],
-                color_b=proj_color[2],
-                source_enemy_type=enemy["type"],
-            )
-        )
-
-
-def spawn_enemy_projectile_predictive(enemy: dict, direction: pygame.Vector2, state: GameState):
-    """Spawn projectile from predictive enemy in a specific direction (predicted player position)."""
-    from config.projectile_defs import get_projectile_def
-    edef = get_projectile_def("enemy_default")
-    proj_size = edef["size"] if edef else enemy_projectile_size
-    default_color = edef["color"] if edef else enemy_projectiles_color
-    r = pygame.Rect(
-        enemy["rect"].centerx - proj_size[0] // 2,
-        enemy["rect"].centery - proj_size[1] // 2,
-        proj_size[0],
-        proj_size[1],
-    )
-    proj_color = enemy.get("projectile_color", default_color)
-    proj_shape = enemy.get("projectile_shape", "diamond")  # Rhomboid shape
-    state.enemy_projectiles.append({
-        "rect": r,
-        "vel": direction * enemy["projectile_speed"],
-        "enemy_type": enemy["type"],
-        "color": proj_color,
-        "shape": proj_shape,
-        "bounces": 0,
-        "lifetime": 5.0,  # Projectiles disappear after 5 seconds to prevent lingering
-    })
-
-
-def spawn_boss_projectile(boss: dict, direction: pygame.Vector2, state: GameState):
-    """Spawn a projectile from the boss in a specific direction."""
-    from config.projectile_defs import get_projectile_def
-    edef = get_projectile_def("enemy_default")
-    proj_size = edef["size"] if edef else enemy_projectile_size
-    default_color = edef["color"] if edef else enemy_projectiles_color
-    r = pygame.Rect(
-        boss["rect"].centerx - proj_size[0] // 2,
-        boss["rect"].centery - proj_size[1] // 2,
-        proj_size[0],
-        proj_size[1],
-    )
-    proj_color = boss.get("projectile_color", default_color)
-    proj_shape = boss.get("projectile_shape", "circle")
-    state.enemy_projectiles.append(
-        {
-            "rect": r,
-            "vel": direction * boss["projectile_speed"],
-            "enemy_type": boss["type"],
-            "color": proj_color,
-            "shape": proj_shape,
-            "bounces": 0,
-            "lifetime": 5.0,  # Boss projectiles disappear after 5 seconds to prevent lingering
-        }
-    )
+# Projectile spawning functions moved to systems/projectile_spawning.py
 
 
 def calculate_kill_score(wave_num: int, run_time: float) -> int:
     """Calculate score for killing an enemy."""
     return SCORE_BASE_POINTS + (wave_num * SCORE_WAVE_MULTIPLIER) + int(run_time * SCORE_TIME_MULTIPLIER)
-
-
-def spawn_ally_missile(friendly: dict, target_enemy: dict, state: GameState) -> None:
-    """Spawn a 3-shot burst of seeking missiles from an ally (e.g. striker) toward target_enemy."""
-    burst = friendly.get("missile_burst_count", 3)
-    damage = friendly.get("missile_damage", 300)
-    radius = friendly.get("missile_explosion_radius", 80)
-    speed_val = 500
-    burst_offsets = [(-10, -10), (0, -15), (10, -10)]
-    for i in range(burst):
-        ox, oy = burst_offsets[i % len(burst_offsets)]
-        cx, cy = friendly["rect"].centerx, friendly["rect"].centery
-        r = pygame.Rect(cx - 8 + ox, cy - 8 + oy, 16, 16)
-        state.missiles.append({
-            "rect": r,
-            "vel": pygame.Vector2(0, 0),
-            "target_enemy": target_enemy,
-            "speed": speed_val,
-            "damage": damage,
-            "explosion_radius": radius,
-        })
 
 
 def kill_enemy(enemy: dict, state: GameState, width: int, height: int, event_bus: object | None = None) -> None:

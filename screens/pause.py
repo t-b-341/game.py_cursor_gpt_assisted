@@ -4,6 +4,10 @@ from __future__ import annotations
 import pygame
 from constants import STATE_PLAYING, STATE_ENDURANCE, STATE_MENU, STATE_SAVE_GAME, pause_options
 from rendering import RenderContext, draw_centered_text
+from systems.audio_system import (
+    get_sfx_volume, get_music_volume, set_sfx_volume, set_music_volume,
+    is_muted_sfx, is_muted_music, set_muted, play_sfx
+)
 
 
 def handle_events(events, game_state, ctx):
@@ -21,6 +25,62 @@ def handle_events(events, game_state, ctx):
     for event in events:
         if not hasattr(event, "type") or event.type != pygame.KEYDOWN:
             continue
+        
+        # Audio submenu handling
+        if submenu == "audio":
+            if not hasattr(game_state.ui, 'pause_audio_options_row'):
+                game_state.ui.pause_audio_options_row = 0
+            row = game_state.ui.pause_audio_options_row
+            
+            if event.key == pygame.K_ESCAPE:
+                game_state.ui.pause_submenu = None
+                break
+            elif event.key in (pygame.K_UP, pygame.K_w):
+                game_state.ui.pause_audio_options_row = (row - 1) % 4  # 4 options
+            elif event.key in (pygame.K_DOWN, pygame.K_s):
+                game_state.ui.pause_audio_options_row = (row + 1) % 4  # 4 options
+            elif event.key in (pygame.K_LEFT, pygame.K_a):
+                if row == 0:  # SFX Volume
+                    new_vol = max(0.0, get_sfx_volume() - 0.1)
+                    set_sfx_volume(new_vol)
+                    if cfg:
+                        cfg.sfx_volume = new_vol
+                elif row == 1:  # Music Volume
+                    new_vol = max(0.0, get_music_volume() - 0.1)
+                    set_music_volume(new_vol)
+                    if cfg:
+                        cfg.music_volume = new_vol
+                elif row == 2:  # Mute SFX
+                    set_muted(sfx=not is_muted_sfx())
+                    if cfg:
+                        cfg.mute_sfx = is_muted_sfx()
+                elif row == 3:  # Mute Music
+                    set_muted(music=not is_muted_music())
+                    if cfg:
+                        cfg.mute_music = is_muted_music()
+            elif event.key in (pygame.K_RIGHT, pygame.K_d):
+                if row == 0:  # SFX Volume
+                    new_vol = min(1.0, get_sfx_volume() + 0.1)
+                    set_sfx_volume(new_vol)
+                    if cfg:
+                        cfg.sfx_volume = new_vol
+                    # Play test sound when adjusting SFX volume
+                    play_sfx("BASIC SHOT")
+                elif row == 1:  # Music Volume
+                    new_vol = min(1.0, get_music_volume() + 0.1)
+                    set_music_volume(new_vol)
+                    if cfg:
+                        cfg.music_volume = new_vol
+                elif row == 2:  # Mute SFX
+                    set_muted(sfx=not is_muted_sfx())
+                    if cfg:
+                        cfg.mute_sfx = is_muted_sfx()
+                elif row == 3:  # Mute Music
+                    set_muted(music=not is_muted_music())
+                    if cfg:
+                        cfg.mute_music = is_muted_music()
+            continue
+        
         if submenu == "shaders":
             # Ensure row is initialized
             if game_state is not None:
@@ -136,6 +196,13 @@ def handle_events(events, game_state, ctx):
             elif choice == "Restart (Wave 1)":
                 out["restart_to_wave1"] = True
                 out["screen"] = STATE_PLAYING
+            elif choice == "Audio options":
+                if game_state is not None:
+                    game_state.ui.pause_submenu = "audio"
+                    if not hasattr(game_state.ui, 'pause_audio_options_row'):
+                        game_state.ui.pause_audio_options_row = 0
+                    else:
+                        game_state.ui.pause_audio_options_row = 0  # Reset to first option
             elif choice == "Shader options":
                 if game_state is not None:
                     game_state.ui.pause_submenu = "shaders"
@@ -171,6 +238,31 @@ def render(render_ctx: RenderContext, game_state, screen_ctx) -> None:
     if game_state is None:
         return
     submenu = game_state.ui.pause_submenu
+    
+    # Audio submenu render
+    if submenu == "audio":
+        row = getattr(game_state.ui, 'pause_audio_options_row', 0)
+        row = max(0, min(3, row))  # 4 options
+        
+        sfx_vol = int(get_sfx_volume() * 100)
+        music_vol = int(get_music_volume() * 100)
+        sfx_muted = is_muted_sfx()
+        music_muted = is_muted_music()
+        
+        lines = [
+            f"SFX Volume: {sfx_vol}%",
+            f"Music Volume: {music_vol}%",
+            f"Mute SFX: {'Yes' if sfx_muted else 'No'}",
+            f"Mute Music: {'Yes' if music_muted else 'No'}",
+        ]
+        
+        draw_centered_text(screen, font, big_font, WIDTH, "Audio Options", HEIGHT // 2 - 140, use_big=True)
+        for i, line in enumerate(lines):
+            color = (255, 255, 0) if i == row else (200, 200, 200)
+            draw_centered_text(screen, font, big_font, WIDTH, f"{'->' if i == row else '  '} {line}", HEIGHT // 2 - 80 + i * 40, color)
+        draw_centered_text(screen, font, big_font, WIDTH, "UP/DOWN: Select | LEFT/RIGHT: Adjust | ESC: Back", HEIGHT - 80, (150, 150, 150))
+        return
+    
     if submenu == "shaders":
         app_ctx = screen_ctx.get("app_ctx") if isinstance(screen_ctx, dict) else None
         cfg = getattr(app_ctx, "config", None) if app_ctx else None
@@ -195,10 +287,10 @@ def render(render_ctx: RenderContext, game_state, screen_ctx) -> None:
         draw_centered_text(screen, font, big_font, WIDTH, "UP/DOWN: Select | LEFT/RIGHT: Change value | ENTER: Open Full/Continue | ESC: Back", HEIGHT - 80, (150, 150, 150))
         return
 
-    draw_centered_text(screen, font, big_font, WIDTH, "PAUSED", HEIGHT // 2 - 100, use_big=True)
-    y_offset = HEIGHT // 2
+    draw_centered_text(screen, font, big_font, WIDTH, "PAUSED", HEIGHT // 2 - 140, use_big=True)
+    y_offset = HEIGHT // 2 - 60
     pause_selected = game_state.ui.pause_selected if game_state is not None else 0
     for i, option in enumerate(pause_options):
         color = (255, 255, 0) if i == pause_selected else (200, 200, 200)
-        draw_centered_text(screen, font, big_font, WIDTH, f"{'->' if i == pause_selected else '  '} {option}", y_offset + i * 50, color)
-    draw_centered_text(screen, font, big_font, WIDTH, "Press ENTER to select, ESC to unpause", HEIGHT - 100, (150, 150, 150))
+        draw_centered_text(screen, font, big_font, WIDTH, f"{'->' if i == pause_selected else '  '} {option}", y_offset + i * 40, color)
+    draw_centered_text(screen, font, big_font, WIDTH, "Press ENTER to select, ESC to unpause", HEIGHT - 80, (150, 150, 150))

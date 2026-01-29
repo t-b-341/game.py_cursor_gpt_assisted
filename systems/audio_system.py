@@ -96,19 +96,25 @@ def sync_from_config(config: Any) -> None:
         set_muted(music=config.mute_music)
 
 
-def play_sfx(name: str) -> bool:
+def play_sfx(name: str, debug: bool = False) -> bool:
     """
-    Play a sound effect from assets/sfx/ by name. Respects SFX volume and mute.
+    Play a sound effect from assets/sfx/ or Game Sound FX/ by name. Respects SFX volume and mute.
     Returns True if playback started, False if sound missing or muted.
     """
     if _mute_sfx:
+        if debug:
+            print(f"[audio] SFX muted, skipping: {name}")
         return False
     get_sound, _ = _get_asset_manager()
     snd = get_sound(name)
     if snd is None:
+        if debug:
+            print(f"[audio] Sound not found: {name}")
         return False
     snd.set_volume(_sfx_volume)
     snd.play()
+    if debug:
+        print(f"[audio] Playing: {name} at volume {_sfx_volume}")
     return True
 
 
