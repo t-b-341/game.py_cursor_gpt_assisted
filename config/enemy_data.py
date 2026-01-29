@@ -274,8 +274,8 @@ BOSS_TEMPLATE: dict = {
     "type": "FINAL_BOSS",
     "rect": pygame.Rect(0, 0, 100, 100),  # Size only, position set at runtime
     "color": (255, 0, 0),
-    "hp": 300,  # Note: This may be scaled at runtime
-    "max_hp": 300,
+    "hp": 3000,  # Note: This may be scaled at runtime
+    "max_hp": 3000,
     "shoot_cooldown": 0.5,
     "projectile_speed": 200,  # Reduced by 0.5x
     "projectile_color": (255, 50, 50),

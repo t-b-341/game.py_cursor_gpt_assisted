@@ -133,6 +133,7 @@ from constants import (
     STATE_NAME_INPUT,
     STATE_PAUSED,
     STATE_PLAYING,
+    STATE_QUICK_LAUNCH,
     STATE_SAVE_GAME,
     STATE_TITLE,
     STATE_VICTORY,
@@ -215,7 +216,7 @@ from config import GameConfig
 # from screens import SCREEN_HANDLERS  # Deprecated - use scenes instead
 from screens.gameplay import render as gameplay_render
 from rendering_shaders import render_gameplay_with_optional_shaders, render_gameplay_frame_to_surface
-from scenes import SceneStack, GameplayScene, PauseScene, HighScoreScene, NameInputScene, ShaderTestScene, TitleScene, OptionsScene
+from scenes import SceneStack, GameplayScene, PauseScene, HighScoreScene, NameInputScene, ShaderTestScene, TitleScene, OptionsScene, QuickLaunchScene
 from scenes.game_over import GameOverScene
 from scenes.save_game import SaveGameScene
 from scenes.load_game import LoadGameScene
@@ -619,6 +620,8 @@ def _apply_scene_transition(transition: SceneTransition, scene_stack: SceneStack
             scene_stack.push(PauseScene())
         elif scene_name == STATE_MENU:
             scene_stack.push(OptionsScene())
+        elif scene_name == STATE_QUICK_LAUNCH:
+            scene_stack.push(QuickLaunchScene())
         elif scene_name == STATE_TITLE:
             scene_stack.push(TitleScene())
         elif scene_name == STATE_NAME_INPUT:
@@ -638,10 +641,9 @@ def _apply_scene_transition(transition: SceneTransition, scene_stack: SceneStack
         elif scene_name == "SHADER_SETTINGS":
             from scenes.shader_settings import ShaderSettingsScreen
             scene_stack.push(ShaderSettingsScreen())
-        else:
-            # Unknown scene name, fall back to state machine
-            if scene_name:
-                game_state.current_screen = scene_name
+        # Update current_screen to match the pushed scene
+        if scene_name:
+            game_state.current_screen = scene_name
         return False
     
     if transition.kind == KIND_REPLACE:
@@ -651,6 +653,8 @@ def _apply_scene_transition(transition: SceneTransition, scene_stack: SceneStack
             scene_stack.push(PauseScene())
         elif scene_name == STATE_MENU:
             scene_stack.push(OptionsScene())
+        elif scene_name == STATE_QUICK_LAUNCH:
+            scene_stack.push(QuickLaunchScene())
         elif scene_name == STATE_TITLE:
             scene_stack.push(TitleScene())
         elif scene_name == STATE_NAME_INPUT:
@@ -670,10 +674,9 @@ def _apply_scene_transition(transition: SceneTransition, scene_stack: SceneStack
         elif scene_name == "SHADER_SETTINGS":
             from scenes.shader_settings import ShaderSettingsScreen
             scene_stack.push(ShaderSettingsScreen())
-        else:
-            # Unknown scene name, fall back to state machine
-            if scene_name:
-                game_state.current_screen = scene_name
+        # Update current_screen to match the replaced scene
+        if scene_name:
+            game_state.current_screen = scene_name
         return False
     
     return False
@@ -873,7 +876,7 @@ def _handle_events(
     if transition is not None:
         # Get the result from handle_input to check for flags like start_game, try_again, load_game
         # handle_input_transition calls handle_input internally, but we need the result for fallback processing
-        if current_state in ("SHADER_SETTINGS", STATE_GAME_OVER, STATE_SAVE_GAME, STATE_LOAD_GAME):
+        if current_state in ("SHADER_SETTINGS", STATE_GAME_OVER, STATE_SAVE_GAME, STATE_LOAD_GAME, STATE_QUICK_LAUNCH):
             scene_result = current_scene.handle_input(events, game_state, screen_ctx) if current_scene else None
         
         if transition.kind != KIND_NONE:
@@ -884,7 +887,7 @@ def _handle_events(
         else:
             # Transition is NONE, but handle_input was called (config changes applied)
             # For PAUSED and SHADER_SETTINGS, the input was handled, so mark as handled
-            if current_state == STATE_MENU:
+            if current_state in (STATE_MENU, STATE_QUICK_LAUNCH):
                 handled_by_screen = False  # Let fallback process start_game
             elif current_state == "SHADER_SETTINGS":
                 # Check if start_game was requested from shader settings
@@ -901,7 +904,7 @@ def _handle_events(
     
     # Fallback to old input handling if scene path didn't handle it
     current_state = _get_current_state(scene_stack) or game_state.current_screen
-    if not handled_by_screen and current_state in (STATE_PAUSED, STATE_HIGH_SCORES, STATE_NAME_INPUT, "SHADER_TEST", "SHADER_SETTINGS", STATE_TITLE, STATE_MENU, STATE_GAME_OVER, STATE_SAVE_GAME, STATE_LOAD_GAME):
+    if not handled_by_screen and current_state in (STATE_PAUSED, STATE_HIGH_SCORES, STATE_NAME_INPUT, "SHADER_TEST", "SHADER_SETTINGS", STATE_TITLE, STATE_MENU, STATE_QUICK_LAUNCH, STATE_GAME_OVER, STATE_SAVE_GAME, STATE_LOAD_GAME):
         # Use scene_result if we already got it, otherwise get it now
         if scene_result is not None:
             result = scene_result
@@ -1001,6 +1004,10 @@ def _handle_events(
                 play_music("ambient2", loop=True)
                 scene_stack.clear()
                 scene_stack.push(OptionsScene())
+            elif new_screen == STATE_QUICK_LAUNCH:
+                play_music("ambient2", loop=True)
+                scene_stack.clear()
+                scene_stack.push(QuickLaunchScene())
             elif new_screen == STATE_TITLE:
                 scene_stack.clear()
                 scene_stack.push(TitleScene())
@@ -1130,7 +1137,7 @@ def _render_current_scene(
         for msg in game_state.weapon_pickup_messages[:]:
             if msg["timer"] <= 0:
                 game_state.weapon_pickup_messages.remove(msg)
-    elif current_state in (STATE_TITLE, STATE_MENU, STATE_PAUSED, STATE_HIGH_SCORES, STATE_NAME_INPUT, STATE_GAME_OVER, STATE_SAVE_GAME, STATE_LOAD_GAME, "SHADER_TEST", "SHADER_SETTINGS"):
+    elif current_state in (STATE_TITLE, STATE_MENU, STATE_QUICK_LAUNCH, STATE_PAUSED, STATE_HIGH_SCORES, STATE_NAME_INPUT, STATE_GAME_OVER, STATE_SAVE_GAME, STATE_LOAD_GAME, "SHADER_TEST", "SHADER_SETTINGS"):
         render_ctx = RenderContext.from_app_ctx(ctx)
         # When paused + enable_pause_shaders: render gameplay frame, apply pause stack, then draw UI on top
         if current_state == STATE_PAUSED and pause_shaders_enabled:
@@ -1189,10 +1196,10 @@ def _render_current_scene(
         # Config-based shader stacks and legacy lightweight effects
         if current_state == STATE_PAUSED and not pause_shaders_enabled:
             apply_pause_effects(render_ctx.screen, ctx)
-        elif current_state in (STATE_TITLE, STATE_MENU):
+        elif current_state in (STATE_TITLE, STATE_MENU, STATE_QUICK_LAUNCH):
             apply_menu_effects(render_ctx.screen, ctx)
         # Apply config-based menu shader stack when enable_menu_shaders and menu_shader_profile != "none"
-        if current_state in (STATE_TITLE, STATE_MENU) and menu_shaders_enabled:
+        if current_state in (STATE_TITLE, STATE_MENU, STATE_QUICK_LAUNCH) and menu_shaders_enabled:
             try:
                 menu_stack = get_menu_shader_stack(ctx.config)
                 if menu_stack:

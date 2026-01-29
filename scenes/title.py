@@ -1,22 +1,22 @@
-"""TitleScene: title screen with New Game and Load Game options. ESC toggles quit dialog."""
+"""TitleScene: title screen with New Game, Quick Launch, and Load Game options. ESC toggles quit dialog."""
 from __future__ import annotations
 
 import pygame
 
-from constants import STATE_MENU, STATE_TITLE, STATE_LOAD_GAME
+from constants import STATE_MENU, STATE_TITLE, STATE_LOAD_GAME, STATE_QUICK_LAUNCH
 from rendering import RenderContext, draw_centered_text
 from scenes.transitions import SceneTransition
 from save_system import load_saves
 
 
-TITLE_OPTIONS = ["New Game", "Load Game"]
+TITLE_OPTIONS = ["New Game", "Quick Launch", "Load Game"]
 
 
 class TitleScene:
-    """Title screen. Select New Game or Load Game; ESC -> quit confirm or stay."""
+    """Title screen. Select New Game, Quick Launch, or Load Game; ESC -> quit confirm or stay."""
 
     def __init__(self):
-        self._title_selected = 0  # 0=New Game, 1=Load Game
+        self._title_selected = 0  # 0=New Game, 1=Quick Launch, 2=Load Game
 
     def state_id(self) -> str:
         return STATE_TITLE
@@ -47,6 +47,9 @@ class TitleScene:
                     if self._title_selected == 0:
                         # New Game
                         out["screen"] = STATE_MENU
+                    elif self._title_selected == 1:
+                        # Quick Launch
+                        out["screen"] = STATE_QUICK_LAUNCH
                     else:
                         # Load Game
                         out["screen"] = STATE_LOAD_GAME
@@ -67,6 +70,8 @@ class TitleScene:
             screen = result["screen"]
             if screen == STATE_MENU:
                 return SceneTransition.replace(STATE_MENU)
+            elif screen == STATE_QUICK_LAUNCH:
+                return SceneTransition.replace(STATE_QUICK_LAUNCH)
             elif screen == STATE_LOAD_GAME:
                 return SceneTransition.push(STATE_LOAD_GAME)
         return SceneTransition.none()
@@ -103,9 +108,9 @@ class TitleScene:
                     color = (200, 200, 200)
                     prefix = "   "
                 
-                # Add indicator for Load Game if saves exist
+                # Add indicator for Load Game if saves exist (now at index 2)
                 suffix = ""
-                if i == 1 and has_saves:
+                if i == 2 and has_saves:
                     suffix = " *"
                 
                 draw_centered_text(screen, font, big_font, w, f"{prefix}{option}{suffix}", y_start + i * 45, color)
