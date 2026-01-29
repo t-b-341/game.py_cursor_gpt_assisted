@@ -2,10 +2,10 @@
   {
     "slot_id": 0,
     "name": "Save 1",
-    "wave_number": 1,
-    "difficulty": "HARD",
+    "wave_number": 2,
+    "difficulty": "NORMAL",
     "player_class": "BALANCED",
-    "score": 0,
-    "timestamp": "2026-01-29T09:02:34.548166"
+    "score": 14126,
+    "timestamp": "2026-01-29T11:10:39.493522"
   }
 ]

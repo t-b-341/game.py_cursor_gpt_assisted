@@ -164,6 +164,8 @@ class OptionsScene:
     def handle_input_transition(self, events, game_state, ctx: dict) -> SceneTransition:
         """Call existing handle_input logic and process the result. Return transition if needed."""
         result = self.handle_input(events, game_state, ctx)
+        # Store result for retrieval by game.py (avoids calling handle_input twice)
+        self._last_input_result = result
         # Process result to handle screen changes, quit, etc.
         # Note: Config changes (enable_menu_shaders, menu_shader_profile, etc.) are applied
         # directly in handle_input via cfg.enable_menu_shaders = ..., so they persist.

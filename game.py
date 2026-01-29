@@ -875,9 +875,10 @@ def _handle_events(
     
     if transition is not None:
         # Get the result from handle_input to check for flags like start_game, try_again, load_game
-        # handle_input_transition calls handle_input internally, but we need the result for fallback processing
-        if current_state in ("SHADER_SETTINGS", STATE_GAME_OVER, STATE_SAVE_GAME, STATE_LOAD_GAME, STATE_QUICK_LAUNCH):
-            scene_result = current_scene.handle_input(events, game_state, screen_ctx) if current_scene else None
+        # handle_input_transition calls handle_input internally and stores result in _last_input_result.
+        # We retrieve that stored result to avoid calling handle_input twice (which would process events twice).
+        if current_state in ("SHADER_SETTINGS", STATE_GAME_OVER, STATE_SAVE_GAME, STATE_LOAD_GAME, STATE_QUICK_LAUNCH, STATE_MENU):
+            scene_result = getattr(current_scene, "_last_input_result", None) if current_scene else None
         
         if transition.kind != KIND_NONE:
             should_quit = _apply_scene_transition(transition, scene_stack, ctx, game_state)

@@ -398,6 +398,8 @@ class ShaderSettingsScreen:
         """Handle input and return transition."""
         # Always process input - this updates selected_category, selected_shader, etc.
         result = self.handle_input(events, game_state, ctx)
+        # Store result for retrieval by game.py (avoids calling handle_input twice)
+        self._last_input_result = result
         if result.get("pop"):
             return SceneTransition.pop()
         if result.get("start_game") or result.get("screen") == "PLAYING":

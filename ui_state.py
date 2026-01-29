@@ -12,7 +12,7 @@ class UiState:
     Separated from GameState to keep UI concerns separate from gameplay state.
     """
     # Menu navigation state
-    menu_section: int = 0  # 0 = difficulty, 1.5 = character profile yes/no, 2 = class, 3 = HUD options, 3.5 = Telemetry options, 4 = beam_selection, 5 = start
+    menu_section: float = 0  # 0 = difficulty, 1.5 = character profile yes/no, 2 = profile type, 3 = HUD options, 3.5 = Telemetry, 4 = weapon, 4.5 = invuln, 5 = start, 6 = custom stats, 7 = class
     pause_selected: int = 0
     controls_selected: int = 0
     

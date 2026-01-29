@@ -72,6 +72,8 @@ class QuickLaunchScene:
     def handle_input_transition(self, events, game_state, ctx: dict) -> SceneTransition:
         """Call existing handle_input logic and process the result."""
         result = self.handle_input(events, game_state, ctx)
+        # Store result for retrieval by game.py (avoids calling handle_input twice)
+        self._last_input_result = result
         if result.get("screen") == STATE_TITLE:
             return SceneTransition.replace(STATE_TITLE)
         # start_game is handled by the main loop, return NONE

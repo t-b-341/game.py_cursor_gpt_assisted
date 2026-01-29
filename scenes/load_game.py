@@ -61,6 +61,8 @@ class LoadGameScene:
     def handle_input_transition(self, events, game_state, ctx: dict) -> SceneTransition:
         """Handle input and return transition if needed."""
         result = self.handle_input(events, game_state, ctx)
+        # Store result for retrieval by game.py (avoids calling handle_input twice)
+        self._last_input_result = result
         
         if result.get("pop"):
             return SceneTransition.pop()
