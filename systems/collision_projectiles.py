@@ -428,7 +428,7 @@ def handle_grenade_explosion_damage(state, dt: float, ctx: dict) -> None:
                         state.friendly_ai.remove(friendly)
         if player:
             pd = (pygame.Vector2(player.center) - pos).length()
-            if pd <= r and source not in ("player", "wall_impact"):
+            if pd <= r and source not in ("player", "wall_impact", "ally_explosion"):
                 if not state.shield_active:
                     apply_player_damage(state, damage_val, ctx)
         if source != "enemy_player_allies_only":

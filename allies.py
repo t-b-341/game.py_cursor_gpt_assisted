@@ -195,14 +195,29 @@ def update_friendly_ai(
             move_y = int(direction.y * friendly_speed)
             move_enemy_with_push_func(friendly["rect"], move_x, move_y, blocks)
 
-        # When commanded (right-click), check for collision with enemies and explode
-        if is_commanded and state is not None:
-            ally_rect = friendly["rect"]
+        # When commanded (right-click), check for collision/proximity with enemies and explode
+        if is_commanded and state is not None and player_rect is not None:
+            ally_rect = friendly.get("rect") if hasattr(friendly, "get") else friendly["rect"]
+            if ally_rect is None:
+                continue
+            ally_center = pygame.Vector2(ally_rect.center)
+            # Proximity threshold: ally explodes when within this distance of enemy center
+            # Using a combination of rect collision OR center-to-center distance
+            proximity_threshold = max(ally_rect.w, ally_rect.h) + 10  # Ally size + small buffer
+            
             for enemy in enemies:
                 if enemy.get("hp", 0) <= 0:
                     continue
-                enemy_rect = enemy.get("rect")
-                if enemy_rect and ally_rect.colliderect(enemy_rect):
+                enemy_rect = enemy.get("rect") if hasattr(enemy, "get") else enemy["rect"]
+                if enemy_rect is None:
+                    continue
+                    
+                # Check both rect collision AND proximity (center-to-center distance)
+                enemy_center = pygame.Vector2(enemy_rect.center)
+                distance = (ally_center - enemy_center).length()
+                collides = ally_rect.colliderect(enemy_rect) or distance < proximity_threshold
+                
+                if collides:
                     # Explode! Radius = 1/2 of player's bomb (player bomb = player.w * 10)
                     explosion_radius = player_rect.w * 5 if player_rect else 140
                     grenade_explosions = getattr(state, "grenade_explosions", None)
