@@ -148,6 +148,9 @@ def update_friendly_ai(
     Enemy is used only for shooting when in range.
     Allies with fires_missiles use spawn_ally_missile_func for 3-shot burst every 7s (or template interval).
     
+    When an ally is commanded (right-click) and collides with an enemy, the ally explodes
+    with a radius of 1/2 the player's bomb size.
+    
     Args:
         friendly_ai: List of friendly AI units (modified in place)
         enemies: List of enemy units
@@ -175,7 +178,8 @@ def update_friendly_ai(
         move_toward_x, move_toward_y = None, None
 
         # Follow player around map: move toward player (or command target); only use enemy for shooting
-        if ally_cmd is not None and ally_cmd_time > 0:
+        is_commanded = ally_cmd is not None and ally_cmd_time > 0
+        if is_commanded:
             move_toward_x, move_toward_y = ally_cmd[0], ally_cmd[1]
         elif player_rect is not None:
             move_toward_x = player_rect.centerx
@@ -190,6 +194,40 @@ def update_friendly_ai(
             move_x = int(direction.x * friendly_speed)
             move_y = int(direction.y * friendly_speed)
             move_enemy_with_push_func(friendly["rect"], move_x, move_y, blocks)
+
+        # When commanded (right-click), check for collision with enemies and explode
+        if is_commanded and state is not None:
+            ally_rect = friendly["rect"]
+            for enemy in enemies:
+                if enemy.get("hp", 0) <= 0:
+                    continue
+                enemy_rect = enemy.get("rect")
+                if enemy_rect and ally_rect.colliderect(enemy_rect):
+                    # Explode! Radius = 1/2 of player's bomb (player bomb = player.w * 10)
+                    explosion_radius = player_rect.w * 5 if player_rect else 140
+                    grenade_explosions = getattr(state, "grenade_explosions", None)
+                    if grenade_explosions is not None:
+                        grenade_explosions.append({
+                            "x": ally_rect.centerx,
+                            "y": ally_rect.centery,
+                            "radius": 0,
+                            "max_radius": explosion_radius,
+                            "timer": 0.3,
+                            "damage": 750,  # Half of player grenade damage (1500 / 2)
+                            "source": "ally_explosion",
+                        })
+                        # Play explosion sound
+                        from systems.audio_system import play_sfx
+                        play_sfx("GRENADE")
+                    # Kill the ally
+                    friendly["hp"] = 0
+                    if friendly in friendly_ai:
+                        friendly_ai.remove(friendly)
+                    break  # Ally is gone, stop checking enemies
+
+        # Skip shooting if ally just exploded
+        if friendly.get("hp", 0) <= 0:
+            continue
 
         if target:
             if friendly.get("fires_missiles") and spawn_ally_missile_func and state is not None:

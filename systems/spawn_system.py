@@ -181,7 +181,7 @@ def _spawn_boss_wave(
     """Spawn boss for wave 3 of the level."""
     boss_base = get_enemy_def("FINAL_BOSS")
     boss = (boss_base.copy() if boss_base is not None else BOSS_TEMPLATE.copy())
-    boss["color"] = ENEMY_COLOR  # All enemies same color
+    boss["color"] = boss.get("color", ENEMY_COLOR)  # Use template color if specified, else default red
     boss["rect"] = pygame.Rect(w // 2 - 50, h // 2 - 50, 100, 100)
     boss_hp_scale = 1.0 + (state.current_level - 1) * 0.3
     boss["hp"] = min(int(boss["max_hp"] * boss_hp_scale * diff_mult["enemy_hp"] * 1.1 * 10 * 5), 15000)  # 5x health, cap 15k

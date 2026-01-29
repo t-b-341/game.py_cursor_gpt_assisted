@@ -225,7 +225,7 @@ ENEMY_TEMPLATES: list[dict] = [
     {
         "type": "large_laser",
         "rect": pygame.Rect(0, 0, 48, 48),
-        "color": (120, 80, 180),
+        "color": (255, 180, 50),  # Orange-yellow
         "hp": 120,
         "max_hp": 120,
         "shoot_cooldown": 999.0,
@@ -245,7 +245,7 @@ ENEMY_TEMPLATES: list[dict] = [
     {
         "type": "super_large_triple_laser",
         "rect": pygame.Rect(0, 0, 128, 128),
-        "color": (60, 40, 120),
+        "color": (255, 200, 80),  # Orange-yellow (brighter for super variant)
         "hp": 1000,
         "max_hp": 1000,
         "shoot_cooldown": 999.0,
@@ -262,6 +262,21 @@ ENEMY_TEMPLATES: list[dict] = [
         "laser_damage": 120,
         "laser_length": 700,
         "laser_spread_deg": 15,
+    },
+    {
+        "type": "evasive",
+        "rect": pygame.Rect(0, 0, 24, 24),
+        "color": (150, 255, 50),  # Lime green
+        "hp": 45,
+        "max_hp": 45,
+        "shoot_cooldown": 1.8,
+        "projectile_speed": 220,
+        "projectile_color": (180, 255, 100),
+        "projectile_shape": "diamond",  # Rhomboid projectiles too
+        "speed": 140,  # Fast
+        "enemy_size_class": "small",
+        "is_evasive": True,  # Special flag for enhanced dodging
+        "shape": "rhomboid",  # Rhomboid body shape
     },
 ]
 

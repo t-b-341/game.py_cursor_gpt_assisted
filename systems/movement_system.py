@@ -218,14 +218,18 @@ def _update_enemies(state, dt: float, ctx: dict) -> None:
                     direction = pygame.Vector2(math.cos(random_angle), math.sin(random_angle))
 
                 # Dodge shots: always try to sidestep when bullets/projectiles are in range
+                # Evasive enemies have larger dodge range and stronger dodge
+                is_evasive = enemy.get("is_evasive", False)
+                dodge_range = 320.0 if is_evasive else 220.0
+                dodge_strength = 1.2 if is_evasive else 0.6
                 dodge_threats = find_threats_in_dodge_range(
-                    enemy_pos, state.player_bullets, state.friendly_projectiles, 220.0
+                    enemy_pos, state.player_bullets, state.friendly_projectiles, dodge_range
                 )
                 if dodge_threats:
                     dodge_dir = pygame.Vector2(-direction.y, direction.x)
                     if random.random() < 0.5:
                         dodge_dir = -dodge_dir
-                    direction = direction + dodge_dir * 0.6
+                    direction = direction + dodge_dir * dodge_strength
                     if direction.length_squared() >= 1e-6:
                         direction = direction.normalize()
 

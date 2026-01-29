@@ -277,7 +277,14 @@ def _draw_allies_and_enemies(screen: pygame.Surface, state: Any) -> None:
             if flash_t > 0:
                 flash_frac = min(1.0, flash_t / 0.12)
                 base_color = tuple(min(255, int(c + (255 - c) * flash_frac)) for c in base_color)
-            pygame.draw.rect(screen, base_color, r)
+            # Draw rhomboid shape for evasive enemies, rectangle for others
+            if enemy.get("shape") == "rhomboid":
+                cx, cy = r.centerx, r.centery
+                hw, hh = r.width // 2, r.height // 2
+                points = [(cx, cy - hh), (cx + hw, cy), (cx, cy + hh), (cx - hw, cy)]
+                pygame.draw.polygon(screen, base_color, points)
+            else:
+                pygame.draw.rect(screen, base_color, r)
         if highlight_when_few and r:
             out = r.inflate(8, 8)
             pygame.draw.rect(screen, (255, 255, 0), out, 3)

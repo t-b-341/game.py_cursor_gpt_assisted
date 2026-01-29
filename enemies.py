@@ -270,7 +270,7 @@ def make_enemy_from_template(t: dict, hp_scale: float, speed_scale: float) -> En
     enemy = {
         "type": t["type"],
         "rect": pygame.Rect(t["rect"].x, t["rect"].y, t["rect"].w, t["rect"].h),
-        "color": ENEMY_COLOR,  # All enemies same color
+        "color": t.get("color", ENEMY_COLOR),  # Use template color if specified, else default red
         "hp": hp,
         "max_hp": hp,
         "shoot_cooldown": shoot_cd,
@@ -293,6 +293,10 @@ def make_enemy_from_template(t: dict, hp_scale: float, speed_scale: float) -> En
         enemy["turn_speed"] = t.get("turn_speed", 0.5)
     if t.get("is_predictive"):
         enemy["is_predictive"] = True
+    if t.get("is_evasive"):
+        enemy["is_evasive"] = True
+    if t.get("shape"):
+        enemy["shape"] = t["shape"]
     if t.get("is_ambient"):
         enemy["is_ambient"] = True
         enemy["rocket_cooldown"] = t.get("rocket_cooldown", 0.0)
