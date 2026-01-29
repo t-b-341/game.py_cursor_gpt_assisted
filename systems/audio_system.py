@@ -18,7 +18,7 @@ def _get_asset_manager():
 
 # Volume and mute state (0.0..1.0; used for all playback until updated)
 _sfx_volume: float = 1.0
-_music_volume: float = 1.0
+_music_volume: float = 0.3
 _mute_sfx: bool = False
 _mute_music: bool = False
 

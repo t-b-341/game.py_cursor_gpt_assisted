@@ -102,7 +102,7 @@ class GameConfig:
 
     # Audio (used by systems.audio_system)
     sfx_volume: float = 1.0
-    music_volume: float = 1.0
+    music_volume: float = 0.3
     mute_sfx: bool = False
     mute_music: bool = False
 

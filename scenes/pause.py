@@ -21,6 +21,8 @@ class PauseScene:
         """Call existing handle_input logic and process the result. Return transition if needed."""
         # Always process input - this updates pause_selected and handles shader submenu
         result = self.handle_input(events, game_state, ctx)
+        # Store result for game loop to retrieve (for restart handling)
+        self._last_input_result = result
         # Process result to handle screen changes, quit, restart, etc.
         if result.get("quit"):
             return SceneTransition.quit_game()
