@@ -57,3 +57,8 @@ class UiState:
     save_name_active: bool = False  # Whether name input is active
     load_slot_selected: int = 0  # 0, 1, or 2
     save_and_quit: bool = False  # If True, go to title after saving (from pause menu)
+    
+    # Profile management state
+    saved_profile_selected: int = 0  # Selected profile in list
+    profile_name_input: str = ""  # Name input when saving profile
+    profile_name_active: bool = False  # Whether profile name input is active

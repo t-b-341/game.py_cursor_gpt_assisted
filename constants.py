@@ -99,7 +99,7 @@ level_themes = {
 # ----------------------------
 # Character profile constants
 # ----------------------------
-character_profile_options = ["Premade Profiles", "Create Custom Profile"]
+character_profile_options = ["Premade Profiles", "Create Custom Profile", "Load Saved Profile"]
 custom_profile_stats_list = ["HP Multiplier", "Speed Multiplier", "Damage Multiplier", "Fire Rate Multiplier"]
 custom_profile_stats_keys = ["hp_mult", "speed_mult", "damage_mult", "firerate_mult"]
 

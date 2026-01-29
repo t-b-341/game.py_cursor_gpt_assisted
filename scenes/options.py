@@ -16,6 +16,7 @@ from constants import (
 )
 from rendering import RenderContext, draw_centered_text
 from scenes.transitions import SceneTransition
+from profile_system import load_profiles, save_profile, delete_profile, get_profile_display_text
 
 
 class OptionsScene:
@@ -40,11 +41,56 @@ class OptionsScene:
                 if event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE, pygame.K_y):
                     out["quit"] = True
                     return out
-                if event.key == pygame.K_n:
+                if event.key in (pygame.K_n, pygame.K_ESCAPE):
                     game_state.ui.menu_confirm_quit = False
                 continue
             if event.key == pygame.K_ESCAPE:
-                game_state.ui.menu_confirm_quit = True
+                # ESC navigates back through menu sections instead of always showing quit
+                ms = game_state.ui.menu_section
+                if ms == 0:
+                    # At root difficulty selection - go back to title
+                    out["screen"] = STATE_TITLE
+                    game_state.ui.menu_confirm_quit = False
+                    return out
+                elif ms == 1.5:
+                    game_state.ui.menu_section = 0
+                elif ms == 2:
+                    game_state.ui.menu_section = 1.5
+                elif ms == 6:
+                    # Custom profile - go back to profile type selection
+                    game_state.ui.profile_name_active = False
+                    game_state.ui.menu_section = 2
+                elif ms == 7:
+                    # Class selection - go back to profile type
+                    game_state.ui.menu_section = 2
+                elif ms == 8:
+                    # Load profile list - go back to profile type
+                    game_state.ui.menu_section = 2
+                elif ms == 9:
+                    # Save profile name input - go back to custom profile
+                    game_state.ui.profile_name_active = False
+                    game_state.ui.menu_section = 6
+                elif ms == 3:
+                    # HUD options - go back based on profile settings
+                    if cfg.profile_enabled:
+                        if game_state.ui.character_profile_selected == 0:
+                            game_state.ui.menu_section = 7
+                        elif game_state.ui.character_profile_selected == 1:
+                            game_state.ui.menu_section = 6
+                        else:
+                            game_state.ui.menu_section = 8
+                    else:
+                        game_state.ui.menu_section = 1.5
+                elif ms == 3.5:
+                    game_state.ui.menu_section = 3
+                elif ms == 4:
+                    game_state.ui.menu_section = 3.5
+                elif ms == 4.5:
+                    game_state.ui.menu_section = 4
+                elif ms == 5:
+                    game_state.ui.menu_section = 3.5
+                else:
+                    game_state.ui.menu_confirm_quit = True
                 continue
 
             if game_state.ui.menu_section == 0:
@@ -77,23 +123,53 @@ class OptionsScene:
                 elif event.key in (pygame.K_LEFT, pygame.K_a):
                     game_state.ui.menu_section = 1.5
                 elif event.key in (pygame.K_RIGHT, pygame.K_d, pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
-                    game_state.ui.menu_section = 7 if game_state.ui.character_profile_selected == 0 else 6
+                    if game_state.ui.character_profile_selected == 0:
+                        game_state.ui.menu_section = 7  # Premade profiles -> class selection
+                    elif game_state.ui.character_profile_selected == 1:
+                        game_state.ui.custom_profile_stat_selected = 0  # Reset selection
+                        game_state.ui.menu_section = 6  # Custom profile creator
+                    else:
+                        game_state.ui.saved_profile_selected = 0  # Reset selection
+                        game_state.ui.menu_section = 8  # Load saved profile list
             elif game_state.ui.menu_section == 6:
+                # Custom profile creator: 4 stats + 3 options (Done, Save Profile, Back)
+                num_stats = len(custom_profile_stats_list)
+                num_options = num_stats + 3  # stats + Done + Save Profile + Back
+                
                 if event.key in (pygame.K_UP, pygame.K_w):
-                    game_state.ui.custom_profile_stat_selected = (game_state.ui.custom_profile_stat_selected - 1) % len(custom_profile_stats_list)
+                    game_state.ui.custom_profile_stat_selected = (game_state.ui.custom_profile_stat_selected - 1) % num_options
                 elif event.key in (pygame.K_DOWN, pygame.K_s):
-                    game_state.ui.custom_profile_stat_selected = (game_state.ui.custom_profile_stat_selected + 1) % len(custom_profile_stats_list)
+                    game_state.ui.custom_profile_stat_selected = (game_state.ui.custom_profile_stat_selected + 1) % num_options
                 elif event.key in (pygame.K_LEFT, pygame.K_a):
-                    sk = custom_profile_stats_keys[game_state.ui.custom_profile_stat_selected]
-                    game_state.custom_profile_stats[sk] = max(0.5, game_state.custom_profile_stats[sk] - 0.1)
+                    # Only adjust values for stat rows (not action options)
+                    if game_state.ui.custom_profile_stat_selected < num_stats:
+                        sk = custom_profile_stats_keys[game_state.ui.custom_profile_stat_selected]
+                        game_state.custom_profile_stats[sk] = max(0.5, round(game_state.custom_profile_stats[sk] - 0.1, 1))
                 elif event.key in (pygame.K_RIGHT, pygame.K_d):
-                    game_state.ui.menu_section = 3
+                    # Only adjust values for stat rows (not action options)
+                    if game_state.ui.custom_profile_stat_selected < num_stats:
+                        sk = custom_profile_stats_keys[game_state.ui.custom_profile_stat_selected]
+                        game_state.custom_profile_stats[sk] = min(3.0, round(game_state.custom_profile_stats[sk] + 0.1, 1))
                 elif event.key in (pygame.K_PLUS, pygame.K_EQUALS):
-                    sk = custom_profile_stats_keys[game_state.ui.custom_profile_stat_selected]
-                    game_state.custom_profile_stats[sk] = min(3.0, game_state.custom_profile_stats[sk] + 0.1)
+                    if game_state.ui.custom_profile_stat_selected < num_stats:
+                        sk = custom_profile_stats_keys[game_state.ui.custom_profile_stat_selected]
+                        game_state.custom_profile_stats[sk] = min(3.0, round(game_state.custom_profile_stats[sk] + 0.1, 1))
                 elif event.key == pygame.K_MINUS:
-                    sk = custom_profile_stats_keys[game_state.ui.custom_profile_stat_selected]
-                    game_state.custom_profile_stats[sk] = max(0.5, game_state.custom_profile_stats[sk] - 0.1)
+                    if game_state.ui.custom_profile_stat_selected < num_stats:
+                        sk = custom_profile_stats_keys[game_state.ui.custom_profile_stat_selected]
+                        game_state.custom_profile_stats[sk] = max(0.5, round(game_state.custom_profile_stats[sk] - 0.1, 1))
+                elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
+                    if game_state.ui.custom_profile_stat_selected == num_stats:
+                        # "Done" selected - continue to HUD options
+                        game_state.ui.menu_section = 3
+                    elif game_state.ui.custom_profile_stat_selected == num_stats + 1:
+                        # "Save Profile" selected - go to name input
+                        game_state.ui.profile_name_input = ""
+                        game_state.ui.profile_name_active = True
+                        game_state.ui.menu_section = 9
+                    elif game_state.ui.custom_profile_stat_selected == num_stats + 2:
+                        # "Back" selected - go back to profile type selection
+                        game_state.ui.menu_section = 2
             elif game_state.ui.menu_section == 7:
                 if event.key in (pygame.K_UP, pygame.K_w):
                     game_state.ui.player_class_selected = (game_state.ui.player_class_selected - 1) % len(player_class_options)
@@ -110,7 +186,15 @@ class OptionsScene:
                 elif event.key in (pygame.K_DOWN, pygame.K_s):
                     game_state.ui.ui_show_metrics_selected = (game_state.ui.ui_show_metrics_selected + 1) % 2
                 elif event.key in (pygame.K_LEFT, pygame.K_a):
-                    game_state.ui.menu_section = 7 if game_state.ui.character_profile_selected == 0 else 6 if cfg.profile_enabled else 1.5
+                    # Go back based on profile type
+                    if not cfg.profile_enabled:
+                        game_state.ui.menu_section = 1.5
+                    elif game_state.ui.character_profile_selected == 0:
+                        game_state.ui.menu_section = 7  # Premade class selection
+                    elif game_state.ui.character_profile_selected == 1:
+                        game_state.ui.menu_section = 6  # Custom profile creator
+                    else:
+                        game_state.ui.menu_section = 8  # Saved profile list
                 elif event.key in (pygame.K_RIGHT, pygame.K_d, pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
                     cfg.show_metrics = game_state.ui.ui_show_metrics_selected == 0
                     cfg.show_hud = cfg.show_metrics
@@ -156,6 +240,63 @@ class OptionsScene:
                     out["screen"] = STATE_PLAYING
                     out["start_game"] = True
                     return out
+            elif game_state.ui.menu_section == 8:
+                # Load saved profile list
+                profiles = load_profiles()
+                num_profiles = len(profiles)
+                # Extra options: [Create New] and [Back]
+                total_options = num_profiles + 2
+                
+                if event.key in (pygame.K_UP, pygame.K_w):
+                    game_state.ui.saved_profile_selected = (game_state.ui.saved_profile_selected - 1) % total_options
+                elif event.key in (pygame.K_DOWN, pygame.K_s):
+                    game_state.ui.saved_profile_selected = (game_state.ui.saved_profile_selected + 1) % total_options
+                elif event.key == pygame.K_DELETE:
+                    # Delete selected profile
+                    if game_state.ui.saved_profile_selected < num_profiles and num_profiles > 0:
+                        profile_to_delete = profiles[game_state.ui.saved_profile_selected]
+                        delete_profile(profile_to_delete.profile_id)
+                        # Adjust selection if needed
+                        if game_state.ui.saved_profile_selected >= len(load_profiles()):
+                            game_state.ui.saved_profile_selected = max(0, len(load_profiles()) - 1)
+                elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
+                    if game_state.ui.saved_profile_selected < num_profiles and num_profiles > 0:
+                        # Load selected profile
+                        selected_profile = profiles[game_state.ui.saved_profile_selected]
+                        game_state.custom_profile_stats["hp_mult"] = selected_profile.hp_mult
+                        game_state.custom_profile_stats["speed_mult"] = selected_profile.speed_mult
+                        game_state.custom_profile_stats["damage_mult"] = selected_profile.damage_mult
+                        game_state.custom_profile_stats["firerate_mult"] = selected_profile.firerate_mult
+                        game_state.ui.menu_section = 3  # Go to HUD options
+                    elif game_state.ui.saved_profile_selected == num_profiles:
+                        # [Create New] - go to custom profile creator
+                        game_state.ui.custom_profile_stat_selected = 0
+                        game_state.ui.menu_section = 6
+                    else:
+                        # [Back] - go back to profile type selection
+                        game_state.ui.menu_section = 2
+            elif game_state.ui.menu_section == 9:
+                # Save profile name input
+                if game_state.ui.profile_name_active:
+                    if event.key == pygame.K_RETURN or event.key == pygame.K_KP_ENTER:
+                        # Save the profile with the entered name
+                        name = game_state.ui.profile_name_input.strip() or "Custom Profile"
+                        save_profile(
+                            name=name,
+                            hp_mult=game_state.custom_profile_stats["hp_mult"],
+                            speed_mult=game_state.custom_profile_stats["speed_mult"],
+                            damage_mult=game_state.custom_profile_stats["damage_mult"],
+                            firerate_mult=game_state.custom_profile_stats["firerate_mult"],
+                        )
+                        game_state.ui.profile_name_active = False
+                        game_state.ui.profile_name_input = ""
+                        game_state.ui.menu_section = 6  # Go back to custom profile
+                    elif event.key == pygame.K_BACKSPACE:
+                        game_state.ui.profile_name_input = game_state.ui.profile_name_input[:-1]
+                    elif event.unicode and len(game_state.ui.profile_name_input) < 20:
+                        # Only accept printable characters
+                        if event.unicode.isprintable():
+                            game_state.ui.profile_name_input += event.unicode
         return out
 
     def update(self, dt: float, game_state, ctx: dict) -> None:
@@ -212,61 +353,138 @@ class OptionsScene:
             for i, d in enumerate(difficulty_options):
                 c = (255, 255, 0) if i == game_state.ui.difficulty_selected else (200, 200, 200)
                 draw_centered_text(screen, font, big_font, w, f"{'->' if i == game_state.ui.difficulty_selected else '  '} {d}", y + i * 40, c)
-            draw_centered_text(screen, font, big_font, w, "UP/DOWN to select, RIGHT/ENTER to continue, LEFT to return to main menu", h - 100, (150, 150, 150))
+            draw_centered_text(screen, font, big_font, w, "UP/DOWN: Select | ENTER: Continue | ESC: Back to Title", h - 100, (150, 150, 150))
         elif ms == 1.5:
             draw_centered_text(screen, font, big_font, w, "Use Character Profile?", y - 60)
             for i, opt in enumerate(["No", "Yes"]):
                 c = (255, 255, 0) if i == game_state.ui.use_character_profile_selected else (200, 200, 200)
                 draw_centered_text(screen, font, big_font, w, f"{'->' if i == game_state.ui.use_character_profile_selected else '  '} {opt}", y + i * 40, c)
-            draw_centered_text(screen, font, big_font, w, "Use UP/DOWN to select, LEFT to go back, RIGHT/ENTER to continue", h - 100, (150, 150, 150))
+            draw_centered_text(screen, font, big_font, w, "UP/DOWN: Select | ENTER: Continue | ESC: Back", h - 100, (150, 150, 150))
         elif ms == 2:
             draw_centered_text(screen, font, big_font, w, "Character Profile:", y - 60)
             for i, p in enumerate(character_profile_options):
                 c = (255, 255, 0) if i == game_state.ui.character_profile_selected else (200, 200, 200)
                 draw_centered_text(screen, font, big_font, w, f"{'->' if i == game_state.ui.character_profile_selected else '  '} {p}", y + i * 40, c)
-            draw_centered_text(screen, font, big_font, w, "Use UP/DOWN to select, LEFT to go back, RIGHT/ENTER to continue", h - 100, (150, 150, 150))
+            draw_centered_text(screen, font, big_font, w, "UP/DOWN: Select | ENTER: Continue | ESC: Back", h - 100, (150, 150, 150))
         elif ms == 3:
             draw_centered_text(screen, font, big_font, w, "HUD Options:", y - 60)
             for i, opt in enumerate(["Show Metrics", "Hide Metrics"]):
                 c = (255, 255, 0) if i == game_state.ui.ui_show_metrics_selected else (200, 200, 200)
                 draw_centered_text(screen, font, big_font, w, f"{'->' if i == game_state.ui.ui_show_metrics_selected else '  '} {opt}", y + i * 40, c)
-            draw_centered_text(screen, font, big_font, w, "Use UP/DOWN to select, LEFT to go back, RIGHT/ENTER to continue", h - 100, (150, 150, 150))
+            draw_centered_text(screen, font, big_font, w, "UP/DOWN: Select | ENTER: Continue | ESC: Back", h - 100, (150, 150, 150))
         elif ms == 3.5:
             draw_centered_text(screen, font, big_font, w, "Telemetry:", y - 60)
             for i, opt in enumerate(["Enabled", "Disabled"]):
                 c = (255, 255, 0) if i == game_state.ui.ui_telemetry_enabled_selected else (200, 200, 200)
                 draw_centered_text(screen, font, big_font, w, f"{'->' if i == game_state.ui.ui_telemetry_enabled_selected else '  '} {opt}", y + i * 40, c)
-            draw_centered_text(screen, font, big_font, w, "Use UP/DOWN to select, LEFT to go back, RIGHT/ENTER to continue", h - 100, (150, 150, 150))
+            draw_centered_text(screen, font, big_font, w, "UP/DOWN: Select | ENTER: Continue | ESC: Back", h - 100, (150, 150, 150))
         elif ms == 4:
             if cfg.testing_mode:
                 draw_centered_text(screen, font, big_font, w, "Select Weapon:", y - 60)
                 for i, wep in enumerate(weapon_selection_options):
                     c = (255, 255, 0) if i == game_state.ui.beam_selection_selected else (200, 200, 200)
                     draw_centered_text(screen, font, big_font, w, f"{'->' if i == game_state.ui.beam_selection_selected else '  '} {wep}", y + i * 30, c)
-                draw_centered_text(screen, font, big_font, w, "Use UP/DOWN to select, LEFT to go back, RIGHT/ENTER to continue", h - 100, (150, 150, 150))
+                draw_centered_text(screen, font, big_font, w, "UP/DOWN: Select | ENTER: Continue | ESC: Back", h - 100, (150, 150, 150))
         elif ms == 4.5:
             draw_centered_text(screen, font, big_font, w, "Testing Options:", y - 60)
             ic = (255, 255, 0) if cfg.invulnerability_mode else (200, 200, 200)
             draw_centered_text(screen, font, big_font, w, f"{'->' if cfg.invulnerability_mode else '  '} Invulnerability: {'ON' if cfg.invulnerability_mode else 'OFF'}", y, ic)
-            draw_centered_text(screen, font, big_font, w, "Use UP/DOWN to toggle, LEFT to go back, RIGHT/ENTER to start", h - 100, (150, 150, 150))
+            draw_centered_text(screen, font, big_font, w, "UP/DOWN: Toggle | ENTER: Start | ESC: Back", h - 100, (150, 150, 150))
         elif ms == 5:
             draw_centered_text(screen, font, big_font, w, "Ready to Start!", y)
             draw_centered_text(screen, font, big_font, w, "Press ENTER or SPACE to begin", y + 60, (150, 150, 150))
-            draw_centered_text(screen, font, big_font, w, "Press LEFT to go back", y + 100, (150, 150, 150))
+            draw_centered_text(screen, font, big_font, w, "Press ESC to go back", y + 100, (150, 150, 150))
         elif ms == 6:
             draw_centered_text(screen, font, big_font, w, "Custom Profile Creator:", y - 100)
+            num_stats = len(custom_profile_stats_list)
+            
+            # Draw stat options
             for i, name in enumerate(custom_profile_stats_list):
                 k = custom_profile_stats_keys[i]
                 v = game_state.custom_profile_stats[k]
-                c = (255, 255, 0) if i == game_state.ui.custom_profile_stat_selected else (200, 200, 200)
-                draw_centered_text(screen, font, big_font, w, f"{'->' if i == game_state.ui.custom_profile_stat_selected else '  '} {name}: {v:.1f}x", y + i * 35, c)
-            draw_centered_text(screen, font, big_font, w, "Use UP/DOWN to select stat, LEFT/RIGHT to adjust, ENTER to continue", h - 100, (150, 150, 150))
+                selected = i == game_state.ui.custom_profile_stat_selected
+                c = (255, 255, 0) if selected else (200, 200, 200)
+                prefix = "->" if selected else "  "
+                draw_centered_text(screen, font, big_font, w, f"{prefix} {name}: {v:.1f}x", y - 40 + i * 35, c)
+            
+            # Draw action options: Done, Save Profile, Back
+            done_selected = game_state.ui.custom_profile_stat_selected == num_stats
+            save_selected = game_state.ui.custom_profile_stat_selected == num_stats + 1
+            back_selected = game_state.ui.custom_profile_stat_selected == num_stats + 2
+            
+            action_y = y - 40 + num_stats * 35 + 20
+            
+            done_color = (255, 255, 0) if done_selected else (200, 200, 200)
+            done_prefix = "->" if done_selected else "  "
+            draw_centered_text(screen, font, big_font, w, f"{done_prefix} [Done - Continue]", action_y, done_color)
+            
+            save_color = (255, 255, 0) if save_selected else (100, 200, 100)
+            save_prefix = "->" if save_selected else "  "
+            draw_centered_text(screen, font, big_font, w, f"{save_prefix} [Save Profile]", action_y + 30, save_color)
+            
+            back_color = (255, 255, 0) if back_selected else (200, 200, 200)
+            back_prefix = "->" if back_selected else "  "
+            draw_centered_text(screen, font, big_font, w, f"{back_prefix} [Back]", action_y + 60, back_color)
+            
+            draw_centered_text(screen, font, big_font, w, "UP/DOWN: Select | LEFT/RIGHT: Adjust | ENTER: Confirm | ESC: Back", h - 100, (150, 150, 150))
         elif ms == 7:
             draw_centered_text(screen, font, big_font, w, "Select Class:", y - 60)
             for i, cls in enumerate(player_class_options):
                 c = (255, 255, 0) if i == game_state.ui.player_class_selected else (200, 200, 200)
                 draw_centered_text(screen, font, big_font, w, f"{'->' if i == game_state.ui.player_class_selected else '  '} {cls}", y + i * 40, c)
-            draw_centered_text(screen, font, big_font, w, "Use UP/DOWN to select, LEFT to go back, RIGHT/ENTER to continue", h - 100, (150, 150, 150))
+            draw_centered_text(screen, font, big_font, w, "UP/DOWN: Select | ENTER: Continue | ESC: Back", h - 100, (150, 150, 150))
+        elif ms == 8:
+            # Load saved profile list
+            draw_centered_text(screen, font, big_font, w, "Saved Profiles:", y - 120)
+            profiles = load_profiles()
+            num_profiles = len(profiles)
+            
+            if num_profiles == 0:
+                draw_centered_text(screen, font, big_font, w, "(No saved profiles)", y - 60, (150, 150, 150))
+            else:
+                # Show profiles (max 6 visible)
+                start_idx = max(0, game_state.ui.saved_profile_selected - 3)
+                visible_profiles = profiles[start_idx:start_idx + 6]
+                for i, profile in enumerate(visible_profiles):
+                    actual_idx = start_idx + i
+                    selected = actual_idx == game_state.ui.saved_profile_selected
+                    c = (255, 255, 0) if selected else (200, 200, 200)
+                    prefix = "->" if selected else "  "
+                    display = get_profile_display_text(profile)
+                    draw_centered_text(screen, font, big_font, w, f"{prefix} {display}", y - 60 + i * 30, c)
+            
+            # Draw action options
+            create_idx = num_profiles
+            back_idx = num_profiles + 1
+            create_selected = game_state.ui.saved_profile_selected == create_idx
+            back_selected = game_state.ui.saved_profile_selected == back_idx
+            
+            action_y = y + 100
+            create_color = (255, 255, 0) if create_selected else (100, 200, 100)
+            create_prefix = "->" if create_selected else "  "
+            draw_centered_text(screen, font, big_font, w, f"{create_prefix} [Create New Profile]", action_y, create_color)
+            
+            back_color = (255, 255, 0) if back_selected else (200, 200, 200)
+            back_prefix = "->" if back_selected else "  "
+            draw_centered_text(screen, font, big_font, w, f"{back_prefix} [Back]", action_y + 35, back_color)
+            
+            draw_centered_text(screen, font, big_font, w, "UP/DOWN: Select | ENTER: Load/Action | DEL: Delete | ESC: Back", h - 100, (150, 150, 150))
+        elif ms == 9:
+            # Save profile name input
+            draw_centered_text(screen, font, big_font, w, "Save Profile", y - 60)
+            draw_centered_text(screen, font, big_font, w, "Enter a name for your profile:", y)
+            
+            # Draw input box
+            input_text = game_state.ui.profile_name_input + ("_" if game_state.ui.profile_name_active else "")
+            input_color = (255, 255, 255)
+            draw_centered_text(screen, font, big_font, w, f"[ {input_text} ]", y + 50, input_color)
+            
+            # Show current stats being saved
+            stats = game_state.custom_profile_stats
+            stats_text = f"HP:{stats['hp_mult']:.1f}x Spd:{stats['speed_mult']:.1f}x Dmg:{stats['damage_mult']:.1f}x FR:{stats['firerate_mult']:.1f}x"
+            draw_centered_text(screen, font, big_font, w, stats_text, y + 100, (150, 150, 150))
+            
+            draw_centered_text(screen, font, big_font, w, "Type name and press ENTER to save | ESC: Cancel", h - 100, (150, 150, 150))
 
     def on_enter(self, game_state, ctx: dict) -> None:
         pass
