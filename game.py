@@ -16,6 +16,7 @@ scenes from scenes/ and RenderContext.from_app_ctx(ctx).
 # - NameInputScene (STATE_NAME_INPUT): High score name entry
 # - HighScoreScene (STATE_HIGH_SCORES): High scores list
 # - GameOverScene (STATE_GAME_OVER): Game over screen
+# - VictoryScene (STATE_VICTORY): Victory screen after beating all levels
 # - SaveGameScene (STATE_SAVE_GAME): Save game menu
 # - LoadGameScene (STATE_LOAD_GAME): Load game menu
 # - QuickLaunchScene (STATE_QUICK_LAUNCH): Quick launch menu
@@ -99,7 +100,6 @@ from constants import (
     SCORE_BASE_POINTS,
     SCORE_TIME_MULTIPLIER,
     SCORE_WAVE_MULTIPLIER,
-    STATE_CONTINUE,
     STATE_ENDURANCE,
     STATE_GAME_OVER,
     STATE_HIGH_SCORES,
@@ -185,14 +185,18 @@ from allies import (
 from state import GameState
 from context import AppContext
 from event_bus import EventBus, GameEvent
-from config import GameConfig
+from config import GameConfig, apply_safe_mode, log_startup_config
 from config.projectile_defs import get_projectile_def
 # -----------------------------------------------------------------------------
 # SCENE MIGRATION STATUS: COMPLETE
 # -----------------------------------------------------------------------------
-# All game states are now represented as Scene classes in scenes/.
+# INVARIANT: All game states must have a corresponding Scene on the stack.
+# The scene stack is the authoritative source of truth for the current state.
+# If a state lacks a scene, it is treated as a bug (assertion failure in debug).
+#
 # Input flows through the scene stack via handle_scene_events().
-# 
+# States are synchronized: game_state.current_screen reflects scene_stack.current().state_id().
+#
 # The screens/ package still contains render/input logic, but it's wrapped
 # by scene classes (e.g., PauseScene wraps screens.pause).
 #
@@ -205,6 +209,7 @@ from screens.gameplay import render as gameplay_render
 from rendering_shaders import render_gameplay_with_optional_shaders, render_gameplay_frame_to_surface
 from scenes import SceneStack, GameplayScene, PauseScene, HighScoreScene, NameInputScene, ShaderTestScene, TitleScene, OptionsScene, QuickLaunchScene
 from scenes.game_over import GameOverScene
+from scenes.victory import VictoryScene
 from scenes.save_game import SaveGameScene
 from scenes.load_game import LoadGameScene
 from scenes.transitions import SceneTransition, KIND_NONE, KIND_PUSH, KIND_POP, KIND_REPLACE, KIND_QUIT_GAME
@@ -212,6 +217,14 @@ from visual_effects import apply_menu_effects, apply_pause_effects
 from shader_effects import get_menu_shader_stack, get_pause_shader_stack, get_gameplay_shader_stack
 from simulation_systems import SIMULATION_SYSTEMS
 from systems.spawn_system import start_wave as spawn_system_start_wave
+from engine.run_manager import (
+    start_new_run,
+    restart_current_wave,
+    restart_from_wave_one,
+    replay as run_replay,
+    try_again as run_try_again,
+    load_game as run_load_game,
+)
 from systems.input_system import handle_gameplay_input
 from systems.telemetry_system import update_telemetry
 from systems.audio_system import init_mixer, sync_from_config, play_sfx, play_music, stop_music
@@ -557,6 +570,9 @@ def _build_loop_params(target_fps: int = 144) -> tuple[int, float, int]:
 
 def _create_app():
     """Build ctx, game_state, scene_stack and loop invariants. Used by GameApp."""
+    # Check for --safe-mode CLI flag or environment variable
+    safe_mode = "--safe-mode" in sys.argv or os.environ.get("GAME_SAFE_MODE", "").strip() == "1"
+    
     # Resolve physics backend before any geometry/physics use
     force_python = "--python-physics" in sys.argv or os.environ.get("USE_PYTHON_PHYSICS", "").strip() == "1"
     _physics_impl, using_c_physics = resolve_physics(force_python=force_python)
@@ -564,6 +580,15 @@ def _create_app():
     _init_pygame_and_mixer()
     screen, clock, width, height = _create_window_and_clock()
     ctx = _build_app_context(screen, clock, width, height, using_c_physics)
+    
+    # Apply safe mode if requested (disables GPU, CUDA, telemetry)
+    if safe_mode:
+        ctx.config.safe_mode = True
+        apply_safe_mode(ctx.config)
+    
+    # Log startup configuration summary
+    log_startup_config(ctx.config)
+    
     game_state = _build_initial_game_state(ctx)
     _setup_initial_resources()
     _prompt_shader_mode(ctx)
@@ -661,6 +686,8 @@ def _apply_scene_transition(transition: SceneTransition, scene_stack: SceneStack
             scene_stack.push(HighScoreScene())
         elif scene_name == STATE_GAME_OVER:
             scene_stack.push(GameOverScene())
+        elif scene_name == STATE_VICTORY:
+            scene_stack.push(VictoryScene())
         elif scene_name == STATE_SAVE_GAME:
             scene_stack.push(SaveGameScene())
         elif scene_name == STATE_LOAD_GAME:
@@ -694,6 +721,8 @@ def _apply_scene_transition(transition: SceneTransition, scene_stack: SceneStack
             scene_stack.push(HighScoreScene())
         elif scene_name == STATE_GAME_OVER:
             scene_stack.push(GameOverScene())
+        elif scene_name == STATE_VICTORY:
+            scene_stack.push(VictoryScene())
         elif scene_name == STATE_SAVE_GAME:
             scene_stack.push(SaveGameScene())
         elif scene_name == STATE_LOAD_GAME:
@@ -825,16 +854,19 @@ def _handle_events(
     
     # Fallback to old input handling if scene path didn't handle it
     current_state = _get_current_state(scene_stack) or game_state.current_screen
-    if not handled_by_screen and current_state in (STATE_PAUSED, STATE_HIGH_SCORES, STATE_NAME_INPUT, "SHADER_TEST", "SHADER_SETTINGS", STATE_TITLE, STATE_MENU, STATE_QUICK_LAUNCH, STATE_GAME_OVER, STATE_SAVE_GAME, STATE_LOAD_GAME):
+    if not handled_by_screen and current_state in (STATE_PAUSED, STATE_HIGH_SCORES, STATE_NAME_INPUT, "SHADER_TEST", "SHADER_SETTINGS", STATE_TITLE, STATE_MENU, STATE_QUICK_LAUNCH, STATE_GAME_OVER, STATE_VICTORY, STATE_SAVE_GAME, STATE_LOAD_GAME):
         # Use scene_result if we already got it, otherwise get it now
         if scene_result is not None:
             result = scene_result
         elif current_scene:
             result = current_scene.handle_input(events, game_state, screen_ctx)
         else:
-            # No scene on stack - this shouldn't happen for these states, but provide empty result for safety
-            # TODO: All states should have scenes on the stack. Remove this fallback once migration is complete.
-            result = {"screen": None, "quit": False, "restart": False, "restart_to_wave1": False, "replay": False, "pop": False, "start_game": False}
+            # INVARIANT: All states must have a scene on the stack.
+            # If we reach here, it's a bug - the scene stack should always have the appropriate scene.
+            logging.getLogger(__name__).error(
+                f"No scene on stack for state '{current_state}'. This is a bug - all states should have scenes."
+            )
+            assert False, f"Missing scene for state '{current_state}'. Scene migration is incomplete."
         
         if result.get("quit"):
             return False, previous_game_state, pause_selected, controls_selected, controls_rebinding
@@ -842,82 +874,31 @@ def _handle_events(
             scene_stack.pop()
             current_state = _get_current_state(scene_stack) or STATE_PLAYING
             game_state.current_screen = current_state
+        # Handle restart/replay/wave1 restart - delegate to RunManager
         if result.get("restart") or result.get("restart_to_wave1") or result.get("replay"):
-            game_state.reset_run(ctx, center_player=bool(result.get("restart_to_wave1") or result.get("replay")))
             if result.get("restart"):
-                game_state.ui.menu_section = 0
-            if result.get("restart_to_wave1") or result.get("replay"):
-                spawn_system_start_wave(1, game_state)
-                scene_stack.clear()
-                scene_stack.push(GameplayScene(STATE_PLAYING))
-                game_state.current_screen = STATE_PLAYING
-                play_music("in-game", loop=True)
+                restart_current_wave(ctx, game_state)
+            elif result.get("restart_to_wave1"):
+                restart_from_wave_one(ctx, game_state, scene_stack)
+            elif result.get("replay"):
+                run_replay(ctx, game_state, scene_stack)
+        
+        # Handle start_game from menu - delegate to RunManager
         if result.get("start_game") and result.get("screen") == STATE_PLAYING:
-            stop_music()
-            play_music("in-game", loop=True)
-            if ctx.config.enable_telemetry:
-                ctx.telemetry_client = Telemetry(db_path="game_telemetry.db", flush_interval_s=0.5, max_buffer=700)
-            else:
-                ctx.telemetry_client = NoOpTelemetry()
-            stats = player_class_stats[ctx.config.player_class]
-            game_state.player_max_hp = int(1000 * stats["hp_mult"] * 0.75)
-            game_state.player_hp = game_state.player_max_hp
-            game_state.player_speed = int(ctx.config.player_base_speed * stats["speed_mult"])
-            game_state.player_bullet_damage = int(ctx.config.player_base_damage * stats["damage_mult"])
-            game_state.player_shoot_cooldown = ctx.config.player_base_shoot_cooldown / stats["firerate_mult"]
-            if game_state.ui.endurance_mode_selected == 1:
-                game_state.lives = 999
-                game_state.current_screen = STATE_ENDURANCE
-                game_state.previous_screen = STATE_ENDURANCE
-                scene_stack.clear()
-                scene_stack.push(GameplayScene(STATE_ENDURANCE))
-            else:
-                game_state.current_screen = STATE_PLAYING
-                game_state.previous_screen = STATE_PLAYING
-                scene_stack.clear()
-                scene_stack.push(GameplayScene(STATE_PLAYING))
-            if game_state.level_context:
-                game_state.level_context["telemetry"] = ctx.telemetry_client
-                game_state.level_context["telemetry_enabled"] = ctx.config.enable_telemetry
-                game_state.level_context["difficulty"] = ctx.config.difficulty
-                game_state.level_context["testing_mode"] = ctx.config.testing_mode
-                game_state.level_context["invulnerability_mode"] = ctx.config.invulnerability_mode
-            game_state.run_id = ctx.telemetry_client.start_run(game_state.run_started_at, game_state.player_max_hp) if ctx.config.enable_telemetry else None
-            ctx.last_telemetry_sample_t = -1.0
-            game_state.wave_reset_log.clear()
-            game_state.wave_start_reason = "menu_start"
-            spawn_system_start_wave(game_state.wave_number, game_state)
+            endurance_mode = game_state.ui.endurance_mode_selected == 1
+            start_new_run(ctx, game_state, scene_stack, endurance_mode=endurance_mode)
+        
         current_state = _get_current_state(scene_stack) or game_state.current_screen
         # Sync pause_selected from game_state (handler may have updated it)
         if current_state == STATE_PAUSED:
             pause_selected = game_state.ui.pause_selected
-        # Handle "try_again" from game over screen - restart at game_over_wave
+        
+        # Handle "try_again" from game over screen - delegate to RunManager
         if result.get("try_again"):
-            wave_to_restart = getattr(game_state, "game_over_wave", 1)
-            game_state.reset_run(ctx)
-            game_state.wave_start_reason = "try_again"
-            spawn_system_start_wave(wave_to_restart, game_state)
-            scene_stack.clear()
-            scene_stack.push(GameplayScene(STATE_PLAYING))
-            game_state.current_screen = STATE_PLAYING
-            play_music("in-game", loop=True)
-        # Handle "load_game" from load game screen
+            run_try_again(ctx, game_state, scene_stack)
+        # Handle "load_game" from load game screen - delegate to RunManager
         elif result.get("load_game") and result.get("load_slot"):
-            from constants import difficulty_options, player_class_options
-            slot = result["load_slot"]
-            # Apply saved config
-            if hasattr(ctx, "config"):
-                ctx.config.difficulty = slot.difficulty
-                ctx.config.player_class = slot.player_class
-            # Reset and start at saved wave
-            game_state.reset_run(ctx)
-            game_state.wave_start_reason = "load_game"
-            spawn_system_start_wave(slot.wave_number, game_state)
-            game_state.score = slot.score  # Restore score
-            scene_stack.clear()
-            scene_stack.push(GameplayScene(STATE_PLAYING))
-            game_state.current_screen = STATE_PLAYING
-            play_music("in-game", loop=True)
+            run_load_game(ctx, game_state, scene_stack, result["load_slot"])
         elif result.get("screen") is not None and not result.get("start_game"):
             new_screen = result["screen"]
             game_state.current_screen = new_screen
@@ -941,6 +922,9 @@ def _handle_events(
             elif new_screen == STATE_GAME_OVER:
                 scene_stack.clear()
                 scene_stack.push(GameOverScene())
+            elif new_screen == STATE_VICTORY:
+                scene_stack.clear()
+                scene_stack.push(VictoryScene())
             elif new_screen == STATE_SAVE_GAME:
                 scene_stack.push(SaveGameScene())
             elif new_screen == STATE_LOAD_GAME:
@@ -1079,7 +1063,7 @@ def _render_current_scene(
         for msg in game_state.weapon_pickup_messages[:]:
             if msg["timer"] <= 0:
                 game_state.weapon_pickup_messages.remove(msg)
-    elif current_state in (STATE_TITLE, STATE_MENU, STATE_QUICK_LAUNCH, STATE_PAUSED, STATE_HIGH_SCORES, STATE_NAME_INPUT, STATE_GAME_OVER, STATE_SAVE_GAME, STATE_LOAD_GAME, "SHADER_TEST", "SHADER_SETTINGS"):
+    elif current_state in (STATE_TITLE, STATE_MENU, STATE_QUICK_LAUNCH, STATE_PAUSED, STATE_HIGH_SCORES, STATE_NAME_INPUT, STATE_GAME_OVER, STATE_VICTORY, STATE_SAVE_GAME, STATE_LOAD_GAME, "SHADER_TEST", "SHADER_SETTINGS"):
         # Use display render context for menus (not world surface)
         render_ctx = RenderContext.for_menu(ctx)
         # When paused + enable_pause_shaders: render gameplay frame, apply pause stack, then draw UI on top
@@ -1166,9 +1150,12 @@ def _render_current_scene(
                 import traceback
                 traceback.print_exc()
     elif current_state == STATE_VICTORY:
-        # Victory screen
-        # (Victory rendering would go here)
-        pass
+        # Victory screen - handled by VictoryScene in the scene stack
+        # This branch should not be reached since STATE_VICTORY is now included in the scene rendering block above
+        render_ctx = RenderContext.for_menu(ctx)
+        current_scene = _get_current_scene(scene_stack)
+        if current_scene:
+            current_scene.render(render_ctx, game_state, screen_ctx)
 
 
 def _handle_exit(ctx: AppContext, game_state: GameState) -> None:

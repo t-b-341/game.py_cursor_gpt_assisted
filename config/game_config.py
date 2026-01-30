@@ -55,7 +55,17 @@ class GameConfig:
 
     Replaces scattered flags on AppContext. Built at startup and when
     the user changes options in menus; attach to ctx.config.
+    
+    Safe Mode:
+    When safe_mode=True, optional/heavy features are disabled:
+    - GPU shaders disabled (use_gpu_shaders, use_gpu_shader_pipeline -> False)
+    - CUDA physics disabled (use_gpu_physics -> False)
+    - Telemetry disabled (enable_telemetry -> False)
+    This makes the game more robust on weak/misconfigured systems.
     """
+    # Safe mode: disables GPU shaders, CUDA physics, and telemetry for compatibility
+    safe_mode: bool = False
+    
     difficulty: str = DIFFICULTY_NORMAL
     player_class: str = PLAYER_CLASS_BALANCED
     aim_mode: str = AIM_MOUSE
@@ -147,3 +157,63 @@ def apply_feel_profile(config: GameConfig, profile: str) -> None:
     for k, v in presets.items():
         if hasattr(config, k):
             setattr(config, k, v)
+
+
+def apply_safe_mode(config: GameConfig) -> None:
+    """
+    Apply safe mode overrides to disable heavy/optional features.
+    
+    When safe_mode is True, this disables:
+    - GPU shaders (use_gpu_shaders, use_gpu_shader_pipeline, use_shaders)
+    - CUDA physics (use_gpu_physics)
+    - Telemetry (enable_telemetry)
+    - All shader effect stacks (enable_menu_shaders, enable_pause_shaders, enable_gameplay_shaders)
+    
+    Call this after loading config but before starting the game.
+    """
+    if not config.safe_mode:
+        return
+    
+    # Disable GPU shaders
+    config.use_gpu_shaders = False
+    config.use_gpu_shader_pipeline = False
+    config.use_shaders = False
+    config.shader_profile = "none"
+    
+    # Disable shader effect stacks
+    config.enable_menu_shaders = False
+    config.enable_pause_shaders = False
+    config.enable_gameplay_shaders = False
+    config.menu_shader_profile = "none"
+    config.pause_shader_profile = "none"
+    config.gameplay_shader_profile = "none"
+    
+    # Disable CUDA physics
+    config.use_gpu_physics = False
+    
+    # Disable telemetry
+    config.enable_telemetry = False
+
+
+def log_startup_config(config: GameConfig) -> None:
+    """
+    Log a summary of key config settings at startup.
+    
+    Useful for debugging and verifying safe_mode is active.
+    """
+    print("=" * 60)
+    print("GAME STARTUP CONFIGURATION")
+    print("=" * 60)
+    
+    if config.safe_mode:
+        print("[SAFE MODE] Active - heavy features disabled for compatibility")
+    else:
+        print("[SAFE MODE] Inactive - all features enabled")
+    
+    print(f"  GPU Shaders:     {'DISABLED' if not config.use_gpu_shaders else 'Enabled'}")
+    print(f"  GPU Pipeline:    {'DISABLED' if not config.use_gpu_shader_pipeline else 'Enabled'}")
+    print(f"  CUDA Physics:    {'DISABLED' if not config.use_gpu_physics else 'Enabled'}")
+    print(f"  Telemetry:       {'DISABLED' if not config.enable_telemetry else 'Enabled'}")
+    print(f"  Menu Shaders:    {'DISABLED' if not config.enable_menu_shaders else 'Enabled'}")
+    print(f"  Gameplay Shaders:{'DISABLED' if not config.enable_gameplay_shaders else 'Enabled'}")
+    print("=" * 60)

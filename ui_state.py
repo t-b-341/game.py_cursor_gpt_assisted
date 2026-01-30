@@ -52,6 +52,9 @@ class UiState:
     # Game over menu state
     game_over_selected: int = 0  # 0=Try Again, 1=Save, 2=Quit
     
+    # Victory menu state
+    victory_selected: int = 0  # 0=Enter High Score, 1=Play Again, 2=Quit
+    
     # Save/Load menu state
     save_slot_selected: int = 0  # 0, 1, or 2
     save_name_input: str = ""  # Name input for save slot

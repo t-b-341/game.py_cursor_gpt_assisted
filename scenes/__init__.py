@@ -1,4 +1,4 @@
-"""Scenes: gameplay, pause, high scores, name input, shader test, title, options, game over, save/load, quick launch. Driven by SceneStack in the game loop."""
+"""Scenes: gameplay, pause, high scores, name input, shader test, title, options, game over, victory, save/load, quick launch. Driven by SceneStack in the game loop."""
 from .base import Scene, SceneStack
 from .gameplay import GameplayScene
 from .high_scores import HighScoreScene
@@ -9,6 +9,7 @@ from .shader_test import ShaderTestScene
 from .shader_settings import ShaderSettingsScreen
 from .title import TitleScene
 from .game_over import GameOverScene
+from .victory import VictoryScene
 from .save_game import SaveGameScene
 from .load_game import LoadGameScene
 from .quick_launch import QuickLaunchScene
@@ -27,6 +28,7 @@ __all__ = [
     "ShaderSettingsScreen",
     "TitleScene",
     "GameOverScene",
+    "VictoryScene",
     "SaveGameScene",
     "LoadGameScene",
     "QuickLaunchScene",

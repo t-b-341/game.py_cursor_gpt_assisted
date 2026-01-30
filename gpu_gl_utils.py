@@ -208,24 +208,46 @@ def load_shader_file(shader_path: str | Path) -> Optional[str]:
     Returns:
         Shader source code as string, or None if file not found or error occurred
     
-    TODO: Use get_resource_path() from resource_paths.py for PyInstaller compatibility.
+    Uses get_resource_path() for PyInstaller compatibility.
     """
+    from resource_paths import get_resource_path
+    
     try:
         path = Path(shader_path)
-        if not path.is_absolute():
-            # Try relative to project root
-            project_root = Path(__file__).resolve().parent
-            path = project_root / path
-        if not path.exists():
-            # Try assets/shaders directory
-            project_root = Path(__file__).resolve().parent
-            assets_path = project_root / "assets" / "shaders" / Path(shader_path).name
-            if assets_path.exists():
-                path = assets_path
+        
+        # If absolute path, use directly
+        if path.is_absolute():
+            if path.exists():
+                return path.read_text(encoding="utf-8")
             else:
                 print(f"[Shader] File not found: {shader_path}")
                 return None
-        return path.read_text(encoding="utf-8")
+        
+        # Try using get_resource_path (works for both dev and PyInstaller)
+        resolved_path = Path(get_resource_path(str(shader_path)))
+        if resolved_path.exists():
+            return resolved_path.read_text(encoding="utf-8")
+        
+        # Fallback: try relative to project root
+        project_root = Path(__file__).resolve().parent
+        fallback_path = project_root / path
+        if fallback_path.exists():
+            return fallback_path.read_text(encoding="utf-8")
+        
+        # Fallback: try assets/shaders directory
+        assets_path = project_root / "assets" / "shaders" / Path(shader_path).name
+        if assets_path.exists():
+            return assets_path.read_text(encoding="utf-8")
+        
+        # Last resort: try get_resource_path with just the filename in assets/shaders
+        if not str(shader_path).startswith("assets"):
+            shader_name = Path(shader_path).name
+            resolved_assets_path = Path(get_resource_path(f"assets/shaders/{shader_name}"))
+            if resolved_assets_path.exists():
+                return resolved_assets_path.read_text(encoding="utf-8")
+        
+        print(f"[Shader] File not found: {shader_path}")
+        return None
     except Exception as e:
         print(f"[Shader] Error loading {shader_path}: {e}")
         return None

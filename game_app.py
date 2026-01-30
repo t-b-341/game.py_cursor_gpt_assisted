@@ -83,7 +83,7 @@ class GameApp:
     def update(self, dt: float) -> bool:
         """Run simulation updates. Returns False if the game should stop running."""
         import game as game_module
-        from constants import STATE_PLAYING, STATE_ENDURANCE, STATE_GAME_OVER
+        from constants import STATE_PLAYING, STATE_ENDURANCE, STATE_GAME_OVER, STATE_VICTORY
         
         # Update run time
         self.game_state.run_time += dt
@@ -206,6 +206,16 @@ class GameApp:
                 from scenes.game_over import GameOverScene
                 self.scene_stack.clear()
                 self.scene_stack.push(GameOverScene())
+        
+        # Check if current_screen changed to VICTORY during simulation (beat all levels)
+        # If so, sync the scene stack
+        if self.game_state.current_screen == STATE_VICTORY:
+            scene_state = game_module._get_current_state(self.scene_stack)
+            if scene_state != STATE_VICTORY:
+                # Player won - push victory scene
+                from scenes.victory import VictoryScene
+                self.scene_stack.clear()
+                self.scene_stack.push(VictoryScene())
         
         return True
 
