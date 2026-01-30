@@ -8,7 +8,7 @@ player_bullet_shapes = ["circle", "square", "diamond"]
 player_bullets_color = (10, 200, 200)
 player_bullet_size = (8, 8)
 player_bullet_speed = 450  # Reduced by 0.5x
-player_bullet_damage = 20
+player_bullet_damage = 150
 player_shoot_cooldown = 0.12
 
 # Laser
