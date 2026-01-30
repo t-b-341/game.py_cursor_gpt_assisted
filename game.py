@@ -513,8 +513,14 @@ def _setup_initial_resources() -> None:
     play_music("ambient2", loop=True)
 
 
-def _prompt_shader_mode(ctx: AppContext) -> None:
-    """Prompt user for GPU shader mode if moderngl is available."""
+def _prompt_shader_mode(ctx: AppContext, show_prompt: bool = False) -> None:
+    """Initialize shader mode settings.
+    
+    Args:
+        ctx: Application context
+        show_prompt: If True, show the interactive Y/N prompt. If False, use defaults.
+                     The prompt can be re-enabled later if needed.
+    """
     try:
         import moderngl  # noqa: F401  # type: ignore[import-untyped]
         moderngl_available = True
@@ -523,7 +529,8 @@ def _prompt_shader_mode(ctx: AppContext) -> None:
         ctx.config.use_shaders = False
         moderngl_available = False
     
-    if moderngl_available:
+    if moderngl_available and show_prompt:
+        # Interactive prompt (disabled by default)
         prompt_done = False
         prompt_clock = pygame.time.Clock()
         # Use display dimensions for the prompt (not world dimensions)
@@ -555,7 +562,16 @@ def _prompt_shader_mode(ctx: AppContext) -> None:
                         ctx.config.enable_gameplay_shaders = False
                         ctx.config.enable_pause_shaders = False
                         prompt_done = True
-    print("Shader mode: ON" if ctx.config.use_shaders else "Shader mode: OFF")
+    elif moderngl_available:
+        # Default: shaders disabled at startup, can be enabled via pause menu Shader Options
+        ctx.config.use_shaders = False
+        ctx.config.use_gpu_shader_pipeline = False
+        ctx.config.enable_gameplay_shaders = False
+        ctx.config.enable_pause_shaders = False
+    
+    # Log shader configuration (only if enabled)
+    if ctx.config.use_shaders:
+        print("Shader mode: ON")
     if ctx.config.use_gpu_shader_pipeline:
         print("GPU particle effects: ENABLED (shot/rocket/bomb bursts)")
     if ctx.config.enable_pause_shaders:
