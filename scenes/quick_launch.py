@@ -81,7 +81,7 @@ class QuickLaunchScene:
                 cfg.profile_enabled = False
                 cfg.show_metrics = True
                 cfg.show_hud = True
-                cfg.enable_telemetry = False
+                cfg.enable_telemetry = True  # Keep telemetry enabled for analytics
                 
                 # Reset menu section in case they later go to full options
                 game_state.ui.menu_section = 0

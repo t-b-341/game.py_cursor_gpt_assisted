@@ -325,7 +325,7 @@ def _build_app_context(screen: pygame.Surface, clock: pygame.time.Clock, display
         aim_mode=AIM_MOUSE,
         aiming_mechanic="mouse",
         player_class=PLAYER_CLASS_BALANCED,
-        enable_telemetry=False,
+        enable_telemetry=True,  # Enable telemetry by default for analytics
         show_metrics=True,
         show_hud=True,
         show_health_bars=True,
