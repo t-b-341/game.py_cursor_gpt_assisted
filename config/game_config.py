@@ -95,6 +95,9 @@ class GameConfig:
     max_player_bullets: int = 200  # Maximum player bullets on screen
     max_enemy_projectiles: int = 300  # Maximum enemy projectiles on screen
     max_friendly_projectiles: int = 100  # Maximum friendly AI projectiles
+    max_missiles: int = 30  # Maximum missiles on screen
+    max_explosions: int = 20  # Maximum active explosions
+    max_laser_beams: int = 10  # Maximum laser beams on screen
 
     # Graphics/performance preset (centralized; future presets low/medium/high/ultra can map onto these)
     graphics_preset: str = "low"  # "low" | "medium" | "high" | "ultra"; currently informational, values drive the flags below.

@@ -4,6 +4,7 @@ Performance optimizations:
 - Spatial grid partitioning reduces O(n*m) collision checks to O(n) average
 - Filter-based list updates avoid O(n) removal during iteration
 - Bulk processing where possible
+- C-accelerated distance calculations where available
 """
 from __future__ import annotations
 
@@ -12,6 +13,7 @@ import pygame
 
 from .collision_common import apply_player_damage, set_enemy_damage_flash
 from .spatial_grid import get_projectile_grid, get_enemy_grid, get_block_grid, SpatialGrid
+from physics_loader import distance_squared as c_distance_squared
 
 try:
     from gpu_physics import check_collisions_batch, CUDA_AVAILABLE
@@ -589,14 +591,16 @@ def handle_grenade_explosion_damage(state, dt: float, ctx: dict) -> None:
         if explosion["timer"] <= 0:
             explosions_to_remove.add(id(explosion))
             continue
-        pos = pygame.Vector2(explosion["x"], explosion["y"])
+        px, py = explosion["x"], explosion["y"]
         r = explosion["radius"]
+        r_sq = r * r  # Use squared radius to avoid sqrt
         damage_val = explosion.get("damage", 500)
         source = explosion.get("source", "")
         if source != "enemy_player_allies_only":
             for enemy in state.enemies:
-                d = (pygame.Vector2(enemy["rect"].center) - pos).length()
-                if d <= r:
+                # Use C-accelerated distance_squared (avoids sqrt)
+                d_sq = c_distance_squared(enemy["rect"].centerx, enemy["rect"].centery, px, py)
+                if d_sq <= r_sq:
                     enemy["hp"] -= damage_val
                     set_enemy_damage_flash(enemy, ctx)
                     state.damage_numbers.append({
@@ -610,22 +614,22 @@ def handle_grenade_explosion_damage(state, dt: float, ctx: dict) -> None:
                         kill(enemy, state)
         if source == "enemy_player_allies_only":
             for friendly in state.friendly_ai:
-                d = (pygame.Vector2(friendly["rect"].center) - pos).length()
-                if d <= r:
+                d_sq = c_distance_squared(friendly["rect"].centerx, friendly["rect"].centery, px, py)
+                if d_sq <= r_sq:
                     friendly["hp"] = friendly.get("hp", friendly.get("max_hp", 100)) - damage_val
                     if friendly["hp"] <= 0:
                         friendlies_to_remove.add(id(friendly))
         if player:
-            pd = (pygame.Vector2(player.center) - pos).length()
-            if pd <= r and source not in ("player", "wall_impact", "ally_explosion"):
+            pd_sq = c_distance_squared(player.centerx, player.centery, px, py)
+            if pd_sq <= r_sq and source not in ("player", "wall_impact", "ally_explosion"):
                 if not state.shield_active:
                     apply_player_damage(state, damage_val, ctx)
         if source != "enemy_player_allies_only":
             for block in list(d_blocks) + list(m_blocks):
                 if not block.get("is_destructible"):
                     continue
-                bp = pygame.Vector2(block["rect"].center)
-                if (bp - pos).length() <= r:
+                d_sq = c_distance_squared(block["rect"].centerx, block["rect"].centery, px, py)
+                if d_sq <= r_sq:
                     block["hp"] -= damage_val
                     if block["hp"] <= 0:
                         if block in d_blocks:
@@ -684,13 +688,14 @@ def handle_missile_collisions(state, ctx: dict) -> None:
                 hit = True
         
         if hit:
-            pos = pygame.Vector2(missile["rect"].center)
+            mx, my = missile["rect"].centerx, missile["rect"].centery
             rad = missile.get("explosion_radius", 150)
+            rad_sq = rad * rad  # Use squared radius to avoid sqrt
             dmg = missile.get("damage", md)
             
-            # Damage enemies in explosion radius
+            # Damage enemies in explosion radius using C-accelerated distance_squared
             for enemy in state.enemies:
-                if (pygame.Vector2(enemy["rect"].center) - pos).length() <= rad:
+                if c_distance_squared(enemy["rect"].centerx, enemy["rect"].centery, mx, my) <= rad_sq:
                     enemy["hp"] -= dmg
                     set_enemy_damage_flash(enemy, ctx)
                     state.damage_numbers.append({
@@ -723,7 +728,7 @@ def handle_missile_collisions(state, ctx: dict) -> None:
             
             # Damage player if in explosion radius (and no shield)
             if missile.get("target_player") and player:
-                if (pygame.Vector2(player.center) - pos).length() <= rad and not state.shield_active:
+                if c_distance_squared(player.centerx, player.centery, mx, my) <= rad_sq and not state.shield_active:
                     apply_player_damage(state, dmg, ctx)
             
             missiles_to_remove.add(id(missile))

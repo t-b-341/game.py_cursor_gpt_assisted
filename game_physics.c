@@ -307,6 +307,123 @@ static PyObject* check_bullet_collisions_c(PyObject* self, PyObject* args) {
     return collisions;
 }
 
+/* Batch distance squared: compute squared distances from one point to many targets.
+ * Args: (center_x, center_y, targets_x_list, targets_y_list)
+ * Returns: list of squared distances */
+static PyObject* batch_distance_squared_c(PyObject* self, PyObject* args) {
+    double cx, cy;
+    PyObject* targets_x;
+    PyObject* targets_y;
+    
+    if (!PyArg_ParseTuple(args, "ddOO", &cx, &cy, &targets_x, &targets_y)) {
+        return NULL;
+    }
+    
+    Py_ssize_t len = PyList_Size(targets_x);
+    Py_ssize_t len_y = PyList_Size(targets_y);
+    if (len != len_y) {
+        PyErr_SetString(PyExc_ValueError, "targets_x and targets_y must have same length");
+        return NULL;
+    }
+    
+    PyObject* result = PyList_New(len);
+    if (!result) return NULL;
+    
+    for (Py_ssize_t i = 0; i < len; i++) {
+        double tx = PyFloat_AsDouble(PyList_GetItem(targets_x, i));
+        double ty = PyFloat_AsDouble(PyList_GetItem(targets_y, i));
+        double dx = tx - cx;
+        double dy = ty - cy;
+        double dist_sq = dx * dx + dy * dy;
+        PyList_SET_ITEM(result, i, PyFloat_FromDouble(dist_sq));
+    }
+    
+    return result;
+}
+
+/* Find entities within radius (squared).
+ * Args: (center_x, center_y, radius_squared, entities_x_list, entities_y_list)
+ * Returns: list of indices of entities within radius */
+static PyObject* find_in_radius_c(PyObject* self, PyObject* args) {
+    double cx, cy, r_sq;
+    PyObject* entities_x;
+    PyObject* entities_y;
+    
+    if (!PyArg_ParseTuple(args, "dddOO", &cx, &cy, &r_sq, &entities_x, &entities_y)) {
+        return NULL;
+    }
+    
+    Py_ssize_t len = PyList_Size(entities_x);
+    
+    PyObject* result = PyList_New(0);
+    if (!result) return NULL;
+    
+    for (Py_ssize_t i = 0; i < len; i++) {
+        double ex = PyFloat_AsDouble(PyList_GetItem(entities_x, i));
+        double ey = PyFloat_AsDouble(PyList_GetItem(entities_y, i));
+        double dx = ex - cx;
+        double dy = ey - cy;
+        double dist_sq = dx * dx + dy * dy;
+        
+        if (dist_sq <= r_sq) {
+            PyList_Append(result, PyLong_FromSsize_t(i));
+        }
+    }
+    
+    return result;
+}
+
+/* Get grid cell index for a point.
+ * Args: (x, y, cell_size, cols)
+ * Returns: cell index */
+static PyObject* get_grid_cell_index_c(PyObject* self, PyObject* args) {
+    int x, y, cell_size, cols;
+    
+    if (!PyArg_ParseTuple(args, "iiii", &x, &y, &cell_size, &cols)) {
+        return NULL;
+    }
+    
+    int col = x / cell_size;
+    int row = y / cell_size;
+    int idx = row * cols + col;
+    
+    return PyLong_FromLong(idx);
+}
+
+/* Get grid cell indices for a rect (all cells the rect overlaps).
+ * Args: (rect_x, rect_y, rect_w, rect_h, cell_size, cols, rows)
+ * Returns: list of cell indices */
+static PyObject* get_grid_cell_indices_for_rect_c(PyObject* self, PyObject* args) {
+    int rx, ry, rw, rh, cell_size, cols, rows;
+    
+    if (!PyArg_ParseTuple(args, "iiiiiii", &rx, &ry, &rw, &rh, &cell_size, &cols, &rows)) {
+        return NULL;
+    }
+    
+    int min_col = rx / cell_size;
+    int max_col = (rx + rw) / cell_size;
+    int min_row = ry / cell_size;
+    int max_row = (ry + rh) / cell_size;
+    
+    // Clamp to valid range
+    if (min_col < 0) min_col = 0;
+    if (max_col >= cols) max_col = cols - 1;
+    if (min_row < 0) min_row = 0;
+    if (max_row >= rows) max_row = rows - 1;
+    
+    PyObject* result = PyList_New(0);
+    if (!result) return NULL;
+    
+    for (int row = min_row; row <= max_row; row++) {
+        for (int col = min_col; col <= max_col; col++) {
+            int idx = row * cols + col;
+            PyList_Append(result, PyLong_FromLong(idx));
+        }
+    }
+    
+    return result;
+}
+
 /* Method definitions */
 static PyMethodDef GamePhysicsMethods[] = {
     {"can_move_rect", can_move_rect_c, METH_VARARGS, 
@@ -321,6 +438,14 @@ static PyMethodDef GamePhysicsMethods[] = {
      "Calculate squared distance (faster, no sqrt)"},
     {"check_bullet_collisions", check_bullet_collisions_c, METH_VARARGS,
      "Batch check collisions between bullets and targets"},
+    {"batch_distance_squared", batch_distance_squared_c, METH_VARARGS,
+     "Compute squared distances from one point to many targets"},
+    {"find_in_radius", find_in_radius_c, METH_VARARGS,
+     "Find indices of entities within radius (uses radius squared)"},
+    {"get_grid_cell_index", get_grid_cell_index_c, METH_VARARGS,
+     "Get grid cell index for a point"},
+    {"get_grid_cell_indices_for_rect", get_grid_cell_indices_for_rect_c, METH_VARARGS,
+     "Get all grid cell indices a rect overlaps"},
     {NULL, NULL, 0, NULL}
 };
 

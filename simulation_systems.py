@@ -103,6 +103,50 @@ def _sim_juice_timers(gs: GameState, sim_dt: float, app_ctx: AppContext) -> None
             e["damage_flash_timer"] = max(0.0, e["damage_flash_timer"] - sim_dt)
 
 
+def _sim_wave_beams_cleanup(gs: GameState, sim_dt: float, app_ctx: AppContext) -> None:
+    """Clean up expired wave beams to prevent unbounded growth."""
+    if not gs.wave_beams:
+        return
+    # Use filter-based removal for efficiency
+    gs.wave_beams[:] = [
+        beam for beam in gs.wave_beams
+        if (beam.__setitem__("timer", beam.get("timer", 0.1) - sim_dt) or True)
+        and beam.get("timer", 0) > 0
+    ]
+
+
+def _sim_limit_damage_numbers(gs: GameState, sim_dt: float, app_ctx: AppContext) -> None:
+    """Limit damage numbers to prevent accumulation during intense combat."""
+    MAX_DAMAGE_NUMBERS = 50  # Keep only the most recent
+    if len(gs.damage_numbers) > MAX_DAMAGE_NUMBERS:
+        # Sort by timer (newest first) and keep only MAX
+        gs.damage_numbers.sort(key=lambda x: x.get("timer", 0), reverse=True)
+        gs.damage_numbers[:] = gs.damage_numbers[:MAX_DAMAGE_NUMBERS]
+
+
+def _sim_enforce_entity_limits(gs: GameState, sim_dt: float, app_ctx: AppContext) -> None:
+    """Enforce limits on missiles, explosions, and laser beams to prevent late-game slowdown."""
+    cfg = app_ctx.config if app_ctx else None
+    
+    # Missile limit (default 30)
+    max_missiles = getattr(cfg, "max_missiles", 30) if cfg else 30
+    if len(gs.missiles) > max_missiles:
+        # Remove oldest missiles (first in list)
+        gs.missiles[:] = gs.missiles[-max_missiles:]
+    
+    # Explosion limit (default 20)
+    max_explosions = getattr(cfg, "max_explosions", 20) if cfg else 20
+    if len(gs.grenade_explosions) > max_explosions:
+        # Keep explosions with most time remaining
+        gs.grenade_explosions.sort(key=lambda x: x.get("timer", 0), reverse=True)
+        gs.grenade_explosions[:] = gs.grenade_explosions[:max_explosions]
+    
+    # Laser beam limit (default 10)
+    max_lasers = getattr(cfg, "max_laser_beams", 10) if cfg else 10
+    if len(gs.laser_beams) > max_lasers:
+        gs.laser_beams[:] = gs.laser_beams[-max_lasers:]
+
+
 SIMULATION_SYSTEMS = [
     _sim_player_and_ability_timers,
     _sim_damage_and_weapon_message_cleanup,
@@ -113,4 +157,7 @@ SIMULATION_SYSTEMS = [
     _sim_pickup_effects,
     _sim_registry_systems,
     _sim_juice_timers,
+    _sim_wave_beams_cleanup,
+    _sim_limit_damage_numbers,
+    _sim_enforce_entity_limits,
 ]

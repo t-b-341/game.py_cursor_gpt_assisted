@@ -19,6 +19,7 @@ from constants import (
     DROPPED_ALLY_AGGRO_PRIORITY,
 )
 from geometry_utils import clamp_rect_to_screen
+from physics_loader import distance_squared as c_distance_squared
 from telemetry import EnemySpawnEvent
 
 
@@ -179,11 +180,15 @@ def find_nearest_threat(
     dropped_ally_threats = []
     regular_ally_threats = []
     
+    # Extract enemy position once for C function calls
+    ex, ey = enemy_pos.x, enemy_pos.y
+    
     for f in friendly_ai:
         if f.get("hp", 0) <= 0:
             continue
         friendly_pos = pygame.Vector2(f["rect"].center)
-        friendly_dist_sq = (friendly_pos - enemy_pos).length_squared()
+        # Use C-accelerated distance calculation
+        friendly_dist_sq = c_distance_squared(ex, ey, friendly_pos.x, friendly_pos.y)
         
         # Get ally's aggro multiplier (tank allies can have higher values)
         aggro_mult = f.get("aggro_mult", 1.0)

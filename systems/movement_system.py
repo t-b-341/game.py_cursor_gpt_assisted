@@ -12,6 +12,7 @@ import pygame
 
 from constants import MAX_ENEMIES_TARGETING_PLAYER
 from enemies import find_nearest_threat, find_threats_in_dodge_range
+from physics_loader import distance_squared as c_distance_squared
 
 try:
     from ecs_components import PositionComponent, VelocityComponent
@@ -121,9 +122,10 @@ def _update_enemies(state, dt: float, ctx: dict) -> None:
     player_in_main = main_area and main_area.collidepoint(player.centerx, player.centery) if main_area else False
 
     # Only allow up to N enemies to target the player; the rest target friendlies or patrol. Closest N by distance get the slots.
-    player_center = pygame.Vector2(player.center)
+    # Use C-accelerated distance calculations for performance
+    pcx, pcy = player.centerx, player.centery
     candidates = [
-        (e, (pygame.Vector2(e["rect"].center) - player_center).length_squared())
+        (e, c_distance_squared(e["rect"].centerx, e["rect"].centery, pcx, pcy))
         for e in state.enemies
         if e.get("hp", 1) > 0 and not e.get("is_ambient")
     ]
@@ -139,7 +141,9 @@ def _update_enemies(state, dt: float, ctx: dict) -> None:
         current_pos = pygame.Vector2(enemy["rect"].center)
         last_pos = enemy.get("last_pos", current_pos)
         stuck_timer = enemy.get("stuck_timer", 0.0)
-        distance_moved = current_pos.distance_to(last_pos)
+        # Use C-accelerated distance for stuck detection
+        distance_moved_sq = c_distance_squared(current_pos.x, current_pos.y, last_pos.x, last_pos.y)
+        distance_moved = math.sqrt(distance_moved_sq) if distance_moved_sq > 0 else 0.0
         if distance_moved < 5.0:
             stuck_timer += dt
         else:

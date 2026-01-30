@@ -87,6 +87,9 @@ def spawn_friendly_ai(
         )
 
 
+MAX_FRIENDLY_PROJECTILES = 100  # Prevent unbounded growth
+
+
 def spawn_friendly_projectile(
     friendly: dict,
     target: dict,
@@ -96,6 +99,10 @@ def spawn_friendly_projectile(
     run_time: float,
 ):
     """Spawn a projectile from friendly AI targeting an enemy."""
+    # Enforce limit to prevent late-game frame drops
+    if len(friendly_projectiles) >= MAX_FRIENDLY_PROJECTILES:
+        return
+    
     d = vec_toward(
         friendly["rect"].centerx, friendly["rect"].centery,
         target["rect"].centerx, target["rect"].centery

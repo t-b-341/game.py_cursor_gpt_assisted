@@ -2,11 +2,17 @@
 
 Divides the game world into cells. Objects are inserted into cells based on their position.
 Collision queries only check objects in nearby cells, reducing O(n*m) to O(n) average case.
+Uses C-accelerated cell index calculations when available.
 """
 from __future__ import annotations
 
 from typing import Any, Iterator
 import pygame
+
+from physics_loader import (
+    get_grid_cell_indices_for_rect as c_get_cell_indices_for_rect,
+    is_using_c,
+)
 
 
 class SpatialGrid:
@@ -44,17 +50,12 @@ class SpatialGrid:
         return row * self.cols + col
     
     def _get_cell_indices_for_rect(self, rect: pygame.Rect) -> list[int]:
-        """Get all cell indices that a rect overlaps."""
-        min_col = max(0, rect.left // self.cell_size)
-        max_col = min(self.cols - 1, rect.right // self.cell_size)
-        min_row = max(0, rect.top // self.cell_size)
-        max_row = min(self.rows - 1, rect.bottom // self.cell_size)
-        
-        indices = []
-        for row in range(min_row, max_row + 1):
-            for col in range(min_col, max_col + 1):
-                indices.append(row * self.cols + col)
-        return indices
+        """Get all cell indices that a rect overlaps. Uses C-accelerated version if available."""
+        # Use C-accelerated function for grid cell calculations
+        return c_get_cell_indices_for_rect(
+            rect.left, rect.top, rect.width, rect.height,
+            self.cell_size, self.cols, self.rows
+        )
     
     def insert(self, obj: Any, rect: pygame.Rect) -> None:
         """Insert an object into the grid based on its rect."""
