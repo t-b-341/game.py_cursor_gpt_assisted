@@ -216,6 +216,15 @@ SHADER_SPECS: Dict[str, ShaderSpec] = {
             "u_BlurSize": 5.0,
         },
     ),
+    "shot_particle_burst": ShaderSpec(
+        name="shot_particle_burst",
+        category=ShaderCategory.COMBAT,
+        default_uniforms={
+            "u_shot_pos": (0.5, 0.5),
+            "u_shot_strength": 0.0,
+            "u_effect_radius": 1.0,
+        },
+    ),
 }
 
 

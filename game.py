@@ -542,11 +542,26 @@ def _prompt_shader_mode(ctx: AppContext) -> None:
                 elif e.type == pygame.KEYDOWN:
                     if e.key == pygame.K_y:
                         ctx.config.use_shaders = True
+                        ctx.config.use_gpu_shader_pipeline = True  # Enable GPU particle effects
+                        # CPU effects disabled by default for performance
+                        # Enable via pause menu Shader Options if desired
+                        ctx.config.enable_gameplay_shaders = False
+                        ctx.config.enable_pause_shaders = True  # Pause effects are lightweight
+                        ctx.config.pause_shader_profile = "pause_dim_vignette"
                         prompt_done = True
                     elif e.key == pygame.K_n:
                         ctx.config.use_shaders = False
+                        ctx.config.use_gpu_shader_pipeline = False
+                        ctx.config.enable_gameplay_shaders = False
+                        ctx.config.enable_pause_shaders = False
                         prompt_done = True
     print("Shader mode: ON" if ctx.config.use_shaders else "Shader mode: OFF")
+    if ctx.config.use_gpu_shader_pipeline:
+        print("GPU particle effects: ENABLED (shot/rocket/bomb bursts)")
+    if ctx.config.enable_pause_shaders:
+        print(f"Pause effects: ENABLED (profile: {ctx.config.pause_shader_profile})")
+    if ctx.config.enable_gameplay_shaders:
+        print(f"CPU gameplay effects: ENABLED (profile: {ctx.config.gameplay_shader_profile})")
 
 
 def _build_scene_stack() -> SceneStack:

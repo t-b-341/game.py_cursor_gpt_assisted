@@ -32,6 +32,7 @@ from enemies import find_nearest_threat
 from geometry_utils import vec_toward
 from systems.audio_system import play_sfx
 from telemetry import ShotEvent, BulletMetadataEvent
+from systems.shot_particle_state import get_shot_particle_state
 
 if TYPE_CHECKING:
     from state import GameState
@@ -170,6 +171,32 @@ def spawn_player_bullet_and_log(state: GameState, ctx: AppContext):
         play_sfx("ROCKET")
     else:
         play_sfx("BASIC SHOT")
+    
+    # Record shot for GPU particle effect
+    # Convert player position to normalized screen coordinates [0,1]
+    display_w = getattr(ctx, 'display_width', ctx.width) if hasattr(ctx, 'display_width') else 800
+    display_h = getattr(ctx, 'display_height', ctx.height) if hasattr(ctx, 'display_height') else 600
+    
+    # Get camera offset if available
+    from systems.camera import get_camera
+    camera = get_camera()
+    if camera:
+        screen_x = (state.player_rect.centerx - camera.x) / display_w
+        screen_y = (state.player_rect.centery - camera.y) / display_h
+    else:
+        screen_x = state.player_rect.centerx / display_w
+        screen_y = state.player_rect.centery / display_h
+    
+    # Clamp to valid range and add shot
+    screen_x = max(0.0, min(1.0, screen_x))
+    screen_y = max(0.0, min(1.0, screen_y))
+    
+    # Use rocket effect for rocket weapons, otherwise regular shot
+    shot_state = get_shot_particle_state()
+    if weapon_config.get("is_rocket", False):
+        shot_state.add_rocket((screen_x, screen_y))
+    else:
+        shot_state.add_shot((screen_x, screen_y))
 
     if ctx.config.enable_telemetry and ctx.telemetry_client:
         ctx.telemetry_client.log_shot(

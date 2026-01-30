@@ -88,14 +88,25 @@ void main() {
 
 
 def get_gl_context() -> Optional["moderngl.Context"]:
+    """Get or create a moderngl context.
+    
+    First tries to attach to an existing OpenGL context (if pygame was created with OPENGL flag).
+    Falls back to creating a standalone context for offscreen rendering.
+    """
     global _gl_ctx
     if moderngl is None:
         return None
     if _gl_ctx is None:
+        # Try to attach to existing OpenGL context first
         try:
             _gl_ctx = moderngl.create_context()
         except Exception:
-            _gl_ctx = None
+            # No existing context - create standalone for offscreen rendering
+            try:
+                _gl_ctx = moderngl.create_standalone_context()
+            except Exception as e:
+                print(f"[GPU] Failed to create standalone context: {e}")
+                _gl_ctx = None
     return _gl_ctx
 
 
@@ -390,6 +401,7 @@ def _register_builtin_utility_shaders() -> None:
     register_utility_shader("screenshake", fragment_shader="assets/shaders/screenshake.frag", category=ShaderCategory.COMBAT)
     register_utility_shader("time_warp", fragment_shader="assets/shaders/time_warp.frag", category=ShaderCategory.COMBAT)
     register_utility_shader("shockwave_sprite", fragment_shader="assets/shaders/shockwave_sprite.frag", category=ShaderCategory.COMBAT)
+    register_utility_shader("shot_particle_burst", fragment_shader="assets/shaders/shot_particle_burst.frag", category=ShaderCategory.COMBAT)
     
     # Water effects
     register_utility_shader("water_ripple", fragment_shader="assets/shaders/water_ripple.frag", category=ShaderCategory.WATER)

@@ -25,6 +25,46 @@ from config_enemies import FRIENDLY_AI_TEMPLATES
 from allies import make_friendly_from_template
 
 
+def _add_particle_effect(player_rect, camera, ctx, effect_type: str) -> None:
+    """Add a particle effect at the player's position.
+    
+    Args:
+        player_rect: Player's rect for position
+        camera: Camera object for coordinate conversion
+        ctx: Context with display dimensions
+        effect_type: "shot", "rocket", or "bomb"
+    """
+    try:
+        from systems.shot_particle_state import get_shot_particle_state, EffectType
+        
+        # Get display dimensions
+        display_w = ctx.get("width", 800)
+        display_h = ctx.get("height", 600)
+        
+        # Convert to normalized screen coordinates
+        if camera:
+            screen_x = (player_rect.centerx - camera.x) / display_w
+            screen_y = (player_rect.centery - camera.y) / display_h
+        else:
+            screen_x = player_rect.centerx / display_w
+            screen_y = player_rect.centery / display_h
+        
+        # Clamp to valid range
+        screen_x = max(0.0, min(1.0, screen_x))
+        screen_y = max(0.0, min(1.0, screen_y))
+        
+        # Add the appropriate effect
+        shot_state = get_shot_particle_state()
+        if effect_type == "rocket":
+            shot_state.add_rocket((screen_x, screen_y))
+        elif effect_type == "bomb":
+            shot_state.add_bomb((screen_x, screen_y))
+        else:
+            shot_state.add_shot((screen_x, screen_y))
+    except Exception:
+        pass  # Silently fail if particle system unavailable
+
+
 def _scale_mouse_pos(pos: tuple[int, int], world_scale: float, camera=None) -> tuple[float, float]:
     """Scale mouse position from display space to world space.
     
@@ -109,6 +149,8 @@ def handle_gameplay_input(events, game_state, ctx) -> None:
                     # Play grenade sound
                     from systems.audio_system import play_sfx
                     play_sfx("GRENADE")
+                    # Add bomb particle effect
+                    _add_particle_effect(player, camera, ctx, "bomb")
 
             if event.key == pygame.K_r and player:
                 if game_state.missile_time_since_used >= missile_cooldown_val:
@@ -129,6 +171,8 @@ def handle_gameplay_input(events, game_state, ctx) -> None:
                         # Play rocket sound
                         from systems.audio_system import play_sfx
                         play_sfx("ROCKET")
+                        # Add rocket particle effect
+                        _add_particle_effect(player, camera, ctx, "rocket")
 
             if event.key == controls.get("ally_drop", pygame.K_q) and player:
                 # Only use ability if cooldown is ready - otherwise ignore the keypress

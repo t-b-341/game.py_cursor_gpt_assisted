@@ -25,39 +25,126 @@ logger = logging.getLogger(__name__)
 # Global shader pipeline (initialized on first use)
 _shader_pipeline: ShaderPipelineManager | None = None
 
+# Debug message counter (limit console spam)
+_gpu_debug_count: int = 0
+
 def _create_shader_render_pass(shader_name: str, uniforms: dict) -> Optional[Callable]:
-    """Create a render pass function for a GPU shader."""
+    """Create a render pass function for a GPU shader.
+    
+    Creates a framebuffer-based render pass that:
+    1. Uploads the input surface to a texture
+    2. Renders to a framebuffer using the shader
+    3. Reads back the result to a pygame surface (cached for performance)
+    
+    Performance optimizations:
+    - FBO/texture caching per size
+    - Output surface reuse
+    - Early-out when effect is inactive (via _skip_particle_effect context flag)
+    """
     if not HAS_MODERNGL:
+        print(f"[GPU] Cannot create render pass for {shader_name}: moderngl not available")
         return None
     
     try:
-        from gpu_gl_utils import get_gl_context, get_fullscreen_quad, create_utility_shader_program
+        from gpu_gl_utils import get_gl_context, create_utility_shader_program
+        import moderngl
         
         gl_ctx = get_gl_context()
         if gl_ctx is None:
-            return None
+            print(f"[GPU] Cannot create render pass for {shader_name}: GL context is None")
+            # Try creating a standalone context
+            try:
+                gl_ctx = moderngl.create_standalone_context()
+                print(f"[GPU] Created standalone context for {shader_name}")
+            except Exception as e:
+                print(f"[GPU] Failed to create standalone context: {e}")
+                return None
         
         # Create shader program
         program = create_utility_shader_program(gl_ctx, shader_name)
         if program is None:
-            logger.warning(f"Could not create shader program for {shader_name}")
+            print(f"[GPU] Could not create shader program for {shader_name}")
             return None
         
-        quad = get_fullscreen_quad()
-        if quad is None:
-            return None
+        print(f"[GPU] Created shader program for {shader_name}")
+        
+        # Cache for FBO, textures, and output surfaces (per size)
+        fbo_cache: dict = {}
         
         def render_pass(surface: pygame.Surface, dt: float, context: dict) -> pygame.Surface:
             """Render pass that applies the GPU shader to the surface."""
+            nonlocal fbo_cache
+            
+            # Early-out optimization: skip GPU work entirely when no effect active
+            # This avoids expensive texture upload/download when not needed
+            if context.get("_skip_particle_effect", False):
+                return surface
+            
+            # Debug: confirm render pass is being called (uses global counter)
+            from rendering_shaders import _gpu_debug_count
+            strength = context.get("u_shot_strength", 0)
+            if _gpu_debug_count < 15:
+                print(f"[GPU] Render pass called for {shader_name}, strength={strength:.3f}")
+            
             try:
-                # Upload surface to texture
-                texture = gl_ctx.texture(surface.get_size(), 4)
-                texture.write(surface.get_view("1"))
+                size = surface.get_size()
+                if size[0] < 1 or size[1] < 1:
+                    return surface
                 
-                # Set uniforms
-                for key, value in uniforms.items():
+                # Get or create FBO for this size
+                if size not in fbo_cache:
+                    out_tex = gl_ctx.texture(size, 4)
+                    out_tex.filter = (moderngl.LINEAR, moderngl.LINEAR)
+                    fbo = gl_ctx.framebuffer(color_attachments=[out_tex])
+                    
+                    # Create input texture
+                    in_tex = gl_ctx.texture(size, 4)
+                    in_tex.filter = (moderngl.LINEAR, moderngl.LINEAR)
+                    
+                    # Create vertex buffer and VAO for this program
+                    import struct
+                    quad_data = struct.pack(
+                        "16f",
+                        -1.0, -1.0, 0.0, 0.0,
+                         1.0, -1.0, 1.0, 0.0,
+                        -1.0,  1.0, 0.0, 1.0,
+                         1.0,  1.0, 1.0, 1.0,
+                    )
+                    vbo = gl_ctx.buffer(quad_data)
+                    vao = gl_ctx.vertex_array(
+                        program,
+                        [(vbo, "2f 2f", "in_pos", "in_uv")],
+                    )
+                    
+                    # Pre-allocate output surface for reuse
+                    out_surf = pygame.Surface(size, pygame.SRCALPHA)
+                    
+                    fbo_cache[size] = {
+                        "fbo": fbo,
+                        "out_tex": out_tex,
+                        "in_tex": in_tex,
+                        "vao": vao,
+                        "vbo": vbo,
+                        "out_surf": out_surf,
+                    }
+                
+                cache = fbo_cache[size]
+                fbo = cache["fbo"]
+                in_tex = cache["in_tex"]
+                vao = cache["vao"]
+                out_surf = cache["out_surf"]
+                
+                # Upload surface to input texture
+                try:
+                    tex_bytes = pygame.image.tostring(surface, "RGBA", False)
+                except Exception:
+                    tex_bytes = bytes(surface.get_view("0"))
+                in_tex.write(tex_bytes)
+                
+                # Set uniforms from context (dynamic values like shot position)
+                for key, value in context.items():
                     try:
-                        if key.startswith("u_"):
+                        if key.startswith("u_") and key in program:
                             if isinstance(value, (int, float)):
                                 program[key].value = float(value)
                             elif isinstance(value, (tuple, list)) and len(value) == 2:
@@ -67,23 +154,41 @@ def _create_shader_render_pass(shader_name: str, uniforms: dict) -> Optional[Cal
                             elif isinstance(value, (tuple, list)) and len(value) == 4:
                                 program[key].value = tuple(float(v) for v in value)
                     except (KeyError, AttributeError):
-                        pass  # Uniform doesn't exist in shader, skip
+                        pass
                 
-                # Set time uniform if available
+                # Set time uniform
                 if "u_Time" in program:
                     program["u_Time"].value = context.get("time", 0.0)
                 if "u_DeltaTime" in program:
                     program["u_DeltaTime"].value = context.get("delta_time", dt)
                 
-                # Render
-                texture.use(0)
-                quad.render(program)
+                # Set texture uniform
+                if "u_frame_texture" in program:
+                    program["u_frame_texture"].value = 0
                 
-                # Read back to surface (simplified - would need proper texture readback)
-                # For now, return original surface (GPU path would handle this differently)
-                return surface
+                # Render to FBO
+                fbo.use()
+                gl_ctx.viewport = (0, 0, size[0], size[1])
+                fbo.clear(0.0, 0.0, 0.0, 1.0)
+                in_tex.use(0)
+                vao.render(moderngl.TRIANGLE_STRIP)
+                
+                # Read back result to cached surface
+                # OpenGL FBO read returns rows bottom-to-top, but since we uploaded
+                # pygame data with row 0 at GL bottom (tostring flipped=False), the
+                # rendered FBO has the image upside-down. FBO.read() returns this
+                # upside-down image with the visual bottom first, which corresponds
+                # to the original top. So the read data is actually in pygame order
+                # and should NOT be flipped again.
+                data = fbo.read(components=4)
+                temp_surf = pygame.image.frombuffer(data, size, "RGBA")
+                out_surf.blit(temp_surf, (0, 0))  # No flip needed
+                
+                if _gpu_debug_count < 15:
+                    print(f"[GPU] Render pass complete, output size={out_surf.get_size()}")
+                return out_surf
             except Exception as e:
-                logger.error(f"Error in render pass for {shader_name}: {e}")
+                logger.error(f"Error in render pass for {shader_name}: {e}", exc_info=True)
                 return surface
         
         return render_pass
@@ -242,6 +347,140 @@ def _get_offscreen_surface(render_ctx: RenderContext, size: tuple[int, int] | No
     return _offscreen_surface
 
 
+def _render_cpu_shot_flash(surface: pygame.Surface, shot_pos: tuple, strength: float, radius_mult: float) -> None:
+    """Render a small CPU-based muzzle flash at the shot position.
+    
+    Args:
+        surface: The surface to draw on
+        shot_pos: Normalized (0-1) screen position
+        strength: Effect strength (0-1+, fades over time)
+        radius_mult: Radius multiplier (1.0 for shot, 1.5 for rocket, 2.5 for bomb)
+    """
+    if strength <= 0.01:
+        return
+    
+    w, h = surface.get_size()
+    
+    # Convert normalized position to screen pixels
+    center_x = int(shot_pos[0] * w)
+    center_y = int(shot_pos[1] * h)
+    
+    # Much smaller radius - just a subtle muzzle flash
+    base_radius = 12  # Fixed small size
+    radius = int(base_radius * min(radius_mult, 1.5) * (0.6 + strength * 0.4))
+    
+    if radius < 3:
+        return
+    
+    # Create a small surface for the flash effect with alpha
+    flash_size = radius * 2
+    flash_surf = pygame.Surface((flash_size, flash_size), pygame.SRCALPHA)
+    
+    # Draw concentric circles for soft glow
+    base_color = (255, 240, 200)  # Warm white-yellow
+    
+    num_rings = min(4, max(2, radius // 3))
+    for i in range(num_rings, 0, -1):
+        ring_radius = int(radius * i / num_rings)
+        alpha = int(120 * strength * (i / num_rings) ** 2)
+        alpha = min(255, max(0, alpha))
+        
+        color = (*base_color, alpha)
+        pygame.draw.circle(flash_surf, color, (radius, radius), ring_radius)
+    
+    # Blit the flash onto the main surface
+    blit_x = center_x - radius
+    blit_y = center_y - radius
+    surface.blit(flash_surf, (blit_x, blit_y), special_flags=pygame.BLEND_RGBA_ADD)
+
+
+def _render_rocket_glow(surface: pygame.Surface, rocket_x: int, rocket_y: int, time_offset: float = 0.0) -> None:
+    """Render a fading glowing sphere effect at a rocket's position.
+    
+    Args:
+        surface: The surface to draw on
+        rocket_x: Rocket center X in screen coordinates
+        rocket_y: Rocket center Y in screen coordinates
+        time_offset: Optional time offset for pulse variation
+    """
+    import math
+    
+    # Pulsing radius for organic feel
+    pulse = 0.85 + 0.15 * math.sin(time_offset * 8.0)
+    base_radius = int(18 * pulse)  # Small glowing sphere
+    
+    if base_radius < 4:
+        return
+    
+    # Create glow surface
+    glow_size = base_radius * 2 + 4
+    glow_surf = pygame.Surface((glow_size, glow_size), pygame.SRCALPHA)
+    center = glow_size // 2
+    
+    # Draw glowing sphere with multiple layers for smooth falloff
+    # Outer glow - orange/red
+    outer_color = (255, 120, 50, 40)
+    pygame.draw.circle(glow_surf, outer_color, (center, center), base_radius + 2)
+    
+    # Middle glow - orange
+    mid_color = (255, 160, 80, 80)
+    pygame.draw.circle(glow_surf, mid_color, (center, center), int(base_radius * 0.75))
+    
+    # Inner core - bright yellow-white
+    inner_color = (255, 220, 150, 140)
+    pygame.draw.circle(glow_surf, inner_color, (center, center), int(base_radius * 0.45))
+    
+    # Bright center
+    core_color = (255, 255, 220, 180)
+    pygame.draw.circle(glow_surf, core_color, (center, center), int(base_radius * 0.25))
+    
+    # Blit with additive blending
+    blit_x = rocket_x - center
+    blit_y = rocket_y - center
+    surface.blit(glow_surf, (blit_x, blit_y), special_flags=pygame.BLEND_RGBA_ADD)
+
+
+def _render_rocket_glows(surface: pygame.Surface, game_state, camera) -> None:
+    """Render glowing spheres following all active missiles (R key).
+    
+    Args:
+        surface: The surface to draw on
+        game_state: Game state containing missiles list
+        camera: Camera for world-to-screen conversion
+    """
+    import time
+    
+    if game_state is None:
+        return
+    
+    # Missiles are stored in state.missiles (R key seeking missiles)
+    missiles = getattr(game_state, "missiles", [])
+    if not missiles:
+        return
+    
+    current_time = time.perf_counter()
+    
+    for missile in missiles:
+        rect = missile.get("rect")
+        if rect is None:
+            continue
+        
+        # Convert world position to screen position
+        world_x, world_y = rect.centerx, rect.centery
+        
+        if camera:
+            screen_x = world_x - camera.x
+            screen_y = world_y - camera.y
+        else:
+            screen_x = world_x
+            screen_y = world_y
+        
+        # Use missile id for time offset variation (makes each pulse slightly different)
+        time_offset = current_time + hash(id(missile)) * 0.001
+        
+        _render_rocket_glow(surface, int(screen_x), int(screen_y), time_offset)
+
+
 def _render_gameplay_frame(render_ctx, game_state, ctx) -> None:
     """Invoke the normal gameplay renderer into the given render_ctx (caller may pass temp ctx with offscreen screen)."""
     from screens import gameplay as gameplay_screen
@@ -350,24 +589,18 @@ def render_gameplay_with_optional_shaders(render_ctx, game_state, ctx) -> None:
         and HAS_MODERNGL
     )
     
-    # CPU shader stack: Apply CPU effects first (they work well as base effects)
-    # When GPU pipeline is also enabled, run CPU effects at full resolution since GPU can handle the load
-    cpu_effect_scale = 1.0  # Default to full resolution when GPU is available
-    if config is not None and getattr(config, "enable_gameplay_shaders", False):
+    # CPU shader stack: Apply CPU effects (heavy - only when explicitly enabled and GPU pipeline NOT active)
+    # Skip CPU effect chain when GPU pipeline is enabled to avoid performance hit
+    if config is not None and getattr(config, "enable_gameplay_shaders", False) and not use_gpu_pipeline:
         gameplay_stack = get_gameplay_shader_stack(config)
         if gameplay_stack:
             t = time.perf_counter() - _gl_start_time
             eff_ctx = {"time": t}
             
-            # If GPU pipeline is enabled, use full resolution for CPU effects (GPU can handle it)
-            # Otherwise, use reduced resolution to maintain performance
-            if use_gpu_pipeline:
-                cpu_effect_scale = 1.0  # Full resolution when GPU is helping
-            else:
-                # CPU-only path: use reduced resolution for performance
-                cpu_effect_scale = max(0.25, min(1.0, float(getattr(config, "internal_resolution_scale", 1.0))))
-                if cpu_effect_scale >= 0.99:
-                    cpu_effect_scale = 0.5  # default half-res for CPU-only effect chain
+            # CPU-only path: use reduced resolution for performance
+            cpu_effect_scale = max(0.25, min(1.0, float(getattr(config, "internal_resolution_scale", 1.0))))
+            if cpu_effect_scale >= 0.99:
+                cpu_effect_scale = 0.5  # default half-res for CPU-only effect chain
             
             ew = max(1, int(offscreen_w * cpu_effect_scale))
             eh = max(1, int(offscreen_h * cpu_effect_scale))
@@ -385,7 +618,7 @@ def render_gameplay_with_optional_shaders(render_ctx, game_state, ctx) -> None:
             
             # Scale back up if we scaled down
             if cpu_effect_scale < 1.0:
-                # Prefer GPU upscale when available to keep resolution high without CPU cost
+                # Prefer GPU upscale when available
                 if HAS_MODERNGL and (use_gpu_shaders or use_shaders) and gpu_upscale_surface is not None:
                     scaled_back = gpu_upscale_surface(surf, (offscreen_w, offscreen_h))
                 else:
@@ -397,33 +630,21 @@ def render_gameplay_with_optional_shaders(render_ctx, game_state, ctx) -> None:
                 # Full resolution - blit directly
                 offscreen_surface.blit(surf, (0, 0))
     
-    # GPU shader pipeline: Apply GPU shaders after CPU effects (adds additional enhancement)
-    # This allows CPU and GPU to work together - CPU provides base effects, GPU adds polish
+    # Simple CPU-based visual effects for shots and rockets
     if use_gpu_pipeline:
-        global _shader_pipeline
-        if _shader_pipeline is None:
-            _shader_pipeline = ShaderPipelineManager()
-            logger.info("Initialized GPU shader pipeline")
+        # Small muzzle flash for shots/bombs (fades quickly)
+        from systems.shot_particle_state import get_shot_particle_state
+        shot_state = get_shot_particle_state()
+        shot_state.update(0.016)  # Update shot timers
+        shot_pos, shot_strength, effect_radius = shot_state.get_uniforms()
         
-        # Build shader context
-        t = time.perf_counter() - _gl_start_time
-        shader_ctx: ShaderContext = {
-            "time": t,
-            "delta_time": 0.016,
-        }
-        if game_state is not None:
-            max_hp = max(1, getattr(game_state, "player_max_hp", 100))
-            current_hp = getattr(game_state, "player_hp", 100)
-            shader_ctx["health"] = current_hp / max_hp
+        # Render muzzle flash (skip rockets - they have their own glow)
+        if shot_strength > 0.01 and effect_radius < 1.4:  # Not a rocket
+            _render_cpu_shot_flash(offscreen_surface, shot_pos, shot_strength, effect_radius)
         
-        # Execute GPU shader pipeline on the CPU-processed surface
-        # This allows both CPU and GPU effects to work together
-        try:
-            processed = _shader_pipeline.execute_pipeline(offscreen_surface, dt=0.016, context=shader_ctx)
-            offscreen_surface = processed
-        except Exception as e:
-            logger.error(f"GPU shader pipeline failed: {e}", exc_info=True)
-            # Continue with CPU-processed result if GPU fails
+        # Render glowing spheres following rockets
+        camera = getattr(render_ctx, "camera", None)
+        _render_rocket_glows(offscreen_surface, game_state, camera)
     
     # Lightweight CPU effects (vignette, scanlines) - apply these last as final polish
     # These are lightweight enough to run even when GPU pipeline is active
