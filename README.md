@@ -11,13 +11,13 @@ start with game.py, which references telemetry.py to collect data, then use sqli
 download of sql database is unnecessary, it will be generated with the running of game.py, which runs telemetry.py, which generates game_telemetry.db, which can be visualized with visualize.py
 
 EDIT 1-20-26:
-I have started using Cursor to add additional features to the game, in collaboration with LP, A, and others
+I have started using Cursor to add additional features to the game, in collaboration with LP, A, J, and others
 
 EDIT 2:
 I have begun to use the game to develop into a sort of bullet hell game, using cursor. The game is intentionally simple, and is meant to be fun, (even if it was generated using AI, I wouldn't have been able to make the game otherwise)
 
 I'm focusing on mechanics of the games, rather than the nitty gritty of the programming itself
 
-POSSIBLE KNOWN ISSUES:
-generated some C/C++ to help with run optimizing, but doesn't necessarily work on all machines (still need to figure out why)
+EDIT 1-30-26: 
+There's been a lot of progress made in the last 10 days, huzzah! The project's been refactored heavily, and there have been features added.
 

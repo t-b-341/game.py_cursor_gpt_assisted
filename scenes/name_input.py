@@ -1,7 +1,7 @@
 """NameInputScene: enter name for high score. Wraps screens.name_input handle_events and render."""
 from __future__ import annotations
 
-from constants import STATE_NAME_INPUT
+from constants import STATE_NAME_INPUT, STATE_HIGH_SCORES
 from rendering import RenderContext
 from screens import name_input as name_input_screen
 from scenes.transitions import SceneTransition
@@ -18,12 +18,18 @@ class NameInputScene:
         pass
 
     def handle_input_transition(self, events, game_state, ctx: dict) -> SceneTransition:
-        """Stub: call existing logic; return NONE. Used by future scene-driven loop."""
-        self.handle_input(events, game_state, ctx)
+        """Process name input and return transition to high scores when done."""
+        result = self.handle_input(events, game_state, ctx)
+        
+        # Check if we should transition to high scores
+        if result.get("screen") == STATE_HIGH_SCORES:
+            # Pop this scene and push high scores
+            return SceneTransition.replace(STATE_HIGH_SCORES)
+        
         return SceneTransition.none()
 
     def update_transition(self, dt: float, game_state, ctx: dict) -> SceneTransition:
-        """Stub: call existing logic; return NONE. Used by future scene-driven loop."""
+        """Update logic; return NONE."""
         self.update(dt, game_state, ctx)
         return SceneTransition.none()
 

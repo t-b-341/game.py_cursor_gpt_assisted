@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pygame
 
-from constants import STATE_PLAYING
+from constants import STATE_PLAYING, STATE_PAUSED
 from rendering import render_debug_overlay
 from screens import gameplay as gameplay_screen
 from scenes.transitions import SceneTransition
@@ -19,7 +19,7 @@ class GameplayScene:
         return self._state_id
 
     def handle_input(self, events, game_state, ctx: dict) -> dict:
-        """Run gameplay input (movement, fire, abilities). Transition to pause is handled by the loop on ESC."""
+        """Run gameplay input (movement, fire, abilities)."""
         out = {"screen": None, "quit": False, "restart": False, "restart_to_wave1": False, "replay": False}
         handle_gameplay_input = ctx.get("handle_gameplay_input")
         if handle_gameplay_input:
@@ -30,8 +30,19 @@ class GameplayScene:
         gameplay_screen.update(game_state, dt, ctx.get("gameplay_ctx") or {})
 
     def handle_input_transition(self, events, game_state, ctx: dict) -> SceneTransition:
-        """Stub: call existing logic; return NONE. Used by future scene-driven loop."""
+        """Handle gameplay input and check for pause triggers (ESC/P)."""
+        # First, process gameplay input (movement, fire, abilities)
         self.handle_input(events, game_state, ctx)
+        
+        # Check for pause triggers
+        for event in events:
+            if event.type == pygame.KEYDOWN:
+                if event.key in (pygame.K_ESCAPE, pygame.K_p):
+                    # Store previous screen for unpause
+                    game_state.previous_screen = self._state_id
+                    game_state.ui.pause_selected = 0
+                    return SceneTransition.push(STATE_PAUSED)
+        
         return SceneTransition.none()
 
     def update_transition(self, dt: float, game_state, ctx: dict) -> SceneTransition:

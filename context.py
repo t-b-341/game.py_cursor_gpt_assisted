@@ -40,6 +40,11 @@ class AppContext:
     # World render surface (larger than display when world_scale > 1.0)
     # Render to this, then scale down to screen
     world_surface: pygame.Surface = None
+    
+    # Cached offscreen surface for pause/menu shader effects (avoids per-frame allocation)
+    # Recreated when display dimensions change
+    _offscreen_surface: Optional[pygame.Surface] = None
+    _offscreen_size: tuple[int, int] = (0, 0)
 
     # Telemetry (optional; None or no-op when disabled). Enable/disable is in config.
     telemetry_client: Optional[Any] = None  # Telemetry | NoOpTelemetry
@@ -75,3 +80,14 @@ class AppContext:
             world_y = int(display_y * world_scale)
             return (world_x, world_y)
         return (display_x, display_y)
+    
+    def get_offscreen_surface(self, width: int, height: int) -> pygame.Surface:
+        """Get a cached offscreen surface for pause/menu shader effects.
+        
+        The surface is recreated only when dimensions change.
+        Returns a surface with convert_alpha() for transparency support.
+        """
+        if self._offscreen_surface is None or self._offscreen_size != (width, height):
+            self._offscreen_surface = pygame.Surface((width, height)).convert_alpha()
+            self._offscreen_size = (width, height)
+        return self._offscreen_surface

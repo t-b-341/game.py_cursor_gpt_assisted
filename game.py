@@ -3,53 +3,30 @@ Main game entry point. Runs the game loop, handles menus, gameplay, and screen t
 All mutable game state lives in GameState; app-level resources and config in AppContext.
 Level geometry in state.level (LevelState). Gameplay input via handle_gameplay_input;
 per-frame logic in _update_simulation (movement/collision/spawn/ai). Overlay screens use
-SCREEN_HANDLERS and RenderContext.from_app_ctx(ctx).
+scenes from scenes/ and RenderContext.from_app_ctx(ctx).
 
 # -----------------------------------------------------------------------------
-# Screen/state mapping (temporary documentation during refactor)
+# Screen/state mapping
 # -----------------------------------------------------------------------------
-# - Global state constants (from constants.py): STATE_TITLE, STATE_MENU, STATE_PLAYING,
-#   STATE_PAUSED, STATE_ENDURANCE, STATE_GAME_OVER, STATE_NAME_INPUT, STATE_HIGH_SCORES,
-#   STATE_VICTORY, STATE_CONTINUE, STATE_CONTROLS, STATE_MODS, STATE_WAVE_BUILDER.
-#   SHADER_TEST is not in constants; it is the string "SHADER_TEST" (see scenes/shader_test.SHADER_TEST_STATE_ID).
+# All game states are represented as Scene classes in scenes/:
+# - TitleScene (STATE_TITLE): Title screen
+# - OptionsScene (STATE_MENU): Options/settings menu
+# - GameplayScene (STATE_PLAYING, STATE_ENDURANCE): Main gameplay
+# - PauseScene (STATE_PAUSED): Pause overlay
+# - NameInputScene (STATE_NAME_INPUT): High score name entry
+# - HighScoreScene (STATE_HIGH_SCORES): High scores list
+# - GameOverScene (STATE_GAME_OVER): Game over screen
+# - SaveGameScene (STATE_SAVE_GAME): Save game menu
+# - LoadGameScene (STATE_LOAD_GAME): Load game menu
+# - QuickLaunchScene (STATE_QUICK_LAUNCH): Quick launch menu
+# - ShaderTestScene ("SHADER_TEST"): Shader testing
+# - ShaderSettingsScreen ("SHADER_SETTINGS"): Shader settings
 #
-# - GameState.current_screen (str): canonical "what screen we are on". Initialized to STATE_TITLE
-#   in _create_app(); the loop reads it at frame start and writes it back at frame end.
-#   GameState.previous_screen (str|None): used for pause/unpause to restore PLAYING or ENDURANCE.
+# GameState.current_screen (str): canonical "what screen we are on"
+# GameState.previous_screen (str|None): used for pause/unpause to restore PLAYING or ENDURANCE
 #
-# - Module-level locals in _run_loop (not globals): each iteration sets
-#   state = game_state.current_screen and previous_game_state = game_state.previous_screen,
-#   then event/render logic may change state/previous_game_state; at end of frame they are
-#   written back to game_state.current_screen and game_state.previous_screen. So the
-#   in-loop "state" is the effective current screen for that frame.
-#
-# - SceneStack and scenes: scene_stack is built in _create_app() and stored on app.
-#   SCENE_STATES = (STATE_PLAYING, STATE_ENDURANCE, STATE_PAUSED, STATE_HIGH_SCORES,
-#   STATE_NAME_INPUT, STATE_TITLE, STATE_MENU). _sync_scene_stack(stk, s, gs) keeps the
-#   stack in sync with gs.current_screen (s) when s in SCENE_STATES:
-#     - STATE_TITLE: stack becomes [TitleScene]
-#     - STATE_MENU: stack becomes [TitleScene, OptionsScene] or [OptionsScene] as needed
-#     - STATE_PLAYING / STATE_ENDURANCE: stack top is GameplayScene(s); may clear and push
-#     - STATE_PAUSED: ensures [..., GameplayScene(...), PauseScene]
-#     - STATE_NAME_INPUT: ensures [..., GameplayScene(PLAYING), NameInputScene]
-#     - STATE_HIGH_SCORES: ensures [..., GameplayScene(PLAYING), HighScoreScene]
-#   SHADER_TEST is not in SCENE_STATES; _sync_scene_stack does nothing for it. ShaderTestScene
-#   is never pushed by _sync_scene_stack in the main loop (only by tests or other entry points).
-#
-# - Scene classes (from scenes/): TitleScene (state_id STATE_TITLE), OptionsScene (STATE_MENU),
-#   GameplayScene(state_id passed in: STATE_PLAYING or STATE_ENDURANCE), PauseScene (STATE_PAUSED),
-#   NameInputScene (STATE_NAME_INPUT), HighScoreScene (STATE_HIGH_SCORES), ShaderTestScene
-#   (state_id "SHADER_TEST"). Pushed/popped by _sync_scene_stack and by loop logic (e.g. pop on
-#   result["pop"], push GameplayScene on start_game, scene_stack.clear() + push on restart/menu).
-#
-# - When state in (STATE_PAUSED, STATE_HIGH_SCORES, STATE_NAME_INPUT, "SHADER_TEST", STATE_TITLE,
-#   STATE_MENU), input is delegated to scene_stack.current().handle_input or, if no current scene,
-#   to SCREEN_HANDLERS[state]["handle_events"]. SCREEN_HANDLERS (screens/) has PAUSED, HIGH_SCORES,
-#   NAME_INPUT only; TITLE and MENU have no handler (scene path only). Render uses
-#   current_scene.render() or SCREEN_HANDLERS[state]["render"] for those same states.
-#
-# - STATE_GAME_OVER, STATE_VICTORY, STATE_CONTROLS: no scene stack sync, no SCREEN_HANDLERS entry;
-#   they are handled in keyboard/event logic and have placeholder or minimal render branches.
+# Input flows through scene_stack.current().handle_input_transition() which returns
+# SceneTransition objects (push, pop, replace, quit_game, or none).
 # -----------------------------------------------------------------------------
 """
 import json
@@ -117,14 +94,12 @@ from constants import (
     ENEMY_PROJECTILES_COLOR,
     HIGH_SCORES_DB,
     LIVES_START,
-    MOUSE_BUTTON_RIGHT,
     PLAYER_CLASS_BALANCED,
     PICKUP_SPAWN_INTERVAL,
     SCORE_BASE_POINTS,
     SCORE_TIME_MULTIPLIER,
     SCORE_WAVE_MULTIPLIER,
     STATE_CONTINUE,
-    STATE_CONTROLS,
     STATE_ENDURANCE,
     STATE_GAME_OVER,
     STATE_HIGH_SCORES,
@@ -144,7 +119,6 @@ from constants import (
     boost_regen_per_s,
     boost_speed_mult,
     character_profile_options,
-    controls_actions,
     custom_profile_stats_keys,
     custom_profile_stats_list,
     difficulty_multipliers,
@@ -214,23 +188,18 @@ from event_bus import EventBus, GameEvent
 from config import GameConfig
 from config.projectile_defs import get_projectile_def
 # -----------------------------------------------------------------------------
-# LEGACY SCREEN HANDLER MIGRATION PATH:
+# SCENE MIGRATION STATUS: COMPLETE
 # -----------------------------------------------------------------------------
-# TODO: Remove SCREEN_HANDLERS import once all screens are fully migrated to scenes.
+# All game states are now represented as Scene classes in scenes/.
+# Input flows through the scene stack via handle_scene_events().
 # 
-# Migration plan:
-# 1. All game states should eventually have corresponding Scene classes in scenes/.
-# 2. Once every state (PAUSED, HIGH_SCORES, NAME_INPUT, etc.) is fully represented 
-#    as a scene with handle_input_transition() and render():
-#    - Remove SCREEN_HANDLERS dictionary from screens/__init__.py
-#    - Remove handle_legacy_state_events() from game.py
-#    - Remove screen_ctx dict (replaced by AppContext/RenderContext)
-# 3. _handle_events becomes a thin coordinator calling only handle_global_events 
-#    and handle_scene_events.
+# The screens/ package still contains render/input logic, but it's wrapped
+# by scene classes (e.g., PauseScene wraps screens.pause).
 #
-# Current status: SCREEN_HANDLERS is no longer imported (scenes are primary).
-# Legacy state handling still exists in handle_legacy_state_events for edge cases.
-# from screens import SCREEN_HANDLERS  # Deprecated - use scenes instead
+# Future cleanup opportunities:
+# - Merge screens/*.py logic directly into scenes/*.py
+# - Remove screen_ctx dict (replace with structured context objects)
+# - Remove SCREEN_HANDLERS from screens/__init__.py (currently unused)
 # -----------------------------------------------------------------------------
 from screens.gameplay import render as gameplay_render
 from rendering_shaders import render_gameplay_with_optional_shaders, render_gameplay_frame_to_surface
@@ -259,7 +228,7 @@ try:
     from telemetry.perf import record_frame as _perf_record_frame
 except ImportError:
     _perf_record_frame = lambda _dt: None
-from controls_io import _key_name_to_code, load_controls, save_controls
+from controls_io import _key_name_to_code, load_controls
 from physics_loader import resolve_physics
 from geometry_utils import (
     clamp_rect_to_screen,
@@ -744,178 +713,41 @@ def _apply_scene_transition(transition: SceneTransition, scene_stack: SceneStack
     return False
 
 
+# -----------------------------------------------------------------------------
+# EVENT POLLING AND INPUT DISPATCH (delegated to engine/input_loop)
+# -----------------------------------------------------------------------------
+from engine.input_loop import (
+    poll_events as _engine_poll_events,
+    handle_global_events as _engine_handle_global_events,
+    handle_scene_events as _engine_handle_scene_events,
+    handle_debug_keys as _engine_handle_debug_keys,
+)
+
+
 def _poll_events() -> list:
-    """Poll pygame events and return them."""
-    return pygame.event.get()
+    """Poll pygame events and return them. Delegates to engine.input_loop."""
+    return _engine_poll_events()
 
 
 def handle_global_events(events: list, ctx: AppContext, game_state: GameState, ui_state, scene_stack: SceneStack, screen_ctx: dict) -> bool:
-    """
-    Handle events that apply globally, regardless of which scene is active.
-    
-    Returns False if the game should stop running (e.g., QUIT event), True otherwise.
-    This function is PURELY about "does the game keep running?" and truly global shortcuts.
-    
-    Future: Move this helper into a dedicated input routing module (e.g. input_handlers.py
-    or systems/input_routing.py) and keep _handle_events as a thin coordinator.
-    """
-    for event in events:
-        if event.type == pygame.QUIT:
-            return False
-    return True
+    """Handle global events (QUIT). Delegates to engine.input_loop."""
+    return _engine_handle_global_events(events)
 
 
 def handle_scene_events(events: list, ctx: AppContext, game_state: GameState, ui_state, scene_stack: SceneStack, screen_ctx: dict, previous_game_state: str | None) -> SceneTransition | None:
-    """
-    Delegate events to the active scene / SceneStack in the modern system.
-    
-    Returns a SceneTransition object (or None) describing what should happen (push, pop, quit, replace, none).
-    Does NOT handle legacy game_state.current_screen states - that's in handle_legacy_state_events.
-    
-    Future: Move this helper into a dedicated input routing module (e.g. input_handlers.py
-    or systems/input_routing.py) and keep _handle_events as a thin coordinator.
-    """
-    current_scene = _get_current_scene(scene_stack)
-    if current_scene is None:
-        return None
-    
-    try:
-        transition = current_scene.handle_input_transition(events, game_state, screen_ctx)
-        return transition
-    except AttributeError:
-        # Scene doesn't have handle_input_transition, fall through to legacy handling
-        return None
-    except Exception as e:
-        # Log other errors but don't crash
-        import traceback
-        print(f"[handle_scene_events] Error in scene handle_input_transition: {e}")
-        traceback.print_exc()
-        return None
+    """Delegate events to the active scene. Delegates to engine.input_loop."""
+    return _engine_handle_scene_events(events, game_state, scene_stack, screen_ctx)
 
 
-def handle_legacy_state_events(events: list, ctx: AppContext, game_state: GameState, ui_state, screen_ctx: dict, scene_stack: SceneStack, handled_by_screen: bool, previous_game_state: str | None, pause_selected: int, controls_selected: int, controls_rebinding: bool) -> tuple[bool, str | None, int, int, bool, dict]:
-    """
-    TODO: This function contains legacy screen-based input handling. 
-    Once all screens are migrated to scenes, this should be removed.
-    
-    Handles legacy input that still uses game_state.current_screen, STATE_* constants, etc.
-    Returns (running, previous_game_state, pause_selected, controls_selected, controls_rebinding, result_dict).
-    
-    Future: Move this helper into a dedicated input routing module (e.g. input_handlers.py
-    or systems/input_routing.py) and keep _handle_events as a thin coordinator.
-    Once every state is fully represented as a scene, we can remove this function entirely.
-    """
-    running = True
-    result = {"screen": None, "quit": False, "restart": False, "restart_to_wave1": False, "replay": False, "pop": False, "start_game": False}
-    
-    for event in events:
-        if handled_by_screen:
-            continue
-        if event.type == pygame.QUIT:
-            return False, previous_game_state, pause_selected, controls_selected, controls_rebinding, result
-        
-        current_state = _get_current_state(scene_stack) or game_state.current_screen
-        
-        if current_state == STATE_NAME_INPUT and event.type == pygame.TEXTINPUT:
-            if len(game_state.player_name_input) < 20:
-                game_state.player_name_input += event.text
-        
-        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 3 and current_state == STATE_CONTROLS and controls_rebinding:
-            action = controls_actions[controls_selected]
-            if action == "direct_allies":
-                ctx.controls[action] = MOUSE_BUTTON_RIGHT
-                save_controls(ctx.controls)
-                controls_rebinding = False
-        
-        if event.type == pygame.KEYDOWN:
-            if current_state == STATE_NAME_INPUT:
-                if event.key == pygame.K_BACKSPACE:
-                    game_state.player_name_input = game_state.player_name_input[:-1]
-                elif event.key == pygame.K_RETURN or event.key == pygame.K_KP_ENTER:
-                    if game_state.player_name_input.strip():
-                        save_high_score(
-                            game_state.player_name_input.strip(),
-                            game_state.final_score_for_high_score,
-                            game_state.wave_number - 1,
-                            game_state.survival_time,
-                            game_state.enemies_killed,
-                            ctx.config.difficulty
-                        )
-                    game_state.current_screen = STATE_HIGH_SCORES
-                    game_state.name_input_active = False
-                    scene_stack.pop()
-                    scene_stack.push(HighScoreScene())
-            
-            if event.key == pygame.K_ESCAPE:
-                if current_state == STATE_PLAYING or current_state == STATE_ENDURANCE:
-                    previous_game_state = current_state
-                    game_state.previous_screen = previous_game_state
-                    game_state.ui.pause_selected = 0
-                    # TODO: Remove current_screen assignment - scene stack handles state
-                    game_state.current_screen = STATE_PAUSED
-                    scene_stack.push(PauseScene())
-                elif current_state == STATE_PAUSED:
-                    scene_stack.pop()
-                    new_state = _get_current_state(scene_stack) or previous_game_state or STATE_PLAYING
-                    game_state.current_screen = new_state
-                elif current_state == STATE_CONTINUE:
-                    return False, previous_game_state, pause_selected, controls_selected, controls_rebinding, result
-                elif current_state == STATE_CONTROLS:
-                    game_state.ui.pause_selected = 0
-                    # TODO: Remove current_screen assignment - scene stack handles state
-                    game_state.current_screen = STATE_PAUSED
-                    scene_stack.push(PauseScene())
-                elif current_state == STATE_VICTORY or current_state == STATE_GAME_OVER or current_state == STATE_HIGH_SCORES:
-                    return False, previous_game_state, pause_selected, controls_selected, controls_rebinding, result
-                elif current_state == STATE_NAME_INPUT:
-                    if game_state.player_name_input.strip():
-                        save_high_score(
-                            game_state.player_name_input.strip(),
-                            game_state.final_score_for_high_score,
-                            game_state.wave_number - 1,
-                            game_state.survival_time,
-                            game_state.enemies_killed,
-                            ctx.config.difficulty
-                        )
-                    game_state.current_screen = STATE_HIGH_SCORES
-                    game_state.name_input_active = False
-                    scene_stack.pop()
-                    scene_stack.push(HighScoreScene())
-            
-            if event.key == pygame.K_p:
-                if current_state == STATE_PLAYING or current_state == STATE_ENDURANCE:
-                    previous_game_state = current_state
-                    game_state.previous_screen = previous_game_state
-                    game_state.ui.pause_selected = 0
-                    # TODO: Remove current_screen assignment - scene stack handles state
-                    game_state.current_screen = STATE_PAUSED
-                    scene_stack.push(PauseScene())
-                elif current_state == STATE_PAUSED:
-                    scene_stack.pop()
-                    new_state = _get_current_state(scene_stack) or previous_game_state or STATE_PLAYING
-                    game_state.current_screen = new_state
-            
-            if event.key == pygame.K_F3:
-                _print_active_shader_profiles(ctx.config)
-            
-            if current_state == STATE_CONTROLS and controls_rebinding:
-                if event.key != pygame.K_ESCAPE:
-                    action = controls_actions[controls_selected]
-                    ctx.controls[action] = event.key
-                    save_controls(ctx.controls)
-                    controls_rebinding = False
-                else:
-                    controls_rebinding = False
-    
-    return running, previous_game_state, pause_selected, controls_selected, controls_rebinding, result
+def handle_debug_keys(events: list, ctx: AppContext) -> None:
+    """Handle debug keys (F3). Delegates to engine.input_loop."""
+    _engine_handle_debug_keys(events, ctx.config)
 
 
 # -----------------------------------------------------------------------------
 # EVENT HANDLING - _handle_events is the coordinator
-# Future: Move helper functions (handle_global_events, handle_scene_events, 
-# handle_legacy_state_events) into a dedicated input routing module 
-# (e.g. input_handlers.py or systems/input_routing.py) and keep _handle_events
-# as a thin coordinator.
+# Core input logic is in engine/input_loop.py. This file provides thin wrappers
+# and the coordinator function that processes transitions and updates game state.
 # -----------------------------------------------------------------------------
 
 def _handle_events(
@@ -932,13 +764,12 @@ def _handle_events(
     """
     Handle all input events. Returns (running, previous_game_state, pause_selected, controls_selected, controls_rebinding).
     
-    This function is the COORDINATOR for input handling. It delegates to three helpers:
+    This function is the COORDINATOR for input handling. It delegates to:
     1. handle_global_events: Handles truly global events (QUIT, etc.)
-    2. handle_scene_events: Delegates to the modern scene system
-    3. handle_legacy_state_events: Handles legacy screen-based input (TODO: remove once migration complete)
+    2. handle_scene_events: Delegates to the scene system
+    3. handle_debug_keys: Handles debug shortcuts (F3 for shader profiles)
     
-    Migration path: As screens are fully migrated to scenes, handle_legacy_state_events will be removed,
-    and this function will become a thin coordinator of global and scene events only.
+    All screen states are now represented as scenes. Input flows through the scene stack.
     
     Future: Move the helper functions into a dedicated input routing module and keep this
     function as a thin coordinator in game.py.
@@ -1122,14 +953,10 @@ def _handle_events(
                     scene_stack.push(GameplayScene(new_screen))
         handled_by_screen = True
     
-    # Step 4: Handle legacy state events (TODO: remove once migration complete)
-    running, previous_game_state, pause_selected, controls_selected, controls_rebinding, _ = handle_legacy_state_events(
-        events, ctx, game_state, game_state.ui, screen_ctx, scene_stack, handled_by_screen, previous_game_state, pause_selected, controls_selected, controls_rebinding
-    )
-    if not running:
-        return False, previous_game_state, pause_selected, controls_selected, controls_rebinding
+    # Step 4: Handle debug keys (F3 for shader profile info)
+    handle_debug_keys(events, ctx)
     
-    return running, previous_game_state, pause_selected, controls_selected, controls_rebinding
+    return True, previous_game_state, pause_selected, controls_selected, controls_rebinding
 
 
 def _step_simulation(
@@ -1295,7 +1122,8 @@ def _render_current_scene(
                 "screen_flash_max_alpha": getattr(ctx.config, "screen_flash_max_alpha", 100),
                 "enable_wave_banner": getattr(ctx.config, "enable_wave_banner", True),
             }
-            offscreen = pygame.Surface((display_w, display_h)).convert_alpha()
+            # Use cached offscreen surface to avoid per-frame allocation
+            offscreen = ctx.get_offscreen_surface(display_w, display_h)
             offscreen.fill((0, 0, 0, 255))
             render_gameplay_frame_to_surface(
                 offscreen, display_w, display_h,
@@ -1340,10 +1168,6 @@ def _render_current_scene(
     elif current_state == STATE_VICTORY:
         # Victory screen
         # (Victory rendering would go here)
-        pass
-    elif current_state == STATE_CONTROLS:
-        # Controls menu
-        # (Controls menu rendering would go here)
         pass
 
 
