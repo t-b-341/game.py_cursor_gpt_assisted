@@ -11,8 +11,14 @@ def set_enemy_damage_flash(enemy: dict, ctx: dict) -> None:
 
 
 def apply_player_damage(state, damage: int, ctx: dict) -> None:
-    """Apply damage to player (overshield then HP); trigger death/game-over if needed."""
+    """Apply damage to player (overshield then HP); trigger death/game-over if needed.
+    
+    Player is invincible during dash (is_jumping=True) to reward quick movement.
+    """
     if damage <= 0:
+        return
+    # Dash grants invincibility - incentivizes quick movement
+    if getattr(state, "is_jumping", False):
         return
     if ctx.get("testing_mode") and ctx.get("invulnerability_mode"):
         return

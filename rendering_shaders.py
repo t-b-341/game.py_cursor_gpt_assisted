@@ -42,7 +42,7 @@ def _create_shader_render_pass(shader_name: str, uniforms: dict) -> Optional[Cal
     - Early-out when effect is inactive (via _skip_particle_effect context flag)
     """
     if not HAS_MODERNGL:
-        print(f"[GPU] Cannot create render pass for {shader_name}: moderngl not available")
+        logger.debug(f"Cannot create render pass for {shader_name}: moderngl not available")
         return None
     
     try:
@@ -51,22 +51,22 @@ def _create_shader_render_pass(shader_name: str, uniforms: dict) -> Optional[Cal
         
         gl_ctx = get_gl_context()
         if gl_ctx is None:
-            print(f"[GPU] Cannot create render pass for {shader_name}: GL context is None")
+            logger.debug(f"Cannot create render pass for {shader_name}: GL context is None")
             # Try creating a standalone context
             try:
                 gl_ctx = moderngl.create_standalone_context()
-                print(f"[GPU] Created standalone context for {shader_name}")
+                logger.debug(f"Created standalone context for {shader_name}")
             except Exception as e:
-                print(f"[GPU] Failed to create standalone context: {e}")
+                logger.debug(f"Failed to create standalone context: {e}")
                 return None
         
         # Create shader program
         program = create_utility_shader_program(gl_ctx, shader_name)
         if program is None:
-            print(f"[GPU] Could not create shader program for {shader_name}")
+            logger.debug(f"Could not create shader program for {shader_name}")
             return None
         
-        print(f"[GPU] Created shader program for {shader_name}")
+        logger.debug(f"Created shader program for {shader_name}")
         
         # Cache for FBO, textures, and output surfaces (per size)
         fbo_cache: dict = {}
@@ -84,7 +84,7 @@ def _create_shader_render_pass(shader_name: str, uniforms: dict) -> Optional[Cal
             from rendering_shaders import _gpu_debug_count
             strength = context.get("u_shot_strength", 0)
             if _gpu_debug_count < 15:
-                print(f"[GPU] Render pass called for {shader_name}, strength={strength:.3f}")
+                logger.debug(f"Render pass called for {shader_name}, strength={strength:.3f}")
             
             try:
                 size = surface.get_size()
@@ -186,7 +186,7 @@ def _create_shader_render_pass(shader_name: str, uniforms: dict) -> Optional[Cal
                 out_surf.blit(temp_surf, (0, 0))  # No flip needed
                 
                 if _gpu_debug_count < 15:
-                    print(f"[GPU] Render pass complete, output size={out_surf.get_size()}")
+                    logger.debug(f"Render pass complete, output size={out_surf.get_size()}")
                 return out_surf
             except Exception as e:
                 logger.error(f"Error in render pass for {shader_name}: {e}", exc_info=True)
@@ -348,6 +348,78 @@ def _get_offscreen_surface(render_ctx: RenderContext, size: tuple[int, int] | No
         _offscreen_surface.fill((0, 0, 0, 255))
         _offscreen_size = size
     return _offscreen_surface
+
+
+def _apply_cpu_shader_effects(
+    offscreen_surface: pygame.Surface,
+    offscreen_w: int,
+    offscreen_h: int,
+    config,
+    use_shaders: bool,
+    use_gpu_shaders: bool,
+) -> None:
+    """Apply CPU shader stack effects to offscreen surface (in-place).
+    
+    This is the heavy CPU path that runs when GPU pipeline is NOT active.
+    Uses reduced resolution for performance, then scales back up.
+    """
+    gameplay_stack = get_gameplay_shader_stack(config)
+    if not gameplay_stack:
+        return
+    
+    t = time.perf_counter() - _gl_start_time
+    eff_ctx = {"time": t}
+    
+    # CPU-only path: use reduced resolution for performance
+    cpu_effect_scale = max(0.25, min(1.0, float(getattr(config, "internal_resolution_scale", 1.0))))
+    if cpu_effect_scale >= 0.99:
+        cpu_effect_scale = 0.5  # default half-res for CPU-only effect chain
+    
+    ew = max(1, int(offscreen_w * cpu_effect_scale))
+    eh = max(1, int(offscreen_h * cpu_effect_scale))
+    
+    if cpu_effect_scale < 1.0:
+        surf = pygame.transform.smoothscale(offscreen_surface, (ew, eh))
+    else:
+        surf = offscreen_surface.copy()
+    
+    # Apply CPU effects
+    for eff in gameplay_stack:
+        surf = eff.apply(surf, 0.016, eff_ctx)
+    
+    # Scale back up if we scaled down
+    if cpu_effect_scale < 1.0:
+        # Prefer GPU upscale when available
+        if HAS_MODERNGL and (use_gpu_shaders or use_shaders) and gpu_upscale_surface is not None:
+            scaled_back = gpu_upscale_surface(surf, (offscreen_w, offscreen_h))
+        else:
+            scaled_back = None
+        if scaled_back is None:
+            scaled_back = pygame.transform.smoothscale(surf, (offscreen_w, offscreen_h))
+        offscreen_surface.blit(scaled_back, (0, 0))
+    else:
+        offscreen_surface.blit(surf, (0, 0))
+
+
+def _apply_gpu_visual_effects(
+    offscreen_surface: pygame.Surface,
+    game_state,
+    render_ctx,
+) -> None:
+    """Apply lightweight GPU-path visual effects (muzzle flash, rocket glows)."""
+    from systems.shot_particle_state import get_shot_particle_state
+    
+    shot_state = get_shot_particle_state()
+    shot_state.update(0.016)
+    shot_pos, shot_strength, effect_radius = shot_state.get_uniforms()
+    
+    # Render muzzle flash (skip rockets - they have their own glow)
+    if shot_strength > 0.01 and effect_radius < 1.4:
+        _render_cpu_shot_flash(offscreen_surface, shot_pos, shot_strength, effect_radius)
+    
+    # Render glowing spheres following rockets
+    camera = getattr(render_ctx, "camera", None)
+    _render_rocket_glows(offscreen_surface, game_state, camera)
 
 
 def _render_cpu_shot_flash(surface: pygame.Surface, shot_pos: tuple, strength: float, radius_mult: float) -> None:
@@ -584,70 +656,14 @@ def render_gameplay_with_optional_shaders(render_ctx, game_state, ctx) -> None:
     
     # Log rendering path once
     _log_rendering_path(config)
-
-    # Determine if we're using GPU pipeline
-    use_gpu_pipeline = (
-        config is not None
-        and getattr(config, "use_gpu_shader_pipeline", False)
-        and HAS_MODERNGL
-    )
     
     # CPU shader stack: Apply CPU effects (heavy - only when explicitly enabled and GPU pipeline NOT active)
-    # Skip CPU effect chain when GPU pipeline is enabled to avoid performance hit
     if config is not None and getattr(config, "enable_gameplay_shaders", False) and not use_gpu_pipeline:
-        gameplay_stack = get_gameplay_shader_stack(config)
-        if gameplay_stack:
-            t = time.perf_counter() - _gl_start_time
-            eff_ctx = {"time": t}
-            
-            # CPU-only path: use reduced resolution for performance
-            cpu_effect_scale = max(0.25, min(1.0, float(getattr(config, "internal_resolution_scale", 1.0))))
-            if cpu_effect_scale >= 0.99:
-                cpu_effect_scale = 0.5  # default half-res for CPU-only effect chain
-            
-            ew = max(1, int(offscreen_w * cpu_effect_scale))
-            eh = max(1, int(offscreen_h * cpu_effect_scale))
-            
-            if cpu_effect_scale < 1.0:
-                # Scale down for CPU processing
-                surf = pygame.transform.smoothscale(offscreen_surface, (ew, eh))
-            else:
-                # Full resolution
-                surf = offscreen_surface.copy()
-            
-            # Apply CPU effects
-            for eff in gameplay_stack:
-                surf = eff.apply(surf, 0.016, eff_ctx)
-            
-            # Scale back up if we scaled down
-            if cpu_effect_scale < 1.0:
-                # Prefer GPU upscale when available
-                if HAS_MODERNGL and (use_gpu_shaders or use_shaders) and gpu_upscale_surface is not None:
-                    scaled_back = gpu_upscale_surface(surf, (offscreen_w, offscreen_h))
-                else:
-                    scaled_back = None
-                if scaled_back is None:
-                    scaled_back = pygame.transform.smoothscale(surf, (offscreen_w, offscreen_h))
-                offscreen_surface.blit(scaled_back, (0, 0))
-            else:
-                # Full resolution - blit directly
-                offscreen_surface.blit(surf, (0, 0))
+        _apply_cpu_shader_effects(offscreen_surface, offscreen_w, offscreen_h, config, use_shaders, use_gpu_shaders)
     
-    # Simple CPU-based visual effects for shots and rockets
+    # GPU path: lightweight visual effects (muzzle flash, rocket glows)
     if use_gpu_pipeline:
-        # Small muzzle flash for shots/bombs (fades quickly)
-        from systems.shot_particle_state import get_shot_particle_state
-        shot_state = get_shot_particle_state()
-        shot_state.update(0.016)  # Update shot timers
-        shot_pos, shot_strength, effect_radius = shot_state.get_uniforms()
-        
-        # Render muzzle flash (skip rockets - they have their own glow)
-        if shot_strength > 0.01 and effect_radius < 1.4:  # Not a rocket
-            _render_cpu_shot_flash(offscreen_surface, shot_pos, shot_strength, effect_radius)
-        
-        # Render glowing spheres following rockets
-        camera = getattr(render_ctx, "camera", None)
-        _render_rocket_glows(offscreen_surface, game_state, camera)
+        _apply_gpu_visual_effects(offscreen_surface, game_state, render_ctx)
     
     # Lightweight CPU effects (vignette, scanlines) - apply these last as final polish
     # These are lightweight enough to run even when GPU pipeline is active

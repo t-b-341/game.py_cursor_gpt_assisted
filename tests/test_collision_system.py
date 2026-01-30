@@ -201,6 +201,20 @@ class TestEnemyProjectileVsPlayer:
 
         assert state.player_hp == hp_before, "Shield should block enemy laser beam damage"
 
+    def test_dash_grants_invincibility(self, state_for_collisions):
+        """Player should take no damage from projectiles while dashing (is_jumping=True)."""
+        state = state_for_collisions
+        state.is_jumping = True  # Dashing
+        hp_before = state.player_hp
+        proj = {"rect": pygame.Rect(100, 100, 12, 12), "damage": 50}
+        state.enemy_projectiles.append(proj)
+
+        collision_update(state, 0.016)
+
+        assert state.player_hp == hp_before, "Dash should grant invincibility"
+        # Projectile is still removed on collision (it hit, but no damage dealt)
+        assert proj not in state.enemy_projectiles
+
 
 class TestPickupCollection:
     """Player overlapping a pickup collects it and apply_effect is called."""

@@ -30,6 +30,9 @@ FPS_WARNING_COLOR = (255, 150, 50)  # Orange for low FPS
 _text_cache: dict[tuple, pygame.Surface] = {}
 _text_cache_max_size = 100
 
+# Standard 8-direction outline offsets for text rendering
+_OUTLINE_OFFSETS = [(-2, -2), (-2, 0), (-2, 2), (0, -2), (0, 2), (2, -2), (2, 0), (2, 2)]
+
 
 def _get_cached_text(font: pygame.font.Font, text: str, color: tuple) -> pygame.Surface:
     """Get a cached text surface, rendering only if text/color changed."""
@@ -43,6 +46,81 @@ def _get_cached_text(font: pygame.font.Font, text: str, color: tuple) -> pygame.
                 del _text_cache[k]
         _text_cache[key] = font.render(text, True, color)
     return _text_cache[key]
+
+
+def _draw_text_with_outline(
+    screen: pygame.Surface,
+    font: pygame.font.Font,
+    text: str,
+    pos: tuple[int, int],
+    color: tuple[int, int, int],
+    outline_color: tuple[int, int, int] = (0, 0, 0),
+) -> None:
+    """Draw text with an 8-direction outline for visibility.
+    
+    Args:
+        screen: Surface to draw on
+        font: Font to use
+        text: Text to render
+        pos: (x, y) position for main text
+        color: RGB color for main text
+        outline_color: RGB color for outline (default black)
+    """
+    text_surf = _get_cached_text(font, text, color)
+    outline_surf = _get_cached_text(font, text, outline_color)
+    x, y = pos
+    for dx, dy in _OUTLINE_OFFSETS:
+        screen.blit(outline_surf, (x + dx, y + dy))
+    screen.blit(text_surf, pos)
+
+
+def _draw_cooldown_bar(
+    screen: pygame.Surface,
+    small_font: pygame.font.Font,
+    x: int,
+    y: int,
+    width: int,
+    height: int,
+    progress: float,
+    label: str,
+    ready_color: tuple[int, int, int],
+    not_ready_color: tuple[int, int, int] = (100, 100, 100),
+) -> None:
+    """Draw a cooldown bar with background, fill, border, and label.
+    
+    Args:
+        screen: Surface to draw on
+        small_font: Font for label
+        x, y: Top-left position
+        width, height: Bar dimensions
+        progress: 0.0 to 1.0 fill amount
+        label: Text label (e.g. "BOMB (E)")
+        ready_color: Color when progress >= 1.0
+        not_ready_color: Color when progress < 1.0
+    """
+    progress = min(1.0, max(0.0, progress))
+    fill_color = ready_color if progress >= 1.0 else not_ready_color
+    
+    # Background
+    pygame.draw.rect(screen, (60, 60, 60), (x, y, width, height))
+    # Fill
+    pygame.draw.rect(screen, fill_color, (x, y, int(width * progress), height))
+    # Border
+    pygame.draw.rect(screen, (255, 255, 255), (x, y, width, height), 2)
+    # Label
+    screen.blit(_get_cached_text(small_font, label, (255, 255, 255)), (x + 5, y + 2))
+
+
+def _get_camera_offset(camera) -> tuple[int, int]:
+    """Get camera offset for world-to-screen conversion.
+    
+    Args:
+        camera: Camera object or None
+        
+    Returns:
+        (cam_x, cam_y) offset tuple
+    """
+    return (int(camera.x), int(camera.y)) if camera else (0, 0)
 
 
 def render_hud(state: "GameState", ctx: dict, render_ctx: RenderContext) -> None:
@@ -167,20 +245,12 @@ def _draw_missile_warning(screen: pygame.Surface, state: "GameState", big_font: 
     intensity = int(200 + 55 * pulse)  # Range: 200-255
     color = (intensity, int(intensity * 0.6), 0)  # Orange-ish
     
-    # Create text with outline for visibility
-    text = "MISSILES LOCKED ON"
-    text_surface = big_font.render(text, True, color)
-    outline_surface = big_font.render(text, True, (0, 0, 0))
-    
     # Position above center (so it doesn't overlap with HEALTH LOW)
+    text = "MISSILES LOCKED ON"
+    text_surface = _get_cached_text(big_font, text, color)
     text_rect = text_surface.get_rect(center=(WIDTH // 2, HEIGHT // 2 - 60))
     
-    # Draw black outline
-    for dx, dy in [(-2, -2), (-2, 2), (2, -2), (2, 2), (-2, 0), (2, 0), (0, -2), (0, 2)]:
-        screen.blit(outline_surface, (text_rect.x + dx, text_rect.y + dy))
-    
-    # Draw main text
-    screen.blit(text_surface, text_rect)
+    _draw_text_with_outline(screen, big_font, text, (text_rect.x, text_rect.y), color)
 
 
 def _draw_low_health_warning(screen: pygame.Surface, state: "GameState", big_font: Any, WIDTH: int, HEIGHT: int) -> None:
@@ -208,23 +278,12 @@ def _draw_low_health_warning(screen: pygame.Surface, state: "GameState", big_fon
     red_intensity = int(180 + 75 * pulse)  # Range: 180-255
     color = (red_intensity, 50, 50)
     
-    # Calculate alpha for slight transparency pulsing
-    alpha = int(200 + 55 * pulse)  # Range: 200-255
-    
-    # Create text with outline for visibility
-    text = "HEALTH LOW!"
-    text_surface = big_font.render(text, True, color)
-    outline_surface = big_font.render(text, True, (0, 0, 0))
-    
     # Position in center of screen
+    text = "HEALTH LOW!"
+    text_surface = _get_cached_text(big_font, text, color)
     text_rect = text_surface.get_rect(center=(WIDTH // 2, HEIGHT // 2))
     
-    # Draw black outline
-    for dx, dy in [(-2, -2), (-2, 2), (2, -2), (2, 2), (-2, 0), (2, 0), (0, -2), (0, 2)]:
-        screen.blit(outline_surface, (text_rect.x + dx, text_rect.y + dy))
-    
-    # Draw main text
-    screen.blit(text_surface, text_rect)
+    _draw_text_with_outline(screen, big_font, text, (text_rect.x, text_rect.y), color)
 
 
 def render(state: "GameState", screen: pygame.Surface, ctx: dict) -> None:
@@ -416,8 +475,7 @@ def _draw_entity_health_bars(screen: pygame.Surface, state, show: bool, camera=N
     if not show:
         return
     
-    # Get camera offset for positioning
-    cam_x, cam_y = (int(camera.x), int(camera.y)) if camera else (0, 0)
+    cam_x, cam_y = _get_camera_offset(camera)
     
     for friendly in getattr(state, "friendly_ai", []):
         if friendly.get("hp", 0) > 0:
@@ -446,14 +504,9 @@ def _draw_entity_health_bars(screen: pygame.Surface, state, show: bool, camera=N
 
 def _draw_score(screen: pygame.Surface, state, big_font, WIDTH: int) -> None:
     score_text = f"Score: {state.score}"
-    # Use cached text surfaces to avoid re-rendering unchanged text
     score_surface = _get_cached_text(big_font, score_text, (255, 255, 0))
-    outline_surface = _get_cached_text(big_font, score_text, (0, 0, 0))
     score_x = WIDTH // 2 - score_surface.get_width() // 2
-    score_y = 10
-    for dx, dy in [(-2, -2), (-2, 0), (-2, 2), (0, -2), (0, 2), (2, -2), (2, 0), (2, 2)]:
-        screen.blit(outline_surface, (score_x + dx, score_y + dy))
-    screen.blit(score_surface, (score_x, score_y))
+    _draw_text_with_outline(screen, big_font, score_text, (score_x, 10), (255, 255, 0))
 
 
 def _draw_metrics_and_bars(
@@ -513,62 +566,46 @@ def _draw_metrics_and_bars(
     bar_height = 20
     bar_width = min(200, (WIDTH - 60) // 5)
 
-    grenade_progress = min(1.0, state.grenade_time_since_used / grenade_cooldown)
-    grenade_x = 10
-    pygame.draw.rect(screen, (60, 60, 60), (grenade_x, bar_y, bar_width, bar_height))
-    pygame.draw.rect(screen, (200, 100, 255) if grenade_progress >= 1.0 else (255, 50, 50),
-                     (grenade_x, bar_y, int(bar_width * grenade_progress), bar_height))
-    pygame.draw.rect(screen, (255, 255, 255), (grenade_x, bar_y, bar_width, bar_height), 2)
-    screen.blit(_get_cached_text(small_font, "BOMB (E)", (255, 255, 255)), (grenade_x + 5, bar_y + 2))
+    bar_spacing = bar_width + 10
 
-    missile_progress = min(1.0, state.missile_time_since_used / missile_cooldown)
-    missile_x = grenade_x + bar_width + 10
-    pygame.draw.rect(screen, (60, 60, 60), (missile_x, bar_y, bar_width, bar_height))
-    pygame.draw.rect(screen, (255, 200, 0) if missile_progress >= 1.0 else (100, 100, 100),
-                     (missile_x, bar_y, int(bar_width * missile_progress), bar_height))
-    pygame.draw.rect(screen, (255, 255, 255), (missile_x, bar_y, bar_width, bar_height), 2)
-    screen.blit(_get_cached_text(small_font, "MISSILE (R)", (255, 255, 255)), (missile_x + 5, bar_y + 2))
+    # Grenade/Bomb cooldown
+    grenade_progress = state.grenade_time_since_used / grenade_cooldown
+    grenade_x = 10
+    _draw_cooldown_bar(screen, small_font, grenade_x, bar_y, bar_width, bar_height,
+                       grenade_progress, "BOMB (E)", (200, 100, 255), (255, 50, 50))
+
+    # Missile cooldown
+    missile_progress = state.missile_time_since_used / missile_cooldown
+    missile_x = grenade_x + bar_spacing
+    _draw_cooldown_bar(screen, small_font, missile_x, bar_y, bar_width, bar_height,
+                       missile_progress, "MISSILE (R)", (255, 200, 0))
 
     # Apply cooldown multiplier from spawn_boost pickups
     ally_cooldown_mult = state.player_stat_multipliers.get("ally_drop_cooldown", 1.0)
     effective_ally_cooldown = ally_drop_cooldown * ally_cooldown_mult
     ally_progress = min(1.0, state.ally_drop_timer / effective_ally_cooldown) if effective_ally_cooldown > 0 else 1.0
-    ally_x = missile_x + bar_width + 10
-    pygame.draw.rect(screen, (60, 60, 60), (ally_x, bar_y, bar_width, bar_height))
-    pygame.draw.rect(screen, (200, 100, 255) if ally_progress >= 1.0 else (100, 100, 100),
-                     (ally_x, bar_y, int(bar_width * ally_progress), bar_height))
-    pygame.draw.rect(screen, (255, 255, 255), (ally_x, bar_y, bar_width, bar_height), 2)
-    screen.blit(_get_cached_text(small_font, "ALLY DROP (Q)", (255, 255, 255)), (ally_x + 5, bar_y + 2))
+    ally_x = missile_x + bar_spacing
+    _draw_cooldown_bar(screen, small_font, ally_x, bar_y, bar_width, bar_height,
+                       ally_progress, "ALLY DROP (Q)", (200, 100, 255))
 
-    overshield_progress = min(1.0, state.overshield_recharge_timer / overshield_recharge_cooldown)
-    overshield_x = ally_x + bar_width + 10
-    pygame.draw.rect(screen, (60, 60, 60), (overshield_x, bar_y, bar_width, bar_height))
+    # Overshield recharge cooldown
+    overshield_progress = state.overshield_recharge_timer / overshield_recharge_cooldown
+    overshield_x = ally_x + bar_spacing
     # Use cyan when ready so it’s distinct from the orange armor meter (current overshield)
-    overshield_bar_color = (100, 220, 255) if overshield_progress >= 1.0 else (100, 100, 100)
-    pygame.draw.rect(screen, overshield_bar_color,
-                     (overshield_x, bar_y, int(bar_width * overshield_progress), bar_height))
-    pygame.draw.rect(screen, (255, 255, 255), (overshield_x, bar_y, bar_width, bar_height), 2)
-    screen.blit(_get_cached_text(small_font, "OVERSHIELD (TAB)", (255, 255, 255)), (overshield_x + 5, bar_y + 2))
+    _draw_cooldown_bar(screen, small_font, overshield_x, bar_y, bar_width, bar_height,
+                       overshield_progress, "OVERSHIELD (TAB)", (100, 220, 255))
 
+    # Shield cooldown (special: shows remaining duration when active)
     if state.shield_active:
-        shield_progress = min(1.0, state.shield_duration_remaining / shield_duration)
+        shield_progress = state.shield_duration_remaining / shield_duration
+        shield_color = (255, 255, 100)  # Yellow when active
     else:
-        if getattr(state, "shield_recharge_cooldown", 0) > 0:
-            shield_progress = min(1.0, state.shield_recharge_timer / state.shield_recharge_cooldown)
-        else:
-            shield_progress = 1.0
-    shield_ready = shield_progress >= 1.0 and not state.shield_active
-    shield_x = overshield_x + bar_width + 10
-    pygame.draw.rect(screen, (60, 60, 60), (shield_x, bar_y, bar_width, bar_height))
-    if state.shield_active:
-        shield_color = (255, 255, 100)
-    elif shield_ready:
-        shield_color = (100, 200, 255)
-    else:
-        shield_color = (255, 50, 50)
-    pygame.draw.rect(screen, shield_color, (shield_x, bar_y, int(bar_width * shield_progress), bar_height))
-    pygame.draw.rect(screen, (255, 255, 255), (shield_x, bar_y, bar_width, bar_height), 2)
-    screen.blit(_get_cached_text(small_font, "SHIELD (LALT)", (255, 255, 255)), (shield_x + 5, bar_y + 2))
+        recharge_cd = getattr(state, "shield_recharge_cooldown", 0)
+        shield_progress = state.shield_recharge_timer / recharge_cd if recharge_cd > 0 else 1.0
+        shield_color = (100, 200, 255) if shield_progress >= 1.0 else (255, 50, 50)
+    shield_x = overshield_x + bar_spacing
+    _draw_cooldown_bar(screen, small_font, shield_x, bar_y, bar_width, bar_height,
+                       shield_progress, "SHIELD (LALT)", shield_color, (255, 50, 50))
 
     controls_y = HEIGHT - 10
     if aiming_mode == AIM_ARROWS:
@@ -586,8 +623,7 @@ def _draw_damage_numbers(screen: pygame.Surface, state, font, small_font, camera
     
     Performance: Uses text cache to avoid re-rendering the same damage values.
     """
-    # Get camera offset for positioning
-    cam_x, cam_y = (int(camera.x), int(camera.y)) if camera else (0, 0)
+    cam_x, cam_y = _get_camera_offset(camera)
     
     for dmg_num in getattr(state, "damage_numbers", []):
         if dmg_num.get("timer", 0) > 0:
