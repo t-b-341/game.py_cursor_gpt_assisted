@@ -23,6 +23,17 @@ from constants import (
 )
 from config_enemies import FRIENDLY_AI_TEMPLATES
 from allies import make_friendly_from_template
+from telemetry import WeaponSwitchEvent
+
+
+def _log_weapon_switch(game_state, ctx: dict, weapon_mode: str) -> None:
+    """Log a weapon switch event to telemetry."""
+    telemetry = ctx.get("telemetry")
+    if ctx.get("telemetry_enabled") and telemetry:
+        telemetry.log_weapon_switch(WeaponSwitchEvent(
+            t=game_state.run_time,
+            weapon_mode=weapon_mode,
+        ))
 
 
 def _add_particle_effect(player_rect, camera, ctx, effect_type: str) -> None:
@@ -199,16 +210,19 @@ def handle_gameplay_input(events, game_state, ctx) -> None:
                 if game_state.previous_weapon_mode == "laser":
                     game_state.laser_beams.clear()
                 game_state.current_weapon_mode = "triple"
+                _log_weapon_switch(game_state, ctx, "triple")
             elif event.key == pygame.K_2 and "laser" in game_state.unlocked_weapons:
                 game_state.previous_weapon_mode = game_state.current_weapon_mode
                 if game_state.previous_weapon_mode == "laser":
                     game_state.laser_beams.clear()
                 game_state.current_weapon_mode = "laser"
+                _log_weapon_switch(game_state, ctx, "laser")
             elif event.key == pygame.K_3 and "giant" in game_state.unlocked_weapons:
                 game_state.previous_weapon_mode = game_state.current_weapon_mode
                 if game_state.previous_weapon_mode == "laser":
                     game_state.laser_beams.clear()
                 game_state.current_weapon_mode = "giant"
+                _log_weapon_switch(game_state, ctx, "giant")
 
             dash_key = controls.get("dash", pygame.K_SPACE)
             if event.key == dash_key:
