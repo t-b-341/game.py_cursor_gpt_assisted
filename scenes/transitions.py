@@ -65,6 +65,7 @@ STATE_GAME_OVER = "GAME_OVER"
 STATE_VICTORY = "VICTORY"
 STATE_SAVE_GAME = "SAVE_GAME"
 STATE_LOAD_GAME = "LOAD_GAME"
+STATE_TELEMETRY_VIEWER = "TELEMETRY_VIEWER"
 STATE_QUICK_LAUNCH = "QUICK_LAUNCH"
 
 
@@ -85,6 +86,7 @@ def create_scene_for_state(scene_name: str) -> "Scene | None":
     from .victory import VictoryScene
     from .save_game import SaveGameScene
     from .load_game import LoadGameScene
+    from .telemetry_viewer import TelemetryViewerScene
     from .shader_test import ShaderTestScene
     from .shader_settings import ShaderSettingsScreen
 
@@ -99,6 +101,7 @@ def create_scene_for_state(scene_name: str) -> "Scene | None":
         STATE_VICTORY: lambda: VictoryScene(),
         STATE_SAVE_GAME: lambda: SaveGameScene(),
         STATE_LOAD_GAME: lambda: LoadGameScene(),
+        STATE_TELEMETRY_VIEWER: lambda: TelemetryViewerScene(),
         STATE_PLAYING: lambda: GameplayScene(STATE_PLAYING),
         STATE_ENDURANCE: lambda: GameplayScene(STATE_ENDURANCE),
         "SHADER_TEST": lambda: ShaderTestScene(),

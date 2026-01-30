@@ -263,14 +263,10 @@ from hazards import hazard_obstacles, check_point_in_hazard
 from level_state import LevelState
 
 # -----------------------------------------------------------------------------
-# TODO: LEGACY PLACEHOLDER DIMENSIONS
-# These module-level WIDTH/HEIGHT are placeholder values used only for initial
-# geometry definitions (trapezoids, blocks, etc.) before AppContext is created.
+# Default display dimensions - used for pygame initialization before detecting
+# actual screen size. _init_pygame() updates these from pygame.display.Info().
 # All runtime code should use ctx.width/ctx.height (world dimensions) or 
 # ctx.display_width/ctx.display_height (screen dimensions).
-# 
-# Once build_level_geometry() is moved to level_builder.py and accepts 
-# explicit width/height parameters, these placeholders can be removed.
 # -----------------------------------------------------------------------------
 WIDTH = 1920
 HEIGHT = 1080

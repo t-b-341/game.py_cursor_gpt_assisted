@@ -140,3 +140,17 @@ class TestCriticalImports:
         assert hasattr(scene, '_render_section_0')
         assert hasattr(scene, 'handle_input')
         assert hasattr(scene, 'render')
+
+    def test_telemetry_viewer_scene_imports(self):
+        """scenes/telemetry_viewer.py should import without errors."""
+        from scenes.telemetry_viewer import TelemetryViewerScene
+        assert callable(TelemetryViewerScene)
+        # Verify scene interface
+        scene = TelemetryViewerScene()
+        assert hasattr(scene, 'state_id')
+        assert hasattr(scene, 'handle_input')
+        assert hasattr(scene, 'handle_input_transition')
+        assert hasattr(scene, 'render')
+        assert hasattr(scene, 'on_enter')
+        assert hasattr(scene, 'on_exit')
+        assert scene.state_id() == "TELEMETRY_VIEWER"

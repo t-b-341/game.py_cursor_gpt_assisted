@@ -289,17 +289,22 @@ class GameApp:
                     dt = self.ctx.clock.tick_busy_loop() / 1000.0
                 game_module._perf_record_frame(dt)  # no-op unless GAME_DEBUG_PERF=1
                 
-                # Record frame time for FPS graph (always active)
+                # Record frame time for FPS graph (always active, uses real dt)
                 game_time = getattr(self.game_state, 'run_time', 0.0)
                 fps_record_frame(dt, game_time)
+                
+                # Apply timescale for game speed control (0.75 = slower, 1.0 = normal, 1.25 = faster)
+                # This affects simulation speed but not FPS recording
+                timescale = getattr(self.ctx.config, 'timescale', 1.0)
+                scaled_dt = dt * timescale
                 
                 # Process events
                 running = self.process_events()
                 if not running:
                     break
                 
-                # Update simulation
-                running = self.update(dt)
+                # Update simulation with scaled dt for game speed control
+                running = self.update(scaled_dt)
                 if not running:
                     break
                 

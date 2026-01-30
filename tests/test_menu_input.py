@@ -187,7 +187,7 @@ class TestPauseSubmenus:
             assert game_state.ui.pause_audio_options_row == expected
 
     def test_shader_submenu_navigation(self):
-        """Shader submenu navigation cycles through 5 options."""
+        """Shader/settings submenu navigation cycles through 6 options."""
         from screens.pause import _handle_shader_submenu
         
         game_state = MockGameState()
@@ -195,8 +195,8 @@ class TestPauseSubmenus:
         cfg = MockConfig()
         out = {}
         
-        # Navigate down through all options
-        for expected in [1, 2, 3, 4, 0]:  # 5 options, wraps around
+        # Navigate down through all options (6 options including Game Speed)
+        for expected in [1, 2, 3, 4, 5, 0]:  # 6 options, wraps around
             event = make_keydown_event(pygame.K_DOWN)
             _handle_shader_submenu(event, game_state, cfg, out)
             assert game_state.ui.pause_shader_options_row == expected
@@ -368,3 +368,113 @@ class TestPauseImports:
             _render_main_menu,
         )
         assert callable(_render_audio_submenu)
+
+
+# ============================================================================
+# GameConfig Tests
+# ============================================================================
+
+class TestGameConfigTimescale:
+    """Test game speed/timescale configuration."""
+
+    def test_timescale_default(self):
+        """GameConfig has timescale field defaulting to 1.0."""
+        from config.game_config import GameConfig
+        
+        cfg = GameConfig()
+        assert hasattr(cfg, 'timescale')
+        assert cfg.timescale == 1.0
+
+    def test_timescale_can_be_set(self):
+        """Timescale can be set to other values."""
+        from config.game_config import GameConfig
+        
+        cfg = GameConfig()
+        cfg.timescale = 0.5
+        assert cfg.timescale == 0.5
+        
+        cfg.timescale = 1.5
+        assert cfg.timescale == 1.5
+
+    def test_shader_submenu_adjusts_timescale(self):
+        """Settings submenu can adjust timescale."""
+        from screens.pause import _adjust_shader_setting
+        
+        cfg = MockConfig()
+        cfg.timescale = 1.0
+        timescales = [0.5, 0.75, 1.0, 1.25, 1.5]
+        
+        # Row 4 is game speed
+        _adjust_shader_setting(4, 1, cfg, [], [], timescales)
+        assert cfg.timescale == 1.25  # 1.0 -> 1.25
+        
+        _adjust_shader_setting(4, -1, cfg, [], [], timescales)
+        assert cfg.timescale == 1.0  # 1.25 -> 1.0
+
+
+# ============================================================================
+# QuickLaunchScene Tests
+# ============================================================================
+
+class TestQuickLaunchScene:
+    """Test quick launch scene functionality."""
+
+    def test_quick_launch_imports(self):
+        """QuickLaunchScene should import without errors."""
+        from scenes.quick_launch import QuickLaunchScene
+        assert callable(QuickLaunchScene)
+
+    def test_quick_launch_has_load_game_option(self):
+        """QuickLaunchScene includes load game option when saves exist."""
+        from scenes.quick_launch import QuickLaunchScene, _LOAD_GAME_OPTION
+        
+        scene = QuickLaunchScene()
+        scene._has_saves = True
+        
+        options = scene._get_menu_options()
+        assert _LOAD_GAME_OPTION in options
+
+    def test_quick_launch_no_load_without_saves(self):
+        """QuickLaunchScene hides load game option when no saves exist."""
+        from scenes.quick_launch import QuickLaunchScene, _LOAD_GAME_OPTION
+        
+        scene = QuickLaunchScene()
+        scene._has_saves = False
+        
+        options = scene._get_menu_options()
+        assert _LOAD_GAME_OPTION not in options
+
+
+# ============================================================================
+# Telemetry Viewer Tests
+# ============================================================================
+
+class TestTelemetryViewerScene:
+    """Test telemetry viewer scene functionality."""
+
+    def test_telemetry_viewer_state_id(self):
+        """TelemetryViewerScene returns correct state ID."""
+        from scenes.telemetry_viewer import TelemetryViewerScene
+        from constants import STATE_TELEMETRY_VIEWER
+        
+        scene = TelemetryViewerScene()
+        assert scene.state_id() == STATE_TELEMETRY_VIEWER
+
+    def test_telemetry_viewer_handles_missing_db(self):
+        """TelemetryViewerScene handles missing database gracefully."""
+        from scenes.telemetry_viewer import TelemetryViewerScene
+        import os
+        
+        scene = TelemetryViewerScene()
+        # Simulate on_enter with no database
+        # (won't actually call on_enter as it needs game_state/ctx)
+        
+        # Verify the scene can be created without errors
+        assert scene._error_message is None
+        assert scene._conn is None
+
+    def test_telemetry_viewer_in_pause_options(self):
+        """Telemetry Graphs option exists in pause menu."""
+        from constants import pause_options
+        
+        assert "Telemetry Graphs" in pause_options

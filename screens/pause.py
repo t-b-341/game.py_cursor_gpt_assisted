@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import pygame
-from constants import STATE_PLAYING, STATE_ENDURANCE, STATE_MENU, STATE_SAVE_GAME, pause_options, fps_cap_options
+from constants import STATE_PLAYING, STATE_ENDURANCE, STATE_MENU, STATE_SAVE_GAME, STATE_TELEMETRY_VIEWER, pause_options, fps_cap_options
 from rendering import RenderContext, draw_centered_text
 from systems.audio_system import (
     get_sfx_volume, get_music_volume, set_sfx_volume, set_music_volume,
@@ -309,35 +309,39 @@ def _adjust_audio_setting(row: int, delta: float, cfg) -> None:
 
 
 def _handle_shader_submenu(event: pygame.event.Event, game_state: "GameState", cfg, out: dict) -> dict | None:
-    """Handle input for the shader options submenu."""
+    """Handle input for the shader/settings submenu."""
     if not hasattr(game_state.ui, 'pause_shader_options_row'):
         game_state.ui.pause_shader_options_row = 0
     row = game_state.ui.pause_shader_options_row
 
     _pp = ["none", "pause_dim_vignette"]
     _gp = ["none", "gameplay_subtle_vignette", "gameplay_retro"]
+    _ts = [0.5, 0.75, 1.0, 1.25, 1.5]  # Timescale options
 
     if event.key == pygame.K_ESCAPE:
         game_state.ui.pause_submenu = None
         return {"handled": True}
     elif event.key in _NAV_UP:
-        game_state.ui.pause_shader_options_row = (row - 1) % 5
+        game_state.ui.pause_shader_options_row = (row - 1) % 6
     elif event.key in _NAV_DOWN:
-        game_state.ui.pause_shader_options_row = (row + 1) % 5
+        game_state.ui.pause_shader_options_row = (row + 1) % 6
     elif event.key in _NAV_LEFT and cfg is not None:
-        _adjust_shader_setting(row, -1, cfg, _gp, _pp)
+        _adjust_shader_setting(row, -1, cfg, _gp, _pp, _ts)
     elif event.key in _NAV_RIGHT and cfg is not None:
-        _adjust_shader_setting(row, 1, cfg, _gp, _pp)
+        _adjust_shader_setting(row, 1, cfg, _gp, _pp, _ts)
     elif event.key in _NAV_CONFIRM:
         row = game_state.ui.pause_shader_options_row
-        if row == 4:  # "Full Settings" option
+        if row == 5:  # "Full Settings" option
             out["screen"] = "SHADER_SETTINGS"
             return out
     return None
 
 
-def _adjust_shader_setting(row: int, direction: int, cfg, gameplay_profiles: list, pause_profiles: list) -> None:
-    """Adjust shader setting based on row index and direction."""
+def _adjust_shader_setting(row: int, direction: int, cfg, gameplay_profiles: list, pause_profiles: list, timescales: list = None) -> None:
+    """Adjust shader/game setting based on row index and direction."""
+    if timescales is None:
+        timescales = [0.5, 0.75, 1.0, 1.25, 1.5]
+    
     if row == 0:
         cfg.enable_gameplay_shaders = not cfg.enable_gameplay_shaders
     elif row == 1:
@@ -350,6 +354,15 @@ def _adjust_shader_setting(row: int, direction: int, cfg, gameplay_profiles: lis
         cur = getattr(cfg, "pause_shader_profile", "none")
         i = (pause_profiles.index(cur) if cur in pause_profiles else 0) + direction
         cfg.pause_shader_profile = pause_profiles[i % len(pause_profiles)]
+    elif row == 4:
+        # Game Speed (timescale)
+        cur = getattr(cfg, "timescale", 1.0)
+        # Find closest matching timescale
+        try:
+            i = timescales.index(cur)
+        except ValueError:
+            i = timescales.index(1.0) if 1.0 in timescales else 0
+        cfg.timescale = timescales[(i + direction) % len(timescales)]
 
 
 def _handle_main_menu(event: pygame.event.Event, game_state: "GameState", cfg, out: dict) -> dict | None:
@@ -393,6 +406,9 @@ def _handle_menu_selection(game_state: "GameState", cfg, out: dict) -> dict | No
     elif choice == "Shader options":
         game_state.ui.pause_submenu = "shaders"
         game_state.ui.pause_shader_options_row = 0
+    elif choice == "Telemetry Graphs":
+        out["screen"] = STATE_TELEMETRY_VIEWER
+        return out
     elif choice == "Toggle FPS":
         if cfg is not None:
             cfg.show_fps = not cfg.show_fps
@@ -422,6 +438,61 @@ def _handle_menu_selection(game_state: "GameState", cfg, out: dict) -> dict | No
 
 
 # ============================================================================
+# Mouse Click Support
+# ============================================================================
+
+def _get_option_rects(width: int, height: int, y_start: int, num_options: int, line_height: int = 40, option_width: int = 400) -> list[pygame.Rect]:
+    """Calculate clickable rectangles for menu options."""
+    rects = []
+    x = (width - option_width) // 2
+    for i in range(num_options):
+        y = y_start + i * line_height - 15  # Offset up a bit for centering
+        rects.append(pygame.Rect(x, y, option_width, line_height))
+    return rects
+
+
+def _handle_main_menu_click(mouse_pos: tuple[int, int], game_state, cfg, width: int, height: int, out: dict) -> dict | None:
+    """Handle mouse click on main pause menu."""
+    y_offset = height // 2 - 60
+    rects = _get_option_rects(width, height, y_offset, len(pause_options), line_height=40)
+    
+    for i, rect in enumerate(rects):
+        if rect.collidepoint(mouse_pos):
+            game_state.ui.pause_selected = i
+            # Trigger selection
+            return _handle_menu_selection(game_state, cfg, out)
+    return None
+
+
+def _handle_audio_submenu_click(mouse_pos: tuple[int, int], game_state, cfg, width: int, height: int) -> dict | None:
+    """Handle mouse click on audio submenu."""
+    y_start = height // 2 - 80
+    rects = _get_option_rects(width, height, y_start, 4, line_height=35, option_width=350)
+    
+    for i, rect in enumerate(rects):
+        if rect.collidepoint(mouse_pos):
+            game_state.ui.pause_audio_options_row = i
+            return {"handled": True}
+    return None
+
+
+def _handle_shader_submenu_click(mouse_pos: tuple[int, int], game_state, cfg, width: int, height: int, out: dict) -> dict | None:
+    """Handle mouse click on shader/settings submenu."""
+    y_start = height // 2 - 100
+    rects = _get_option_rects(width, height, y_start, 6, line_height=32, option_width=400)
+    
+    for i, rect in enumerate(rects):
+        if rect.collidepoint(mouse_pos):
+            game_state.ui.pause_shader_options_row = i
+            # If clicking "Open Full Settings" (row 5), open it
+            if i == 5:
+                out["screen"] = "SHADER_SETTINGS"
+                return out
+            return {"handled": True}
+    return None
+
+
+# ============================================================================
 # Main Event Handler (Dispatcher)
 # ============================================================================
 
@@ -429,10 +500,15 @@ def handle_events(events, game_state, ctx) -> dict:
     """
     Process pause-screen events. Mutates game_state.ui.pause_selected.
     Returns dict: {"screen": str|None, "quit": bool, "restart": bool, "restart_to_wave1": bool}.
+    Supports both keyboard navigation and mouse clicks.
     """
     out = {"screen": None, "quit": False, "restart": False, "restart_to_wave1": False}
     app_ctx = ctx.get("app_ctx") if isinstance(ctx, dict) else None
     cfg = getattr(app_ctx, "config", None) if app_ctx else None
+    
+    # Get screen dimensions for mouse hit testing
+    width = ctx.get("width", 1920) if isinstance(ctx, dict) else 1920
+    height = ctx.get("height", 1080) if isinstance(ctx, dict) else 1080
 
     if game_state is None:
         return out
@@ -440,7 +516,30 @@ def handle_events(events, game_state, ctx) -> dict:
     submenu = game_state.ui.pause_submenu
 
     for event in events:
-        if not hasattr(event, "type") or event.type != pygame.KEYDOWN:
+        if not hasattr(event, "type"):
+            continue
+        
+        # Handle mouse clicks
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if submenu == "audio":
+                result = _handle_audio_submenu_click(event.pos, game_state, cfg, width, height)
+                if result and result.get("handled"):
+                    continue
+            elif submenu == "shaders":
+                result = _handle_shader_submenu_click(event.pos, game_state, cfg, width, height, out)
+                if result is not None:
+                    if result.get("screen"):
+                        return result
+                    if result.get("handled"):
+                        continue
+            else:
+                result = _handle_main_menu_click(event.pos, game_state, cfg, width, height, out)
+                if result is not None:
+                    return result
+            continue
+        
+        # Handle keyboard input
+        if event.type != pygame.KEYDOWN:
             continue
 
         # Dispatch to submenu handler or main menu
@@ -493,27 +592,30 @@ def _render_audio_submenu(screen, font, big_font, WIDTH, HEIGHT, game_state) -> 
 
 
 def _render_shader_submenu(screen, font, big_font, WIDTH, HEIGHT, game_state, cfg) -> None:
-    """Render the shader options submenu."""
+    """Render the shader/settings submenu."""
     row = getattr(game_state.ui, 'pause_shader_options_row', 0)
-    row = max(0, min(4, row))
+    row = max(0, min(5, row))
 
     if cfg is not None:
+        timescale = getattr(cfg, 'timescale', 1.0)
+        speed_text = f"{int(timescale * 100)}%" if timescale != 1.0 else "Normal"
         lines = [
             f"Gameplay Shaders: {'On' if getattr(cfg, 'enable_gameplay_shaders', False) else 'Off'}",
             f"Pause Shaders: {'On' if getattr(cfg, 'enable_pause_shaders', False) else 'Off'}",
             f"Gameplay Profile: {getattr(cfg, 'gameplay_shader_profile', 'none')}",
             f"Pause Profile: {getattr(cfg, 'pause_shader_profile', 'none')}",
+            f"Game Speed: {speed_text}",
             "Open Full Settings",
         ]
     else:
-        lines = ["Gameplay Shaders", "Pause Shaders", "Gameplay Profile", "Pause Profile", "Open Full Settings"]
+        lines = ["Gameplay Shaders", "Pause Shaders", "Gameplay Profile", "Pause Profile", "Game Speed", "Open Full Settings"]
 
-    draw_centered_text(screen, font, big_font, WIDTH, "Shader options", HEIGHT // 2 - 140, use_big=True)
+    draw_centered_text(screen, font, big_font, WIDTH, "Settings", HEIGHT // 2 - 160, use_big=True)
     for i, line in enumerate(lines):
         color = (255, 255, 0) if i == row else (200, 200, 200)
         prefix = "->" if i == row else "  "
-        draw_centered_text(screen, font, big_font, WIDTH, f"{prefix} {line}", HEIGHT // 2 - 80 + i * 35, color)
-    draw_centered_text(screen, font, big_font, WIDTH, "UP/DOWN: Select | LEFT/RIGHT: Change value | ENTER: Open Full/Continue | ESC: Back", HEIGHT - 80, (150, 150, 150))
+        draw_centered_text(screen, font, big_font, WIDTH, f"{prefix} {line}", HEIGHT // 2 - 100 + i * 32, color)
+    draw_centered_text(screen, font, big_font, WIDTH, "UP/DOWN: Select | LEFT/RIGHT: Change | ENTER: Confirm | ESC: Back", HEIGHT - 80, (150, 150, 150))
 
 
 def _render_main_menu(screen, font, big_font, WIDTH, HEIGHT, game_state, cfg) -> None:

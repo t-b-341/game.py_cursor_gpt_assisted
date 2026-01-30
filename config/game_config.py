@@ -121,6 +121,10 @@ class GameConfig:
     # The world is rendered at this scale then scaled down to fit the display
     world_scale: float = 1.33  # Default 33% larger world
 
+    # Game speed / timescale (1.0 = normal, 0.75 = slower, 1.25 = faster)
+    # Applied to dt in the main game loop for smoother pacing
+    timescale: float = 1.0
+    
     # Audio (used by systems.audio_system)
     sfx_volume: float = 1.0
     music_volume: float = 0.3

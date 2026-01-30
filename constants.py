@@ -40,6 +40,7 @@ STATE_ENDURANCE = "ENDURANCE"
 STATE_GAME_OVER = "GAME_OVER"
 STATE_SAVE_GAME = "SAVE_GAME"
 STATE_LOAD_GAME = "LOAD_GAME"
+STATE_TELEMETRY_VIEWER = "TELEMETRY_VIEWER"
 STATE_NAME_INPUT = "NAME_INPUT"
 STATE_HIGH_SCORES = "HIGH_SCORES"
 STATE_VICTORY = "VICTORY"
@@ -106,7 +107,7 @@ custom_profile_stats_keys = ["hp_mult", "speed_mult", "damage_mult", "firerate_m
 # ----------------------------
 # UI constants
 # ----------------------------
-pause_options = ["Continue", "Restart (Wave 1)", "Audio options", "Shader options", "Toggle FPS", "FPS Cap", "Perf Overlay", "Save & Quit", "Exit to main menu", "Quit"]
+pause_options = ["Continue", "Restart (Wave 1)", "Audio options", "Shader options", "Telemetry Graphs", "Toggle FPS", "FPS Cap", "Perf Overlay", "Save & Quit", "Exit to main menu", "Quit"]
 # Available FPS cap options
 fps_cap_options = [60, 120, 144, 240, 0]  # 0 = uncapped
 controls_actions = ["move_left", "move_right", "move_up", "move_down", "boost", "slow", "dash", "ally_drop", "direct_allies"]
