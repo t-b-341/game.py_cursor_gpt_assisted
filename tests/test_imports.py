@@ -105,3 +105,38 @@ class TestCriticalImports:
         )
         assert callable(poll_events)
         assert callable(render_current_scene)
+
+    def test_collision_projectiles_helpers(self):
+        """collision_projectiles helpers should be importable and work correctly."""
+        from systems.collision_projectiles import _create_damage_number, _bulk_remove
+        
+        # Test _create_damage_number
+        dmg = _create_damage_number(100, 200, 50)
+        assert dmg["x"] == 100
+        assert dmg["y"] == 200
+        assert dmg["damage"] == 50
+        assert dmg["timer"] == 2.0
+        assert dmg["color"] == (255, 255, 100)
+        
+        # Test with custom color
+        dmg2 = _create_damage_number(0, 0, 100, (255, 0, 0))
+        assert dmg2["color"] == (255, 0, 0)
+        
+        # Test _bulk_remove
+        items = [{"id": 1}, {"id": 2}, {"id": 3}]
+        ids_to_remove = {id(items[1])}
+        _bulk_remove(items, ids_to_remove)
+        assert len(items) == 2
+        assert items[0]["id"] == 1
+        assert items[1]["id"] == 3
+
+    def test_options_scene_imports(self):
+        """scenes/options.py should import without errors."""
+        from scenes.options import OptionsScene
+        assert callable(OptionsScene)
+        # Verify dispatcher methods exist
+        scene = OptionsScene()
+        assert hasattr(scene, '_handle_section_0_difficulty')
+        assert hasattr(scene, '_render_section_0')
+        assert hasattr(scene, 'handle_input')
+        assert hasattr(scene, 'render')

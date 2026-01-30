@@ -5,11 +5,17 @@ Performance optimizations:
 - Filter-based list updates avoid O(n) removal during iteration
 - Bulk processing where possible
 - C-accelerated distance calculations where available
+
+Refactored helpers:
+- _create_damage_number(): Creates floating damage number dict
+- _bulk_remove(): Efficient O(n) list filtering by id set
+- _handle_shield_hit(): Shield reflection logic
+- _handle_reflective_shield_hit(): Reflective shield logic
 """
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING, Callable, Optional
+from typing import TYPE_CHECKING
 
 import pygame
 
@@ -26,6 +32,51 @@ try:
 except Exception:
     _USE_GPU_COLLISION = False
     check_collisions_batch = None
+
+
+# -----------------------------------------------------------------------------
+# Common Helpers
+# -----------------------------------------------------------------------------
+
+def _create_damage_number(
+    x: int | float,
+    y: int | float,
+    damage: int | float,
+    color: tuple[int, int, int] = (255, 255, 100),
+    timer: float = 2.0,
+) -> dict:
+    """Create a damage number dict for display.
+    
+    Args:
+        x: X position (usually entity centerx)
+        y: Y position (usually entity top - 20)
+        damage: Damage amount to display
+        color: RGB color tuple (default yellow)
+        timer: Display duration in seconds
+        
+    Returns:
+        Dict ready to append to state.damage_numbers
+    """
+    return {
+        "x": x,
+        "y": y,
+        "damage": int(damage),
+        "timer": timer,
+        "color": color,
+    }
+
+
+def _bulk_remove(items: list, ids_to_remove: set) -> None:
+    """Remove items from list by id set (O(n) instead of O(n²) with .remove()).
+    
+    Modifies list in-place using slice assignment.
+    
+    Args:
+        items: List to filter
+        ids_to_remove: Set of id(item) values to remove
+    """
+    if ids_to_remove:
+        items[:] = [item for item in items if id(item) not in ids_to_remove]
 
 
 def _build_enemy_grid(state: "GameState", ctx: dict) -> SpatialGrid:
@@ -227,13 +278,9 @@ def _process_bullet_enemy_hit(state, ctx: dict, bullet: dict, enemy: dict) -> No
         dmg = bullet.get("damage", player_damage)
         enemy["hp"] -= dmg
         set_enemy_damage_flash(enemy, ctx)
-        state.damage_numbers.append({
-            "x": enemy["rect"].centerx,
-            "y": enemy["rect"].y - 20,
-            "damage": int(dmg),
-            "timer": 2.0,
-            "color": (255, 255, 100),
-        })
+        state.damage_numbers.append(_create_damage_number(
+            enemy["rect"].centerx, enemy["rect"].y - 20, dmg
+        ))
         if enemy["hp"] <= 0:
             kill(enemy, state)
         if bullet.get("penetration", 0) <= 0:
@@ -245,13 +292,9 @@ def _process_bullet_enemy_hit(state, ctx: dict, bullet: dict, enemy: dict) -> No
     dmg = bullet.get("damage", player_damage)
     enemy["hp"] -= dmg
     set_enemy_damage_flash(enemy, ctx)
-    state.damage_numbers.append({
-        "x": enemy["rect"].centerx,
-        "y": enemy["rect"].y - 20,
-        "damage": int(dmg),
-        "timer": 2.0,
-        "color": (255, 255, 100),
-    })
+    state.damage_numbers.append(_create_damage_number(
+        enemy["rect"].centerx, enemy["rect"].y - 20, dmg
+    ))
     if enemy["hp"] <= 0:
         kill(enemy, state)
     if bullet.get("penetration", 0) <= 0:
@@ -580,13 +623,9 @@ def handle_friendly_projectile_offscreen_blocks_enemies(state, ctx: dict) -> Non
             dmg = proj.get("damage", 20)
             enemy["hp"] -= dmg
             set_enemy_damage_flash(enemy, ctx)
-            state.damage_numbers.append({
-                "x": enemy["rect"].centerx,
-                "y": enemy["rect"].y - 20,
-                "damage": int(dmg),
-                "timer": 2.0,
-                "color": (255, 255, 100),
-            })
+            state.damage_numbers.append(_create_damage_number(
+                enemy["rect"].centerx, enemy["rect"].y - 20, dmg
+            ))
             if enemy["hp"] <= 0 and kill:
                 kill(enemy, state)
             projs_to_remove.add(id(proj))
@@ -640,13 +679,9 @@ def handle_grenade_explosion_damage(state, dt: float, ctx: dict) -> None:
                 if d_sq <= r_sq:
                     enemy["hp"] -= damage_val
                     set_enemy_damage_flash(enemy, ctx)
-                    state.damage_numbers.append({
-                        "x": enemy["rect"].centerx,
-                        "y": enemy["rect"].y - 20,
-                        "damage": int(damage_val),
-                        "timer": 2.0,
-                        "color": (255, 200, 100),
-                    })
+                    state.damage_numbers.append(_create_damage_number(
+                        enemy["rect"].centerx, enemy["rect"].y - 20, damage_val, (255, 200, 100)
+                    ))
                     if enemy["hp"] <= 0 and kill:
                         kill(enemy, state)
         if source == "enemy_player_allies_only":
@@ -762,13 +797,9 @@ def handle_missile_collisions(state, ctx: dict) -> None:
                     if c_distance_squared(enemy["rect"].centerx, enemy["rect"].centery, mx, my) <= rad_sq:
                         enemy["hp"] -= dmg
                         set_enemy_damage_flash(enemy, ctx)
-                        state.damage_numbers.append({
-                            "x": enemy["rect"].centerx,
-                            "y": enemy["rect"].y - 20,
-                            "damage": int(dmg),
-                            "timer": 2.0,
-                            "color": (255, 150, 50),
-                        })
+                        state.damage_numbers.append(_create_damage_number(
+                            enemy["rect"].centerx, enemy["rect"].y - 20, dmg, (255, 150, 50)
+                        ))
                         if enemy["hp"] <= 0 and kill:
                             kill(enemy, state)
             
@@ -777,13 +808,9 @@ def handle_missile_collisions(state, ctx: dict) -> None:
                 hit_ally["hp"] = hit_ally.get("hp", 0) - dmg
                 ally_rect = hit_ally.get("rect")
                 if ally_rect:
-                    state.damage_numbers.append({
-                        "x": ally_rect.centerx,
-                        "y": ally_rect.y - 20,
-                        "damage": int(dmg),
-                        "timer": 2.0,
-                        "color": (100, 200, 255),  # Blue for ally damage
-                    })
+                    state.damage_numbers.append(_create_damage_number(
+                        ally_rect.centerx, ally_rect.y - 20, dmg, (100, 200, 255)  # Blue for ally
+                    ))
                 # Mark ally for removal if dead
                 if hit_ally["hp"] <= 0:
                     friendlies_to_remove.add(id(hit_ally))
