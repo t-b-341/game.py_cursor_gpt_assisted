@@ -66,19 +66,27 @@ def _update_player(state, dt: float, ctx: dict) -> None:
     clamp = ctx.get("clamp")
 
     if move_x != 0 or move_y != 0:
-        move_dir = pygame.Vector2(move_x, move_y).normalize()
+        # Normalize manually to avoid creating intermediate Vector2
+        inv_len = 1.0 / math.sqrt(move_x * move_x + move_y * move_y)
+        dir_x, dir_y = move_x * inv_len, move_y * inv_len
         move_speed = state.player_speed * speed_mult * state.player_stat_multipliers["speed"]
         if state.is_jumping:
             move_speed += state.jump_velocity.length()
         move_amount = move_speed * dt
-        move_vec = move_dir * move_amount
-        state.last_move_velocity = move_dir * move_speed
+        # Reuse last_move_velocity Vector2 if possible
+        if not hasattr(state, '_move_vel_cache'):
+            state._move_vel_cache = pygame.Vector2(0, 0)
+        state._move_vel_cache.x = dir_x * move_speed
+        state._move_vel_cache.y = dir_y * move_speed
+        state.last_move_velocity = state._move_vel_cache
         if move_player:
-            move_player(player, int(move_vec.x), int(move_vec.y))
+            move_player(player, int(dir_x * move_amount), int(dir_y * move_amount))
         if clamp:
             clamp(player)
     else:
-        state.last_move_velocity = pygame.Vector2(0, 0)
+        if not hasattr(state, '_zero_vel_cache'):
+            state._zero_vel_cache = pygame.Vector2(0, 0)
+        state.last_move_velocity = state._zero_vel_cache
 
     if state.is_jumping:
         player.x += int(state.jump_velocity.x * dt)
@@ -122,37 +130,53 @@ def _update_enemies(state, dt: float, ctx: dict) -> None:
     player_in_main = main_area and main_area.collidepoint(player.centerx, player.centery) if main_area else False
 
     # Only allow up to N enemies to target the player; the rest target friendlies or patrol. Closest N by distance get the slots.
-    # Use C-accelerated distance calculations for performance
+    # Cache targeting slots - only rebuild every few frames or when enemy count changes
     pcx, pcy = player.centerx, player.centery
-    candidates = [
-        (e, c_distance_squared(e["rect"].centerx, e["rect"].centery, pcx, pcy))
-        for e in state.enemies
-        if e.get("hp", 1) > 0 and not e.get("is_ambient")
-    ]
-    candidates.sort(key=lambda x: x[1])
-    ctx["_player_targeting_slots"] = set(id(e) for e, _ in candidates[:MAX_ENEMIES_TARGETING_PLAYER])
-
+    enemy_count = len(state.enemies)
+    rebuild_interval = 5  # Rebuild every 5 frames
+    frame_counter = getattr(state, '_targeting_frame', 0) + 1
+    state._targeting_frame = frame_counter
+    
+    cached_count = getattr(state, '_targeting_enemy_count', -1)
+    if cached_count != enemy_count or frame_counter % rebuild_interval == 0:
+        state._targeting_enemy_count = enemy_count
+        # Use C-accelerated distance calculations for performance
+        candidates = [
+            (e, c_distance_squared(e["rect"].centerx, e["rect"].centery, pcx, pcy))
+            for e in state.enemies
+            if e.get("hp", 1) > 0 and not e.get("is_ambient")
+        ]
+        candidates.sort(key=lambda x: x[1])
+        state._cached_targeting_slots = set(id(e) for e, _ in candidates[:MAX_ENEMIES_TARGETING_PLAYER])
+    
+    # Use cached targeting slots
+    targeting_slots = getattr(state, '_cached_targeting_slots', set())
+    ctx["_player_targeting_slots"] = targeting_slots
+    
     for enemy in state.enemies:
         if enemy.get("hp", 1) <= 0:
             continue
         if enemy.get("is_ambient"):
             continue  # Stationary
 
-        current_pos = pygame.Vector2(enemy["rect"].center)
-        last_pos = enemy.get("last_pos", current_pos)
+        # Use raw coordinates to avoid Vector2 creation overhead
+        ex, ey = enemy["rect"].centerx, enemy["rect"].centery
+        
+        # Stuck detection using cached last position (avoid Vector2)
+        last_x, last_y = enemy.get("_last_x", ex), enemy.get("_last_y", ey)
         stuck_timer = enemy.get("stuck_timer", 0.0)
         # Use C-accelerated distance for stuck detection
-        distance_moved_sq = c_distance_squared(current_pos.x, current_pos.y, last_pos.x, last_pos.y)
-        distance_moved = math.sqrt(distance_moved_sq) if distance_moved_sq > 0 else 0.0
-        if distance_moved < 5.0:
+        distance_moved_sq = c_distance_squared(ex, ey, last_x, last_y)
+        if distance_moved_sq < 25.0:  # 5.0 squared = 25.0
             stuck_timer += dt
         else:
             stuck_timer = 0.0
-        enemy["last_pos"] = current_pos
+        enemy["_last_x"], enemy["_last_y"] = ex, ey
         enemy["stuck_timer"] = stuck_timer
 
-        enemy_pos = pygame.Vector2(enemy["rect"].center)
-        allow_player = id(enemy) in ctx.get("_player_targeting_slots", set())
+        # Create Vector2 only once per enemy (needed for find_nearest_threat)
+        enemy_pos = pygame.Vector2(ex, ey)
+        allow_player = id(enemy) in targeting_slots
         target_info = find_nearest_threat(enemy_pos, player, state.friendly_ai, allow_player=allow_player)
 
         # When player is in main area, non-boss non-patrol enemies patrol the outer area

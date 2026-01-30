@@ -25,6 +25,26 @@ FPS_TARGET_LINE_COLOR = (255, 255, 100)  # Yellow for 60 FPS line
 FPS_WARNING_COLOR = (255, 150, 50)  # Orange for low FPS
 
 
+# Text surface cache to avoid re-rendering unchanged text each frame
+# Key: (text, font_id, color) -> Surface
+_text_cache: dict[tuple, pygame.Surface] = {}
+_text_cache_max_size = 100
+
+
+def _get_cached_text(font: pygame.font.Font, text: str, color: tuple) -> pygame.Surface:
+    """Get a cached text surface, rendering only if text/color changed."""
+    key = (text, id(font), color)
+    if key not in _text_cache:
+        # Evict oldest entries if cache is full
+        if len(_text_cache) >= _text_cache_max_size:
+            # Remove first 20 entries (simple LRU approximation)
+            keys_to_remove = list(_text_cache.keys())[:20]
+            for k in keys_to_remove:
+                del _text_cache[k]
+        _text_cache[key] = font.render(text, True, color)
+    return _text_cache[key]
+
+
 def render_hud(state: "GameState", ctx: dict, render_ctx: RenderContext) -> None:
     """Draw HUD layer: entity health bars, score, metrics, cooldown bars, and FPS graph."""
     if not ctx or not render_ctx:
@@ -135,8 +155,8 @@ def _draw_fps_graph(screen: pygame.Surface, small_font: Any, WIDTH: int, HEIGHT:
     else:
         text_color = (255, 80, 80)  # Red
     
-    fps_text = f"FPS: {avg_fps:.0f}"
-    text_surf = small_font.render(fps_text, True, text_color)
+    fps_text = f"FPS: {int(avg_fps)}"  # Use int for better cache hits
+    text_surf = _get_cached_text(small_font, fps_text, text_color)
     screen.blit(text_surf, (x, y - padding + 2))
     
     # Draw graph border
@@ -156,15 +176,24 @@ def _draw_fps_graph(screen: pygame.Surface, small_font: Any, WIDTH: int, HEIGHT:
     pygame.draw.line(screen, (255, 80, 80), 
                      (graph_rect.left, warn_y), (graph_rect.right, warn_y), 1)
     
-    # Draw FPS graph line
+    # Draw FPS graph line - reuse points list to avoid allocation
     if len(fps_history) >= 2:
-        points = []
+        # Get or create cached points list
+        if not hasattr(_draw_fps_graph, '_points_cache'):
+            _draw_fps_graph._points_cache = []
+        points = _draw_fps_graph._points_cache
+        points.clear()
+        
+        history_len_minus_1 = max(1, len(fps_history) - 1)
+        graph_left = graph_rect.left
+        graph_bottom = graph_rect.bottom
+        
         for i, fps in enumerate(fps_history):
             # Map index to x position
-            px = graph_rect.left + int((i / max(1, len(fps_history) - 1)) * (graph_width - 1))
+            px = graph_left + int((i / history_len_minus_1) * (graph_width - 1))
             # Map FPS to y position (dynamic range, clamped)
             clamped_fps = max(0, min(max_scale, fps))
-            py = graph_rect.bottom - int((clamped_fps / max_scale) * graph_height)
+            py = graph_bottom - int((clamped_fps / max_scale) * graph_height)
             points.append((px, py))
         
         # Draw the line with anti-aliasing
@@ -199,8 +228,9 @@ def _draw_entity_health_bars(screen: pygame.Surface, state, show: bool) -> None:
 
 def _draw_score(screen: pygame.Surface, state, big_font, WIDTH: int) -> None:
     score_text = f"Score: {state.score}"
-    score_surface = big_font.render(score_text, True, (255, 255, 0))
-    outline_surface = big_font.render(score_text, True, (0, 0, 0))
+    # Use cached text surfaces to avoid re-rendering unchanged text
+    score_surface = _get_cached_text(big_font, score_text, (255, 255, 0))
+    outline_surface = _get_cached_text(big_font, score_text, (0, 0, 0))
     score_x = WIDTH // 2 - score_surface.get_width() // 2
     score_y = 10
     for dx, dy in [(-2, -2), (-2, 0), (-2, 2), (0, -2), (0, 2), (2, -2), (2, 0), (2, 2)]:
@@ -251,14 +281,14 @@ def _draw_metrics_and_bars(
         pygame.draw.rect(screen, (60, 60, 60), (health_bar_x, armor_bar_y, health_bar_width, health_bar_height))
         pygame.draw.rect(screen, (255, 150, 0), (health_bar_x, armor_bar_y, overshield_fill, health_bar_height))
         pygame.draw.rect(screen, (20, 20, 20), (health_bar_x, armor_bar_y, health_bar_width, health_bar_height), 2)
-        overshield_text = small_font.render(f"Armor: {int(state.overshield)}/{int(overshield_max)}", True, (255, 255, 255))
+        overshield_text = _get_cached_text(small_font, f"Armor: {int(state.overshield)}/{int(overshield_max)}", (255, 255, 255))
         screen.blit(overshield_text, (health_bar_x + 5, armor_bar_y + 2))
 
     health_fill = int((state.player_hp / state.player_max_hp) * health_bar_width)
     pygame.draw.rect(screen, (60, 60, 60), (health_bar_x, health_bar_y, health_bar_width, health_bar_height))
     pygame.draw.rect(screen, (100, 255, 100), (health_bar_x, health_bar_y, health_fill, health_bar_height))
     pygame.draw.rect(screen, (20, 20, 20), (health_bar_x, health_bar_y, health_bar_width, health_bar_height), 2)
-    health_text = small_font.render(f"HP: {int(state.player_hp)}/{int(state.player_max_hp)}", True, (255, 255, 255))
+    health_text = _get_cached_text(small_font, f"HP: {int(state.player_hp)}/{int(state.player_max_hp)}", (255, 255, 255))
     screen.blit(health_text, (health_bar_x + 5, health_bar_y + 2))
 
     bar_y = HEIGHT - 30
@@ -271,7 +301,7 @@ def _draw_metrics_and_bars(
     pygame.draw.rect(screen, (200, 100, 255) if grenade_progress >= 1.0 else (255, 50, 50),
                      (grenade_x, bar_y, int(bar_width * grenade_progress), bar_height))
     pygame.draw.rect(screen, (255, 255, 255), (grenade_x, bar_y, bar_width, bar_height), 2)
-    screen.blit(small_font.render("BOMB (E)", True, (255, 255, 255)), (grenade_x + 5, bar_y + 2))
+    screen.blit(_get_cached_text(small_font, "BOMB (E)", (255, 255, 255)), (grenade_x + 5, bar_y + 2))
 
     missile_progress = min(1.0, state.missile_time_since_used / missile_cooldown)
     missile_x = grenade_x + bar_width + 10
@@ -279,7 +309,7 @@ def _draw_metrics_and_bars(
     pygame.draw.rect(screen, (255, 200, 0) if missile_progress >= 1.0 else (100, 100, 100),
                      (missile_x, bar_y, int(bar_width * missile_progress), bar_height))
     pygame.draw.rect(screen, (255, 255, 255), (missile_x, bar_y, bar_width, bar_height), 2)
-    screen.blit(small_font.render("MISSILE (R)", True, (255, 255, 255)), (missile_x + 5, bar_y + 2))
+    screen.blit(_get_cached_text(small_font, "MISSILE (R)", (255, 255, 255)), (missile_x + 5, bar_y + 2))
 
     ally_progress = min(1.0, state.ally_drop_timer / ally_drop_cooldown)
     ally_x = missile_x + bar_width + 10
@@ -287,7 +317,7 @@ def _draw_metrics_and_bars(
     pygame.draw.rect(screen, (200, 100, 255) if ally_progress >= 1.0 else (100, 100, 100),
                      (ally_x, bar_y, int(bar_width * ally_progress), bar_height))
     pygame.draw.rect(screen, (255, 255, 255), (ally_x, bar_y, bar_width, bar_height), 2)
-    screen.blit(small_font.render("ALLY DROP (Q)", True, (255, 255, 255)), (ally_x + 5, bar_y + 2))
+    screen.blit(_get_cached_text(small_font, "ALLY DROP (Q)", (255, 255, 255)), (ally_x + 5, bar_y + 2))
 
     overshield_progress = min(1.0, state.overshield_recharge_timer / overshield_recharge_cooldown)
     overshield_x = ally_x + bar_width + 10
@@ -297,7 +327,7 @@ def _draw_metrics_and_bars(
     pygame.draw.rect(screen, overshield_bar_color,
                      (overshield_x, bar_y, int(bar_width * overshield_progress), bar_height))
     pygame.draw.rect(screen, (255, 255, 255), (overshield_x, bar_y, bar_width, bar_height), 2)
-    screen.blit(small_font.render("OVERSHIELD (TAB)", True, (255, 255, 255)), (overshield_x + 5, bar_y + 2))
+    screen.blit(_get_cached_text(small_font, "OVERSHIELD (TAB)", (255, 255, 255)), (overshield_x + 5, bar_y + 2))
 
     if state.shield_active:
         shield_progress = min(1.0, state.shield_duration_remaining / shield_duration)
@@ -317,7 +347,7 @@ def _draw_metrics_and_bars(
         shield_color = (255, 50, 50)
     pygame.draw.rect(screen, shield_color, (shield_x, bar_y, int(bar_width * shield_progress), bar_height))
     pygame.draw.rect(screen, (255, 255, 255), (shield_x, bar_y, bar_width, bar_height), 2)
-    screen.blit(small_font.render("SHIELD (LALT)", True, (255, 255, 255)), (shield_x + 5, bar_y + 2))
+    screen.blit(_get_cached_text(small_font, "SHIELD (LALT)", (255, 255, 255)), (shield_x + 5, bar_y + 2))
 
     controls_y = HEIGHT - 10
     if aiming_mode == AIM_ARROWS:

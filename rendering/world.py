@@ -22,6 +22,9 @@ _triangle_surface_cache: dict = {}
 # Projectile surface cache: (color, shape, size) -> Surface
 _projectile_surface_cache: dict[tuple, pygame.Surface] = {}
 
+# Health zone surface cache: (width, height, color, is_triangle) -> Surface
+_health_zone_cache: dict[tuple, pygame.Surface] = {}
+
 
 def _create_cached_silver_wall_texture(width: int, height: int) -> pygame.Surface:
     """Create a cached silver wall texture surface."""
@@ -218,16 +221,28 @@ def _draw_terrain(screen: pygame.Surface, state: Any, ctx: dict) -> None:
         zone_width = zone["rect"].w
         zone_height = zone["rect"].h
         use_triangle = (getattr(state, "wave_in_level", 1) % 2 == 0)
-        zone_surf = pygame.Surface((zone["rect"].w + 20, zone["rect"].h + 20), pygame.SRCALPHA)
+        
+        # Cache the zone surface by size, color, and shape
+        cache_key = (zone_width, zone_height, zone["color"], use_triangle)
+        if cache_key not in _health_zone_cache:
+            zone_surf = pygame.Surface((zone_width + 20, zone_height + 20), pygame.SRCALPHA)
+            if use_triangle:
+                triangle_points = [
+                    (zone_width // 2, 10),
+                    (10, zone_height + 10),
+                    (zone_width + 10, zone_height + 10),
+                ]
+                pygame.draw.polygon(zone_surf, zone["color"], triangle_points)
+            else:
+                pygame.draw.rect(zone_surf, zone["color"], (10, 10, zone_width, zone_height))
+            _health_zone_cache[cache_key] = zone_surf
+        
+        zone_surf = _health_zone_cache[cache_key]
+        screen.blit(zone_surf, (zone["rect"].x - 10, zone["rect"].y - 10))
+        
+        # Draw border (position changes, so can't cache)
+        border_color = (50, 255, 50)
         if use_triangle:
-            triangle_points = [
-                (zone_width // 2, 10),
-                (10, zone_height + 10),
-                (zone_width + 10, zone_height + 10),
-            ]
-            pygame.draw.polygon(zone_surf, zone["color"], triangle_points)
-            screen.blit(zone_surf, (zone["rect"].x - 10, zone["rect"].y - 10))
-            border_color = (50, 255, 50)
             zone_center = (zone["rect"].centerx, zone["rect"].centery)
             pygame.draw.polygon(screen, border_color, [
                 (zone_center[0], zone["rect"].y),
@@ -235,9 +250,6 @@ def _draw_terrain(screen: pygame.Surface, state: Any, ctx: dict) -> None:
                 (zone["rect"].right, zone["rect"].bottom),
             ], 3)
         else:
-            pygame.draw.rect(zone_surf, zone["color"], (10, 10, zone["rect"].w, zone["rect"].h))
-            screen.blit(zone_surf, (zone["rect"].x - 10, zone["rect"].y - 10))
-            border_color = (50, 255, 50)
             pygame.draw.rect(screen, border_color, zone["rect"], 3)
 
     for pad in ctx.get("teleporter_pads", []):
