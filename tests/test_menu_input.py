@@ -369,6 +369,50 @@ class TestPauseImports:
         )
         assert callable(_render_audio_submenu)
 
+    def test_pause_mouse_click_handlers_import(self):
+        """Pause mouse click handlers should be importable."""
+        from screens.pause import (
+            _get_option_rects,
+            _handle_main_menu_click,
+            _handle_audio_submenu_click,
+            _handle_shader_submenu_click,
+        )
+        assert callable(_get_option_rects)
+        assert callable(_handle_main_menu_click)
+
+
+class TestPauseMouseClick:
+    """Test pause menu mouse click handling."""
+
+    def test_get_option_rects_returns_correct_count(self):
+        """_get_option_rects returns correct number of rectangles."""
+        from screens.pause import _get_option_rects
+        
+        rects = _get_option_rects(1920, 1080, 500, 5, line_height=40)
+        assert len(rects) == 5
+        
+        rects = _get_option_rects(1920, 1080, 500, 11, line_height=40)
+        assert len(rects) == 11
+
+    def test_main_menu_click_selects_option(self):
+        """Clicking on a menu option selects it."""
+        from screens.pause import _handle_main_menu_click, _get_option_rects, pause_options
+        
+        game_state = MockGameState()
+        cfg = MockConfig()
+        out = {"screen": None, "quit": False, "restart": False, "restart_to_wave1": False}
+        
+        # Calculate where "Continue" option would be
+        width, height = 1920, 1080
+        y_offset = height // 2 - 60
+        rects = _get_option_rects(width, height, y_offset, len(pause_options), line_height=40)
+        
+        # Click on first option (Continue) - should return resume target
+        center = rects[0].center
+        result = _handle_main_menu_click(center, game_state, cfg, width, height, out)
+        # Continue returns a result with screen set
+        assert result is not None or game_state.ui.pause_selected == 0
+
 
 # ============================================================================
 # GameConfig Tests

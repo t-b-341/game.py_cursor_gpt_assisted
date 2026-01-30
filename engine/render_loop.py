@@ -24,6 +24,7 @@ from constants import (
     STATE_PLAYING,
     STATE_QUICK_LAUNCH,
     STATE_SAVE_GAME,
+    STATE_TELEMETRY_VIEWER,
     STATE_TITLE,
     STATE_VICTORY,
     level_themes,
@@ -70,7 +71,8 @@ def render_current_scene(
     elif current_state in (
         STATE_TITLE, STATE_MENU, STATE_QUICK_LAUNCH, STATE_PAUSED,
         STATE_HIGH_SCORES, STATE_NAME_INPUT, STATE_GAME_OVER, STATE_VICTORY,
-        STATE_SAVE_GAME, STATE_LOAD_GAME, "SHADER_TEST", "SHADER_SETTINGS"
+        STATE_SAVE_GAME, STATE_LOAD_GAME, STATE_TELEMETRY_VIEWER,
+        "SHADER_TEST", "SHADER_SETTINGS"
     ):
         _render_menu_or_overlay(
             ctx, game_state, scene_stack, screen_ctx,

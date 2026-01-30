@@ -100,9 +100,34 @@ class TelemetryViewerScene:
         self._loading = False
         self._error_message: Optional[str] = None
         self._available_pages: list[int] = []  # Indices of pages with data
+        self._initialized = False  # Track if we've done lazy init
         
     def state_id(self) -> str:
         return STATE_TELEMETRY_VIEWER
+    
+    def _ensure_initialized(self) -> None:
+        """Lazy initialization - called on first render."""
+        if self._initialized:
+            return
+        self._initialized = True
+        
+        self._error_message = None
+        self._cached_surfaces.clear()
+        self._current_index = 0
+        
+        # Load plot pages
+        self._load_pages()
+        if self._error_message:
+            return
+        
+        # Connect to database
+        if not self._connect_db():
+            return
+        
+        # Get latest run
+        self._run_id = self._get_latest_run_id()
+        if self._run_id is None:
+            self._error_message = "No telemetry runs found in database"
     
     def _load_pages(self) -> None:
         """Load the list of available plot pages."""
@@ -229,6 +254,9 @@ class TelemetryViewerScene:
             draw_centered_text(screen, font, big_font, w, "Press ESC to go back", h - 60, color=(150, 150, 150))
             return
         
+        # Lazy initialization on first render
+        self._ensure_initialized()
+        
         # Check for errors
         if self._error_message:
             draw_centered_text(screen, font, big_font, w, "TELEMETRY VIEWER", h // 4, color=(100, 200, 255), use_big=True)
@@ -274,24 +302,12 @@ class TelemetryViewerScene:
             draw_centered_text(screen, font, big_font, w, run_info, h - 60, color=(100, 100, 100))
     
     def on_enter(self, game_state: "GameState", ctx: dict) -> None:
-        """Called when entering the scene."""
+        """Called when entering the scene (may not be called by all transition paths)."""
+        # Reset for re-initialization via lazy init
+        self._initialized = False
         self._error_message = None
         self._cached_surfaces.clear()
         self._current_index = 0
-        
-        # Load plot pages
-        self._load_pages()
-        if self._error_message:
-            return
-        
-        # Connect to database
-        if not self._connect_db():
-            return
-        
-        # Get latest run
-        self._run_id = self._get_latest_run_id()
-        if self._run_id is None:
-            self._error_message = "No telemetry runs found in database"
     
     def on_exit(self, game_state: "GameState", ctx: dict) -> None:
         """Called when leaving the scene."""

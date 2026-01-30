@@ -110,6 +110,7 @@ from constants import (
     STATE_PLAYING,
     STATE_QUICK_LAUNCH,
     STATE_SAVE_GAME,
+    STATE_TELEMETRY_VIEWER,
     STATE_TITLE,
     STATE_VICTORY,
     UNLOCKED_WEAPON_DAMAGE_MULT,
@@ -685,7 +686,7 @@ def _handle_events(
         # Get the result from handle_input to check for flags like start_game, try_again, load_game, restart_to_wave1
         # handle_input_transition calls handle_input internally and stores result in _last_input_result.
         # We retrieve that stored result to avoid calling handle_input twice (which would process events twice).
-        if current_state in ("SHADER_SETTINGS", STATE_GAME_OVER, STATE_SAVE_GAME, STATE_LOAD_GAME, STATE_QUICK_LAUNCH, STATE_MENU, STATE_PAUSED):
+        if current_state in ("SHADER_SETTINGS", STATE_GAME_OVER, STATE_SAVE_GAME, STATE_LOAD_GAME, STATE_TELEMETRY_VIEWER, STATE_QUICK_LAUNCH, STATE_MENU, STATE_PAUSED):
             scene_result = getattr(current_scene, "_last_input_result", None) if current_scene else None
         
         if transition.kind != KIND_NONE:
@@ -710,7 +711,7 @@ def _handle_events(
                     handled_by_screen = False  # Let fallback process restart
                 else:
                     handled_by_screen = True  # Scene handled its own input
-            elif current_state in (STATE_HIGH_SCORES, STATE_NAME_INPUT, "SHADER_TEST", STATE_TITLE):
+            elif current_state in (STATE_HIGH_SCORES, STATE_NAME_INPUT, "SHADER_TEST", STATE_TITLE, STATE_TELEMETRY_VIEWER):
                 handled_by_screen = True  # Scene handled its own input
             elif current_state in (STATE_GAME_OVER, STATE_SAVE_GAME, STATE_LOAD_GAME):
                 # These scenes return SceneTransition.none() for actions like "try_again" or "load_game"
@@ -719,7 +720,7 @@ def _handle_events(
     
     # Fallback to old input handling if scene path didn't handle it
     current_state = _get_current_state(scene_stack) or game_state.current_screen
-    if not handled_by_screen and current_state in (STATE_PAUSED, STATE_HIGH_SCORES, STATE_NAME_INPUT, "SHADER_TEST", "SHADER_SETTINGS", STATE_TITLE, STATE_MENU, STATE_QUICK_LAUNCH, STATE_GAME_OVER, STATE_VICTORY, STATE_SAVE_GAME, STATE_LOAD_GAME):
+    if not handled_by_screen and current_state in (STATE_PAUSED, STATE_HIGH_SCORES, STATE_NAME_INPUT, "SHADER_TEST", "SHADER_SETTINGS", STATE_TITLE, STATE_MENU, STATE_QUICK_LAUNCH, STATE_GAME_OVER, STATE_VICTORY, STATE_SAVE_GAME, STATE_LOAD_GAME, STATE_TELEMETRY_VIEWER):
         # Use scene_result if we already got it, otherwise get it now
         if scene_result is not None:
             result = scene_result
