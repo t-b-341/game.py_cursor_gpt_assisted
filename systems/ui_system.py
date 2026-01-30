@@ -215,7 +215,7 @@ def _draw_metrics_and_bars(
     overshield_max = ctx.get("overshield_max", state.player_max_hp)
     grenade_cooldown = ctx.get("grenade_cooldown", 5.0)
     missile_cooldown = ctx.get("missile_cooldown", 8.0)
-    ally_drop_cooldown = ctx.get("ally_drop_cooldown", 30.0)
+    ally_drop_cooldown = ctx.get("ally_drop_cooldown", 1.5)  # Fallback matches config/balance.py
     overshield_recharge_cooldown = ctx.get("overshield_recharge_cooldown", 60.0)
     shield_duration = ctx.get("shield_duration", 3.0)
     aiming_mode = ctx.get("aiming_mode", "MOUSE")
