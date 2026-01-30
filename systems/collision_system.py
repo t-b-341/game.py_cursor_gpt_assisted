@@ -22,6 +22,12 @@ def update(state: "GameState", dt: float) -> None:
         return
     if state.player_rect is None:
         return
+    
+    # Increment frame counter for spatial grid caching
+    # This ensures grids are only rebuilt once per collision update phase
+    frame_id = getattr(state, "_collision_frame_id", 0) + 1
+    state._collision_frame_id = frame_id
+    ctx["frame_id"] = frame_id
 
     collision_projectiles.handle_hazard_enemy_collisions(state, dt, ctx)
     collision_projectiles.handle_laser_beam_collisions(state, dt, ctx)

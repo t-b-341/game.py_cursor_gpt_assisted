@@ -226,3 +226,15 @@ class FriendlyAIDeathEvent:
     x: int
     y: int
     killed_by: str
+
+
+@dataclass
+class FrameTimeEvent:
+    """Frame timing data for performance analysis."""
+    t: float  # Game time when frame was recorded
+    frame_time_ms: float  # Frame duration in milliseconds
+    fps: float  # Instantaneous FPS (1000 / frame_time_ms)
+    player_bullets: int  # Number of player bullets
+    enemy_projectiles: int  # Number of enemy projectiles
+    enemies: int  # Number of enemies
+    friendly_projectiles: int  # Number of friendly projectiles

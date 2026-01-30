@@ -3,8 +3,14 @@ from __future__ import annotations
 
 from constants import POS_SAMPLE_INTERVAL
 from context import AppContext
-from telemetry import PlayerPosEvent
+from telemetry import PlayerPosEvent, FrameTimeEvent
 from state import GameState
+
+# Sample frame times every N seconds (balance between detail and database size)
+FRAME_TIME_SAMPLE_INTERVAL = 0.05  # 20 samples per second
+
+# Track last frame time sample time (module-level to avoid adding to AppContext)
+_last_frame_time_sample_t: float = -1.0
 
 
 def update_telemetry(gs: GameState, dt: float, app_ctx: AppContext) -> None:
@@ -26,3 +32,55 @@ def update_telemetry(gs: GameState, dt: float, app_ctx: AppContext) -> None:
     )
     client.log_run_state_sample(now, gs.player_hp, len(gs.enemies))
     app_ctx.last_telemetry_sample_t = now
+
+
+def log_frame_time(gs: GameState, dt: float, app_ctx: AppContext) -> None:
+    """Log frame timing data for performance analysis.
+    
+    Args:
+        gs: Game state with entity counts
+        dt: Frame delta time in seconds
+        app_ctx: App context with telemetry client
+    """
+    global _last_frame_time_sample_t
+    
+    if not getattr(app_ctx.config, "enable_telemetry", False) or not app_ctx.telemetry_client:
+        return
+    
+    now = gs.run_time
+    if _last_frame_time_sample_t < 0:
+        _last_frame_time_sample_t = now
+        return
+    
+    if now - _last_frame_time_sample_t < FRAME_TIME_SAMPLE_INTERVAL:
+        return
+    
+    _last_frame_time_sample_t = now
+    
+    # Calculate frame metrics
+    frame_time_ms = dt * 1000.0
+    fps = 1.0 / dt if dt > 0 else 0.0
+    
+    # Get entity counts
+    player_bullets = len(getattr(gs, "player_bullets", []))
+    enemy_projectiles = len(getattr(gs, "enemy_projectiles", []))
+    enemies = len(getattr(gs, "enemies", []))
+    friendly_projectiles = len(getattr(gs, "friendly_projectiles", []))
+    
+    app_ctx.telemetry_client.log_frame_time(
+        FrameTimeEvent(
+            t=now,
+            frame_time_ms=frame_time_ms,
+            fps=fps,
+            player_bullets=player_bullets,
+            enemy_projectiles=enemy_projectiles,
+            enemies=enemies,
+            friendly_projectiles=friendly_projectiles,
+        )
+    )
+
+
+def reset_frame_time_sampling() -> None:
+    """Reset frame time sampling (call on new run)."""
+    global _last_frame_time_sample_t
+    _last_frame_time_sample_t = -1.0

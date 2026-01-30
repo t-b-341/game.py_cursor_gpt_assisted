@@ -186,6 +186,9 @@ class GameApp:
             # Only update telemetry if enabled (function already has guard, but avoid call overhead)
             if self.telemetry_enabled:
                 game_module.update_telemetry(self.game_state, dt, self.ctx)
+                # Log frame time for performance analysis
+                from systems.telemetry_system import log_frame_time
+                log_frame_time(self.game_state, dt, self.ctx)
             self._continue_blink_t = self.game_state.ui.continue_blink_t
         
         else:
@@ -251,13 +254,20 @@ class GameApp:
     def run(self) -> None:
         """Run the main loop (event handling, update, render)."""
         import game as game_module
+        from systems.fps_tracker import record_frame as fps_record_frame
         
         running = True
         
         try:
             while running:
-                dt = self.ctx.clock.tick(self.fps) / 1000.0  # Wall-clock delta for this frame
+                # Use config's target_fps (allows dynamic changes via pause menu)
+                target_fps = getattr(self.ctx.config, 'target_fps', 144)
+                dt = self.ctx.clock.tick(target_fps) / 1000.0  # Wall-clock delta for this frame
                 game_module._perf_record_frame(dt)  # no-op unless GAME_DEBUG_PERF=1
+                
+                # Record frame time for FPS graph (always active)
+                game_time = getattr(self.game_state, 'run_time', 0.0)
+                fps_record_frame(dt, game_time)
                 
                 # Process events
                 running = self.process_events()

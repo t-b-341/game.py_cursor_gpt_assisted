@@ -106,7 +106,9 @@ custom_profile_stats_keys = ["hp_mult", "speed_mult", "damage_mult", "firerate_m
 # ----------------------------
 # UI constants
 # ----------------------------
-pause_options = ["Continue", "Restart (Wave 1)", "Audio options", "Shader options", "Save & Quit", "Exit to main menu", "Quit"]
+pause_options = ["Continue", "Restart (Wave 1)", "Audio options", "Shader options", "Toggle FPS", "FPS Cap", "Save & Quit", "Exit to main menu", "Quit"]
+# Available FPS cap options
+fps_cap_options = [60, 120, 144, 240, 0]  # 0 = uncapped
 controls_actions = ["move_left", "move_right", "move_up", "move_down", "boost", "slow", "dash", "ally_drop", "direct_allies"]
 
 # ----------------------------

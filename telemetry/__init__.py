@@ -8,6 +8,7 @@ from .events import (
     EnemyHitEvent,
     EnemyPositionEvent,
     EnemySpawnEvent,
+    FrameTimeEvent,
     FriendlyAIDeathEvent,
     FriendlyAIPositionEvent,
     FriendlyAIShotEvent,
@@ -66,4 +67,5 @@ __all__ = [
     "FriendlyAIPositionEvent",
     "FriendlyAIShotEvent",
     "FriendlyAIDeathEvent",
+    "FrameTimeEvent",
 ]

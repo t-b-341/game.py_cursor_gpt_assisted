@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import pygame
-from constants import STATE_PLAYING, STATE_ENDURANCE, STATE_MENU, STATE_SAVE_GAME, pause_options
+from constants import STATE_PLAYING, STATE_ENDURANCE, STATE_MENU, STATE_SAVE_GAME, pause_options, fps_cap_options
 from rendering import RenderContext, draw_centered_text
 from systems.audio_system import (
     get_sfx_volume, get_music_volume, set_sfx_volume, set_music_volume,
@@ -211,6 +211,20 @@ def handle_events(events, game_state, ctx):
                         game_state.ui.pause_shader_options_row = 0
                     else:
                         game_state.ui.pause_shader_options_row = 0  # Reset to first option
+            elif choice == "Toggle FPS":
+                # Toggle FPS graph display
+                if cfg is not None:
+                    cfg.show_fps = not cfg.show_fps
+            elif choice == "FPS Cap":
+                # Cycle through FPS cap options
+                if cfg is not None:
+                    current_fps = getattr(cfg, 'target_fps', 144)
+                    try:
+                        current_idx = fps_cap_options.index(current_fps)
+                    except ValueError:
+                        current_idx = 0
+                    next_idx = (current_idx + 1) % len(fps_cap_options)
+                    cfg.target_fps = fps_cap_options[next_idx]
             elif choice == "Save & Quit":
                 if game_state is not None:
                     game_state.ui.save_and_quit = True  # Flag to go to title after saving
@@ -290,7 +304,22 @@ def render(render_ctx: RenderContext, game_state, screen_ctx) -> None:
     draw_centered_text(screen, font, big_font, WIDTH, "PAUSED", HEIGHT // 2 - 140, use_big=True)
     y_offset = HEIGHT // 2 - 60
     pause_selected = game_state.ui.pause_selected if game_state is not None else 0
+    
+    # Get config for dynamic option text
+    app_ctx = screen_ctx.get("app_ctx") if isinstance(screen_ctx, dict) else None
+    cfg = getattr(app_ctx, "config", None) if app_ctx else None
+    
     for i, option in enumerate(pause_options):
+        # Show current state in option text for toggle options
+        display_option = option
+        if option == "Toggle FPS" and cfg is not None:
+            fps_state = "On" if cfg.show_fps else "Off"
+            display_option = f"Toggle FPS ({fps_state})"
+        elif option == "FPS Cap" and cfg is not None:
+            target_fps = getattr(cfg, 'target_fps', 144)
+            fps_cap_text = "Uncapped" if target_fps == 0 else str(target_fps)
+            display_option = f"FPS Cap: {fps_cap_text}"
+        
         color = (255, 255, 0) if i == pause_selected else (200, 200, 200)
-        draw_centered_text(screen, font, big_font, WIDTH, f"{'->' if i == pause_selected else '  '} {option}", y_offset + i * 40, color)
+        draw_centered_text(screen, font, big_font, WIDTH, f"{'->' if i == pause_selected else '  '} {display_option}", y_offset + i * 40, color)
     draw_centered_text(screen, font, big_font, WIDTH, "Press ENTER to select, ESC to unpause", HEIGHT - 80, (150, 150, 150))

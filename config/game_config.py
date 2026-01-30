@@ -65,6 +65,8 @@ class GameConfig:
     show_hud: bool = True
     show_health_bars: bool = True
     show_player_health_bar: bool = True
+    show_fps: bool = True  # Show FPS graph in bottom-left corner
+    target_fps: int = 144  # Target frame rate (60, 120, 144, 240, or 0 for uncapped)
     profile_enabled: bool = False
     testing_mode: bool = False
     invulnerability_mode: bool = False
@@ -88,6 +90,11 @@ class GameConfig:
     pause_shader_profile: str = "none"  # "none" | "pause_dim_vignette"; used when enable_pause_shaders=True.
     gameplay_shader_profile: str = "none"  # "none" | "gameplay_subtle_vignette" | "gameplay_retro"; used when enable_gameplay_shaders=True.
     use_gpu_physics: bool = False  # When True AND CUDA_AVAILABLE, use GPU-accelerated physics code paths.
+
+    # Projectile limits for performance (0 = unlimited)
+    max_player_bullets: int = 200  # Maximum player bullets on screen
+    max_enemy_projectiles: int = 300  # Maximum enemy projectiles on screen
+    max_friendly_projectiles: int = 100  # Maximum friendly AI projectiles
 
     # Graphics/performance preset (centralized; future presets low/medium/high/ultra can map onto these)
     graphics_preset: str = "low"  # "low" | "medium" | "high" | "ultra"; currently informational, values drive the flags below.

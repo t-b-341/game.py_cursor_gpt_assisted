@@ -24,6 +24,7 @@ class UiState:
     custom_profile_stat_selected: int = 0
     player_class_selected: int = 0
     ui_show_metrics_selected: int = 0
+    ui_show_fps_selected: int = 0  # 0=Show FPS, 1=Hide FPS
     beam_selection_selected: int = 3
     endurance_mode_selected: int = 0
     ui_telemetry_enabled_selected: int = 1

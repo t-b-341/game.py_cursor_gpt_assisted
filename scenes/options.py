@@ -81,8 +81,10 @@ class OptionsScene:
                             game_state.ui.menu_section = 8
                     else:
                         game_state.ui.menu_section = 1.5
+                elif ms == 3.25:
+                    game_state.ui.menu_section = 3  # FPS -> HUD
                 elif ms == 3.5:
-                    game_state.ui.menu_section = 3
+                    game_state.ui.menu_section = 3.25  # Telemetry -> FPS
                 elif ms == 4:
                     game_state.ui.menu_section = 3.5
                 elif ms == 4.5:
@@ -198,7 +200,18 @@ class OptionsScene:
                 elif event.key in (pygame.K_RIGHT, pygame.K_d, pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
                     cfg.show_metrics = game_state.ui.ui_show_metrics_selected == 0
                     cfg.show_hud = cfg.show_metrics
-                    game_state.ui.menu_section = 3.5
+                    game_state.ui.menu_section = 3.25  # Go to FPS toggle
+            elif game_state.ui.menu_section == 3.25:
+                # FPS Graph toggle
+                if event.key in (pygame.K_UP, pygame.K_w):
+                    game_state.ui.ui_show_fps_selected = (game_state.ui.ui_show_fps_selected - 1) % 2
+                elif event.key in (pygame.K_DOWN, pygame.K_s):
+                    game_state.ui.ui_show_fps_selected = (game_state.ui.ui_show_fps_selected + 1) % 2
+                elif event.key in (pygame.K_LEFT, pygame.K_a):
+                    game_state.ui.menu_section = 3  # Go back to HUD options
+                elif event.key in (pygame.K_RIGHT, pygame.K_d, pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
+                    cfg.show_fps = game_state.ui.ui_show_fps_selected == 0
+                    game_state.ui.menu_section = 3.5  # Continue to Telemetry
             elif game_state.ui.menu_section == 3.5:
                 if event.key in (pygame.K_UP, pygame.K_w):
                     game_state.ui.ui_telemetry_enabled_selected = (game_state.ui.ui_telemetry_enabled_selected - 1) % 2
@@ -371,6 +384,12 @@ class OptionsScene:
             for i, opt in enumerate(["Show Metrics", "Hide Metrics"]):
                 c = (255, 255, 0) if i == game_state.ui.ui_show_metrics_selected else (200, 200, 200)
                 draw_centered_text(screen, font, big_font, w, f"{'->' if i == game_state.ui.ui_show_metrics_selected else '  '} {opt}", y + i * 40, c)
+            draw_centered_text(screen, font, big_font, w, "UP/DOWN: Select | ENTER: Continue | ESC: Back", h - 100, (150, 150, 150))
+        elif ms == 3.25:
+            draw_centered_text(screen, font, big_font, w, "FPS Counter:", y - 60)
+            for i, opt in enumerate(["Show FPS Graph", "Hide FPS Graph"]):
+                c = (255, 255, 0) if i == game_state.ui.ui_show_fps_selected else (200, 200, 200)
+                draw_centered_text(screen, font, big_font, w, f"{'->' if i == game_state.ui.ui_show_fps_selected else '  '} {opt}", y + i * 40, c)
             draw_centered_text(screen, font, big_font, w, "UP/DOWN: Select | ENTER: Continue | ESC: Back", h - 100, (150, 150, 150))
         elif ms == 3.5:
             draw_centered_text(screen, font, big_font, w, "Telemetry:", y - 60)

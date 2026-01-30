@@ -322,7 +322,9 @@ def _create_window_and_clock() -> tuple[pygame.Surface, pygame.time.Clock, int, 
     screen_info = pygame.display.Info()
     WIDTH, HEIGHT = screen_info.current_w, screen_info.current_h
     set_screen_dimensions(WIDTH, HEIGHT)
-    screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.FULLSCREEN)
+    # Use hardware acceleration and double buffering for better performance
+    display_flags = pygame.FULLSCREEN | pygame.HWSURFACE | pygame.DOUBLEBUF
+    screen = pygame.display.set_mode((WIDTH, HEIGHT), display_flags)
     pygame.display.set_caption("Mouse Aim Shooter + Telemetry (SQLite)")
 
     clock = pygame.time.Clock()
@@ -558,11 +560,15 @@ def _build_scene_stack() -> SceneStack:
     return scene_stack
 
 
-def _build_loop_params() -> tuple[int, float, int]:
-    """Return (FPS, FIXED_DT, MAX_SIMULATION_STEPS)."""
-    FPS = 60
-    FIXED_DT = 1.0 / 60.0
-    MAX_SIMULATION_STEPS = 6  # cap to avoid spiral of death when dt is large
+def _build_loop_params(target_fps: int = 144) -> tuple[int, float, int]:
+    """Return (FPS, FIXED_DT, MAX_SIMULATION_STEPS).
+    
+    Args:
+        target_fps: Target frame rate. 0 means uncapped.
+    """
+    FPS = target_fps if target_fps > 0 else 0  # 0 = uncapped
+    FIXED_DT = 1.0 / 60.0  # Physics runs at fixed 60Hz regardless of display FPS
+    MAX_SIMULATION_STEPS = 8  # Increased to handle higher frame rates
     return FPS, FIXED_DT, MAX_SIMULATION_STEPS
 
 
@@ -582,7 +588,9 @@ def _create_app():
     # Hook telemetry handlers into EventBus
     register_telemetry_event_handlers(ctx.event_bus, ctx, game_state)
 
-    FPS, FIXED_DT, MAX_SIMULATION_STEPS = _build_loop_params()
+    # Get target FPS from config (default 144)
+    target_fps = getattr(ctx.config, 'target_fps', 144)
+    FPS, FIXED_DT, MAX_SIMULATION_STEPS = _build_loop_params(target_fps)
     
     def _update_simulation(sim_dt: float, gs: GameState, app_ctx: AppContext) -> None:
         """Run one fixed timestep of gameplay (timers, movement, collision, spawn, AI)."""
@@ -1162,39 +1170,62 @@ def _render_current_scene(
 
     if current_state == STATE_PLAYING or current_state == STATE_ENDURANCE:
         lv = game_state.level
-        gameplay_ctx = {
-            "level_themes": level_themes,
-            "trapezoid_blocks": lv.trapezoid_blocks if lv else [],
-            "triangle_blocks": lv.triangle_blocks if lv else [],
-            "destructible_blocks": lv.destructible_blocks if lv else [],
-            "moveable_destructible_blocks": lv.moveable_blocks if lv else [],
-            "giant_blocks": lv.giant_blocks if lv else [],
-            "super_giant_blocks": lv.super_giant_blocks if lv else [],
-            "hazard_obstacles": lv.hazard_obstacles if lv else [],
-            "moving_health_zone": lv.moving_health_zone if lv else None,
-            "teleporter_pads": game_state.teleporter_pads,
-            "small_font": ctx.small_font,
-            "weapon_names": WEAPON_NAMES,
-            "WIDTH": ctx.width,
-            "HEIGHT": ctx.height,
-            "font": ctx.font,
-            "big_font": ctx.big_font,
-            "ui_show_hud": ctx.config.show_hud,
-            "ui_show_metrics": ctx.config.show_metrics,
-            "ui_show_health_bars": ctx.config.show_health_bars,
-            "overshield_max": overshield_max,
-            "grenade_cooldown": grenade_cooldown,
-            "missile_cooldown": missile_cooldown,
-            "ally_drop_cooldown": ally_drop_cooldown,
-            "overshield_recharge_cooldown": overshield_recharge_cooldown,
-            "shield_duration": shield_duration,
-            "aiming_mode": ctx.config.aim_mode,
-            "current_state": current_state,
-            "enable_screen_flash": getattr(ctx.config, "enable_screen_flash", True),
-            "screen_flash_duration": getattr(ctx.config, "screen_flash_duration", 0.25),
-            "screen_flash_max_alpha": getattr(ctx.config, "screen_flash_max_alpha", 100),
-            "enable_wave_banner": getattr(ctx.config, "enable_wave_banner", True),
-        }
+        # Cache gameplay_ctx on game_state to avoid recreating dict every frame
+        gameplay_ctx = getattr(game_state, "_cached_gameplay_ctx", None)
+        if gameplay_ctx is None:
+            gameplay_ctx = {
+                "level_themes": level_themes,
+                "trapezoid_blocks": lv.trapezoid_blocks if lv else [],
+                "triangle_blocks": lv.triangle_blocks if lv else [],
+                "destructible_blocks": lv.destructible_blocks if lv else [],
+                "moveable_destructible_blocks": lv.moveable_blocks if lv else [],
+                "giant_blocks": lv.giant_blocks if lv else [],
+                "super_giant_blocks": lv.super_giant_blocks if lv else [],
+                "hazard_obstacles": lv.hazard_obstacles if lv else [],
+                "moving_health_zone": lv.moving_health_zone if lv else None,
+                "teleporter_pads": game_state.teleporter_pads,
+                "small_font": ctx.small_font,
+                "weapon_names": WEAPON_NAMES,
+                "WIDTH": ctx.width,
+                "HEIGHT": ctx.height,
+                "font": ctx.font,
+                "big_font": ctx.big_font,
+                "ui_show_hud": ctx.config.show_hud,
+                "ui_show_metrics": ctx.config.show_metrics,
+                "ui_show_health_bars": ctx.config.show_health_bars,
+                "ui_show_fps": ctx.config.show_fps,
+                "overshield_max": overshield_max,
+                "grenade_cooldown": grenade_cooldown,
+                "missile_cooldown": missile_cooldown,
+                "ally_drop_cooldown": ally_drop_cooldown,
+                "overshield_recharge_cooldown": overshield_recharge_cooldown,
+                "shield_duration": shield_duration,
+                "aiming_mode": ctx.config.aim_mode,
+                "current_state": current_state,
+                "enable_screen_flash": getattr(ctx.config, "enable_screen_flash", True),
+                "screen_flash_duration": getattr(ctx.config, "screen_flash_duration", 0.25),
+                "screen_flash_max_alpha": getattr(ctx.config, "screen_flash_max_alpha", 100),
+                "enable_wave_banner": getattr(ctx.config, "enable_wave_banner", True),
+            }
+            game_state._cached_gameplay_ctx = gameplay_ctx
+        else:
+            # Update only values that can change (config toggles and current state)
+            gameplay_ctx["ui_show_hud"] = ctx.config.show_hud
+            gameplay_ctx["ui_show_metrics"] = ctx.config.show_metrics
+            gameplay_ctx["ui_show_health_bars"] = ctx.config.show_health_bars
+            gameplay_ctx["ui_show_fps"] = ctx.config.show_fps
+            gameplay_ctx["current_state"] = current_state
+            # Update level references if level changed
+            if lv:
+                gameplay_ctx["trapezoid_blocks"] = lv.trapezoid_blocks
+                gameplay_ctx["triangle_blocks"] = lv.triangle_blocks
+                gameplay_ctx["destructible_blocks"] = lv.destructible_blocks
+                gameplay_ctx["moveable_destructible_blocks"] = lv.moveable_blocks
+                gameplay_ctx["giant_blocks"] = lv.giant_blocks
+                gameplay_ctx["super_giant_blocks"] = lv.super_giant_blocks
+                gameplay_ctx["hazard_obstacles"] = lv.hazard_obstacles
+                gameplay_ctx["moving_health_zone"] = lv.moving_health_zone
+            gameplay_ctx["teleporter_pads"] = game_state.teleporter_pads
         render_ctx = RenderContext.from_app_ctx(ctx)
         render_gameplay_with_optional_shaders(render_ctx, game_state, {"app_ctx": ctx, "gameplay_ctx": gameplay_ctx})
         
@@ -1234,6 +1265,7 @@ def _render_current_scene(
                 "ui_show_hud": ctx.config.show_hud,
                 "ui_show_metrics": ctx.config.show_metrics,
                 "ui_show_health_bars": ctx.config.show_health_bars,
+                "ui_show_fps": ctx.config.show_fps,
                 "overshield_max": overshield_max,
                 "grenade_cooldown": grenade_cooldown,
                 "missile_cooldown": missile_cooldown,

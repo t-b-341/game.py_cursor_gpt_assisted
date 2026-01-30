@@ -1,10 +1,17 @@
-"""Collisions for projectiles, beams, hazards, explosives: vs enemies, blocks, player, friendlies."""
+"""Collisions for projectiles, beams, hazards, explosives: vs enemies, blocks, player, friendlies.
+
+Performance optimizations:
+- Spatial grid partitioning reduces O(n*m) collision checks to O(n) average
+- Filter-based list updates avoid O(n) removal during iteration
+- Bulk processing where possible
+"""
 from __future__ import annotations
 
 import math
 import pygame
 
 from .collision_common import apply_player_damage, set_enemy_damage_flash
+from .spatial_grid import get_projectile_grid, get_enemy_grid, get_block_grid, SpatialGrid
 
 try:
     from gpu_physics import check_collisions_batch, CUDA_AVAILABLE
@@ -12,6 +19,56 @@ try:
 except Exception:
     _USE_GPU_COLLISION = False
     check_collisions_batch = None
+
+
+def _build_enemy_grid(state, ctx: dict) -> SpatialGrid:
+    """Build spatial grid containing all enemies. Uses frame caching to avoid rebuilding."""
+    width = ctx.get("width", 1920)
+    height = ctx.get("height", 1080)
+    frame_id = ctx.get("frame_id", -1)
+    grid = get_enemy_grid(width, height, frame_id=frame_id)
+    # Only insert if grid was just cleared (not cached)
+    if len(grid._obj_cells) == 0 and state.enemies:
+        grid.insert_all(state.enemies)
+    return grid
+
+
+def _build_block_grid(state, ctx: dict) -> SpatialGrid:
+    """Build spatial grid containing all collidable blocks. Uses frame caching."""
+    width = ctx.get("width", 1920)
+    height = ctx.get("height", 1080)
+    frame_id = ctx.get("frame_id", -1)
+    
+    lev = getattr(state, "level", None)
+    if lev is None:
+        return get_block_grid(width, height, frame_id=frame_id)
+    
+    grid = get_block_grid(width, height, frame_id=frame_id)
+    
+    # Only insert if grid was just cleared (not cached this frame)
+    if len(grid._obj_cells) > 0:
+        return grid
+    
+    # Insert all block types
+    for block in lev.destructible_blocks:
+        if block.get("rect"):
+            grid.insert(block, block["rect"])
+    for block in lev.moveable_blocks:
+        if block.get("rect"):
+            grid.insert(block, block["rect"])
+    for block in lev.giant_blocks + lev.super_giant_blocks:
+        if block.get("rect"):
+            grid.insert(block, block["rect"])
+    for tb in lev.trapezoid_blocks:
+        br = tb.get("bounding_rect", tb.get("rect"))
+        if br:
+            grid.insert(tb, br)
+    for tr in lev.triangle_blocks:
+        br = tr.get("bounding_rect", tr.get("rect"))
+        if br:
+            grid.insert(tr, br)
+    
+    return grid
 
 
 def handle_hazard_enemy_collisions(state, dt: float, ctx: dict) -> None:
@@ -63,12 +120,12 @@ def handle_dead_enemies(state, ctx: dict) -> None:
 
 
 def handle_player_bullet_offscreen(state, ctx: dict) -> None:
+    """Remove offscreen bullets using efficient filtering."""
     offscreen = ctx.get("rect_offscreen")
     if not offscreen:
         return
-    for bullet in state.player_bullets[:]:
-        if offscreen(bullet["rect"]) and bullet in state.player_bullets:
-            state.player_bullets.remove(bullet)
+    # Use list comprehension for O(n) removal instead of O(n²)
+    state.player_bullets[:] = [b for b in state.player_bullets if not offscreen(b["rect"])]
 
 
 def _process_bullet_enemy_hit(state, ctx: dict, bullet: dict, enemy: dict) -> None:
@@ -174,6 +231,7 @@ def _process_bullet_enemy_hit(state, ctx: dict, bullet: dict, enemy: dict) -> No
 
 
 def handle_player_bullet_enemy_collisions(state, ctx: dict) -> None:
+    """Handle bullet-enemy collisions using spatial grid for O(n) performance."""
     kill = ctx.get("kill_enemy")
     if not kill:
         return
@@ -201,15 +259,35 @@ def handle_player_bullet_enemy_collisions(state, ctx: dict) -> None:
                 _process_bullet_enemy_hit(state, ctx, bullet, enemy)
         return
 
-    for bullet in state.player_bullets[:]:
-        for enemy in state.enemies[:]:
+    # Use spatial grid for O(n) collision detection instead of O(n*m)
+    if not state.player_bullets or not state.enemies:
+        return
+    
+    enemy_grid = _build_enemy_grid(state, ctx)
+    bullets_to_remove = set()
+    
+    for bullet in state.player_bullets:
+        if id(bullet) in bullets_to_remove:
+            continue
+        
+        # Query only nearby enemies using spatial grid
+        for enemy in enemy_grid.query_rect(bullet["rect"]):
+            if enemy.get("hp", 1) <= 0:
+                continue
             if not bullet["rect"].colliderect(enemy["rect"]):
                 continue
             _process_bullet_enemy_hit(state, ctx, bullet, enemy)
+            if bullet.get("penetration", 0) <= 0:
+                bullets_to_remove.add(id(bullet))
             break
+    
+    # Bulk remove processed bullets
+    if bullets_to_remove:
+        state.player_bullets[:] = [b for b in state.player_bullets if id(b) not in bullets_to_remove]
 
 
 def handle_player_bullet_block_collisions(state, dt: float, ctx: dict) -> None:
+    """Handle bullet-block collisions using spatial grid for better performance."""
     check_hazard = ctx.get("check_point_in_hazard")
     lev = getattr(state, "level", None)
     if lev is None:
@@ -222,65 +300,74 @@ def handle_player_bullet_block_collisions(state, dt: float, ctx: dict) -> None:
     hazards = lev.hazard_obstacles
     player_damage = state.player_bullet_damage
 
-    for bullet in state.player_bullets[:]:
-        if bullet.get("removed"):
+    # Build spatial grid for blocks
+    block_grid = _build_block_grid(state, ctx)
+    
+    # Track items to remove (avoid O(n) removal during iteration)
+    bullets_to_remove = set()
+    d_blocks_to_remove = set()
+    m_blocks_to_remove = set()
+
+    for bullet in state.player_bullets:
+        if id(bullet) in bullets_to_remove:
             continue
-        for block in d_blocks + m_blocks:
-            if not block.get("is_destructible") or not bullet["rect"].colliderect(block["rect"]):
+        
+        bullet_removed = False
+        
+        # Query nearby blocks from spatial grid
+        for block in block_grid.query_rect(bullet["rect"]):
+            if bullet_removed:
+                break
+                
+            block_rect = block.get("bounding_rect") or block.get("rect")
+            if not block_rect or not bullet["rect"].colliderect(block_rect):
                 continue
-            dmg = bullet.get("damage", player_damage)
-            block["hp"] -= dmg
-            if block["hp"] <= 0:
-                if block in d_blocks:
-                    d_blocks.remove(block)
+            
+            # Destructible blocks
+            if block.get("is_destructible"):
+                dmg = bullet.get("damage", player_damage)
+                block["hp"] -= dmg
+                if block["hp"] <= 0:
+                    if block in d_blocks:
+                        d_blocks_to_remove.add(id(block))
+                    elif block in m_blocks:
+                        m_blocks_to_remove.add(id(block))
+                if bullet.get("penetration", 0) <= 0:
+                    if not bullet.get("bouncing", False):
+                        bullets_to_remove.add(id(bullet))
+                        bullet_removed = True
+                    else:
+                        bullet["vel"] = bullet["vel"].reflect(pygame.Vector2(1, 0))
+                break
+            
+            # Giant/super giant blocks (indestructible)
+            if block in g_blocks:
+                if not bullet.get("bouncing", False):
+                    bullets_to_remove.add(id(bullet))
+                    bullet_removed = True
                 else:
-                    m_blocks.remove(block)
-            if bullet.get("penetration", 0) <= 0:
-                if not bullet.get("bouncing", False):
-                    if bullet in state.player_bullets:
-                        state.player_bullets.remove(bullet)
-                    bullet["removed"] = True
-                    break
-                bullet["vel"] = bullet["vel"].reflect(pygame.Vector2(1, 0))
-            break
-        if bullet.get("removed"):
-            continue
-        for block in g_blocks:
-            if bullet["rect"].colliderect(block["rect"]):
-                if not bullet.get("bouncing", False):
-                    if bullet in state.player_bullets:
-                        state.player_bullets.remove(bullet)
-                    bullet["removed"] = True
-                    break
-                bullet["vel"] = bullet["vel"].reflect(pygame.Vector2(1, 0))
+                    bullet["vel"] = bullet["vel"].reflect(pygame.Vector2(1, 0))
                 break
-        if bullet.get("removed"):
-            continue
-        for tb in trapezo:
-            br = tb.get("bounding_rect", tb.get("rect"))
-            if bullet["rect"].colliderect(br):
+            
+            # Trapezoid blocks
+            if block in trapezo:
                 if not bullet.get("bouncing", False):
-                    if bullet in state.player_bullets:
-                        state.player_bullets.remove(bullet)
-                    bullet["removed"] = True
-                    break
-                bullet["vel"] = bullet["vel"].reflect(pygame.Vector2(1, 0))
+                    bullets_to_remove.add(id(bullet))
+                    bullet_removed = True
+                else:
+                    bullet["vel"] = bullet["vel"].reflect(pygame.Vector2(1, 0))
                 break
-        if bullet.get("removed"):
-            continue
-        for tr in tri:
-            br = tr.get("bounding_rect", tr.get("rect"))
-            if bullet["rect"].colliderect(br):
+            
+            # Triangle blocks
+            if block in tri:
                 if not bullet.get("bouncing", False):
-                    if bullet in state.player_bullets:
-                        state.player_bullets.remove(bullet)
-                    bullet["removed"] = True
-                    break
-                bullet["vel"] = bullet["vel"].reflect(pygame.Vector2(1, 0))
+                    bullets_to_remove.add(id(bullet))
+                    bullet_removed = True
+                else:
+                    bullet["vel"] = bullet["vel"].reflect(pygame.Vector2(1, 0))
                 break
-        if bullet.get("removed"):
-            continue
-        if not check_hazard:
+        # Handle hazard collisions (not in spatial grid due to polygon shapes)
+        if bullet_removed or not check_hazard:
             continue
         for hazard in hazards:
             if not hazard.get("points") or len(hazard["points"]) < 3:
@@ -291,121 +378,223 @@ def handle_player_bullet_block_collisions(state, dt: float, ctx: dict) -> None:
                 if vel.length_squared() > 0:
                     v = hazard.get("velocity", pygame.Vector2(0, 0))
                     hazard["velocity"] = v + vel.normalize() * 200.0 * dt
-                if bullet in state.player_bullets:
-                    state.player_bullets.remove(bullet)
-                bullet["removed"] = True
+                bullets_to_remove.add(id(bullet))
                 break
+    
+    # Bulk remove - O(n) instead of O(n²) with .remove() in loop
+    if bullets_to_remove:
+        state.player_bullets[:] = [b for b in state.player_bullets if id(b) not in bullets_to_remove]
+    if d_blocks_to_remove:
+        lev.destructible_blocks[:] = [b for b in d_blocks if id(b) not in d_blocks_to_remove]
+    if m_blocks_to_remove:
+        lev.moveable_blocks[:] = [b for b in m_blocks if id(b) not in m_blocks_to_remove]
 
 
 def handle_enemy_projectile_lifetime_offscreen(state, ctx: dict) -> None:
+    """Remove expired and offscreen enemy projectiles using efficient filtering."""
     offscreen = ctx.get("rect_offscreen")
-    for proj in state.enemy_projectiles[:]:
+    
+    def should_keep(proj):
+        # Remove if lifetime expired
         if "lifetime" in proj and proj["lifetime"] <= 0:
-            if proj in state.enemy_projectiles:
-                state.enemy_projectiles.remove(proj)
-            continue
-        if offscreen and offscreen(proj["rect"]) and proj in state.enemy_projectiles:
-            state.enemy_projectiles.remove(proj)
+            return False
+        # Remove if offscreen
+        if offscreen and offscreen(proj["rect"]):
+            return False
+        return True
+    
+    # Use list comprehension for O(n) removal instead of O(n²)
+    state.enemy_projectiles[:] = [p for p in state.enemy_projectiles if should_keep(p)]
 
 
 def handle_enemy_projectile_block_collisions(state, ctx: dict) -> None:
+    """Handle enemy projectile-block collisions with spatial grid."""
     lev = getattr(state, "level", None)
     if lev is None:
         return
     d_blocks = lev.destructible_blocks
     m_blocks = lev.moveable_blocks
-    for proj in state.enemy_projectiles[:]:
-        for block in d_blocks + m_blocks:
-            if block.get("is_destructible") and proj["rect"].colliderect(block["rect"]):
-                block["hp"] -= proj.get("damage", 10)
-                if block["hp"] <= 0:
-                    if block in d_blocks:
-                        d_blocks.remove(block)
-                    else:
-                        m_blocks.remove(block)
-                if proj in state.enemy_projectiles:
-                    state.enemy_projectiles.remove(proj)
-                break
+    
+    if not state.enemy_projectiles:
+        return
+    
+    block_grid = _build_block_grid(state, ctx)
+    projs_to_remove = set()
+    d_blocks_to_remove = set()
+    m_blocks_to_remove = set()
+    
+    for proj in state.enemy_projectiles:
+        if id(proj) in projs_to_remove:
+            continue
+        
+        for block in block_grid.query_rect(proj["rect"]):
+            if not block.get("is_destructible"):
+                continue
+            block_rect = block.get("rect")
+            if not block_rect or not proj["rect"].colliderect(block_rect):
+                continue
+            
+            block["hp"] -= proj.get("damage", 10)
+            if block["hp"] <= 0:
+                if block in d_blocks:
+                    d_blocks_to_remove.add(id(block))
+                elif block in m_blocks:
+                    m_blocks_to_remove.add(id(block))
+            projs_to_remove.add(id(proj))
+            break
+    
+    # Bulk removal
+    if projs_to_remove:
+        state.enemy_projectiles[:] = [p for p in state.enemy_projectiles if id(p) not in projs_to_remove]
+    if d_blocks_to_remove:
+        lev.destructible_blocks[:] = [b for b in d_blocks if id(b) not in d_blocks_to_remove]
+    if m_blocks_to_remove:
+        lev.moveable_blocks[:] = [b for b in m_blocks if id(b) not in m_blocks_to_remove]
 
 
 def handle_enemy_projectile_friendly_collisions(state, ctx: dict) -> None:
-    """Apply enemy projectile damage to friendlies; remove hit projectiles and dead friendlies."""
-    for proj in state.enemy_projectiles[:]:
-        for friendly in state.friendly_ai[:]:
+    """Apply enemy projectile damage to friendlies; uses filter-based removal."""
+    if not state.enemy_projectiles or not state.friendly_ai:
+        return
+    
+    projs_to_remove = set()
+    friendlies_to_remove = set()
+    
+    for proj in state.enemy_projectiles:
+        if id(proj) in projs_to_remove:
+            continue
+        
+        for friendly in state.friendly_ai:
             if friendly.get("hp", 1) <= 0:
                 continue
             if not proj["rect"].colliderect(friendly["rect"]):
                 continue
+            
             damage = proj.get("damage", 10)
             friendly["hp"] = friendly.get("hp", friendly.get("max_hp", 100)) - damage
-            if proj in state.enemy_projectiles:
-                state.enemy_projectiles.remove(proj)
-            if friendly["hp"] <= 0 and friendly in state.friendly_ai:
-                state.friendly_ai.remove(friendly)
+            projs_to_remove.add(id(proj))
+            
+            if friendly["hp"] <= 0:
+                friendlies_to_remove.add(id(friendly))
             break
+    
+    # Bulk removal
+    if projs_to_remove:
+        state.enemy_projectiles[:] = [p for p in state.enemy_projectiles if id(p) not in projs_to_remove]
+    if friendlies_to_remove:
+        state.friendly_ai[:] = [f for f in state.friendly_ai if id(f) not in friendlies_to_remove]
 
 
 def handle_friendly_projectile_offscreen_blocks_enemies(state, ctx: dict) -> None:
+    """Handle friendly projectile collisions with spatial grid and filter-based removal."""
     offscreen = ctx.get("rect_offscreen")
     kill = ctx.get("kill_enemy")
     lev = getattr(state, "level", None)
+    
+    if not state.friendly_projectiles:
+        return
+    
     if lev is None:
         d_blocks, m_blocks = [], []
     else:
         d_blocks = lev.destructible_blocks
         m_blocks = lev.moveable_blocks
-    for proj in state.friendly_projectiles[:]:
-        if offscreen and offscreen(proj["rect"]):
-            state.friendly_projectiles.remove(proj)
+    
+    # Build spatial grids
+    block_grid = _build_block_grid(state, ctx)
+    enemy_grid = _build_enemy_grid(state, ctx)
+    
+    projs_to_remove = set()
+    d_blocks_to_remove = set()
+    m_blocks_to_remove = set()
+    
+    for proj in state.friendly_projectiles:
+        if id(proj) in projs_to_remove:
             continue
-        for block in d_blocks + m_blocks:
-            if block.get("is_destructible") and proj["rect"].colliderect(block["rect"]):
-                block["hp"] -= proj.get("damage", 20)
-                if block["hp"] <= 0:
-                    if block in d_blocks:
-                        d_blocks.remove(block)
-                    else:
-                        m_blocks.remove(block)
-                state.friendly_projectiles.remove(proj)
-                break
-        else:
-            for enemy in state.enemies[:]:
-                if proj["rect"].colliderect(enemy["rect"]):
-                    dmg = proj.get("damage", 20)
-                    enemy["hp"] -= dmg
-                    set_enemy_damage_flash(enemy, ctx)
-                    state.damage_numbers.append({
-                        "x": enemy["rect"].centerx,
-                        "y": enemy["rect"].y - 20,
-                        "damage": int(dmg),
-                        "timer": 2.0,
-                        "color": (255, 255, 100),
-                    })
-                    if enemy["hp"] <= 0 and kill:
-                        kill(enemy, state)
-                    state.friendly_projectiles.remove(proj)
-                    break
+        
+        # Check offscreen
+        if offscreen and offscreen(proj["rect"]):
+            projs_to_remove.add(id(proj))
+            continue
+        
+        hit_block = False
+        # Check block collisions using spatial grid
+        for block in block_grid.query_rect(proj["rect"]):
+            if not block.get("is_destructible"):
+                continue
+            block_rect = block.get("rect")
+            if not block_rect or not proj["rect"].colliderect(block_rect):
+                continue
+            
+            block["hp"] -= proj.get("damage", 20)
+            if block["hp"] <= 0:
+                if block in d_blocks:
+                    d_blocks_to_remove.add(id(block))
+                elif block in m_blocks:
+                    m_blocks_to_remove.add(id(block))
+            projs_to_remove.add(id(proj))
+            hit_block = True
+            break
+        
+        if hit_block:
+            continue
+        
+        # Check enemy collisions using spatial grid
+        for enemy in enemy_grid.query_rect(proj["rect"]):
+            if enemy.get("hp", 1) <= 0:
+                continue
+            if not proj["rect"].colliderect(enemy["rect"]):
+                continue
+            
+            dmg = proj.get("damage", 20)
+            enemy["hp"] -= dmg
+            set_enemy_damage_flash(enemy, ctx)
+            state.damage_numbers.append({
+                "x": enemy["rect"].centerx,
+                "y": enemy["rect"].y - 20,
+                "damage": int(dmg),
+                "timer": 2.0,
+                "color": (255, 255, 100),
+            })
+            if enemy["hp"] <= 0 and kill:
+                kill(enemy, state)
+            projs_to_remove.add(id(proj))
+            break
+    
+    # Bulk removal
+    if projs_to_remove:
+        state.friendly_projectiles[:] = [p for p in state.friendly_projectiles if id(p) not in projs_to_remove]
+    if d_blocks_to_remove and lev:
+        lev.destructible_blocks[:] = [b for b in d_blocks if id(b) not in d_blocks_to_remove]
+    if m_blocks_to_remove and lev:
+        lev.moveable_blocks[:] = [b for b in m_blocks if id(b) not in m_blocks_to_remove]
 
 
 def handle_grenade_explosion_damage(state, dt: float, ctx: dict) -> None:
+    """Handle grenade explosion damage with filter-based removal."""
     kill = ctx.get("kill_enemy")
     lev = getattr(state, "level", None)
     d_blocks = lev.destructible_blocks if lev else []
     m_blocks = lev.moveable_blocks if lev else []
     player = state.player_rect
 
-    for explosion in state.grenade_explosions[:]:
+    explosions_to_remove = set()
+    friendlies_to_remove = set()
+    d_blocks_to_remove = set()
+    m_blocks_to_remove = set()
+
+    for explosion in state.grenade_explosions:
         explosion["timer"] = explosion.get("timer", 0.3) - dt
         explosion["radius"] = int(explosion.get("max_radius", 150) * (1.0 - explosion["timer"] / 0.3))
         if explosion["timer"] <= 0:
-            state.grenade_explosions.remove(explosion)
+            explosions_to_remove.add(id(explosion))
             continue
         pos = pygame.Vector2(explosion["x"], explosion["y"])
         r = explosion["radius"]
         damage_val = explosion.get("damage", 500)
         source = explosion.get("source", "")
         if source != "enemy_player_allies_only":
-            for enemy in state.enemies[:]:
+            for enemy in state.enemies:
                 d = (pygame.Vector2(enemy["rect"].center) - pos).length()
                 if d <= r:
                     enemy["hp"] -= damage_val
@@ -420,12 +609,12 @@ def handle_grenade_explosion_damage(state, dt: float, ctx: dict) -> None:
                     if enemy["hp"] <= 0 and kill:
                         kill(enemy, state)
         if source == "enemy_player_allies_only":
-            for friendly in state.friendly_ai[:]:
+            for friendly in state.friendly_ai:
                 d = (pygame.Vector2(friendly["rect"].center) - pos).length()
                 if d <= r:
                     friendly["hp"] = friendly.get("hp", friendly.get("max_hp", 100)) - damage_val
-                    if friendly["hp"] <= 0 and friendly in state.friendly_ai:
-                        state.friendly_ai.remove(friendly)
+                    if friendly["hp"] <= 0:
+                        friendlies_to_remove.add(id(friendly))
         if player:
             pd = (pygame.Vector2(player.center) - pos).length()
             if pd <= r and source not in ("player", "wall_impact", "ally_explosion"):
@@ -440,22 +629,39 @@ def handle_grenade_explosion_damage(state, dt: float, ctx: dict) -> None:
                     block["hp"] -= damage_val
                     if block["hp"] <= 0:
                         if block in d_blocks:
-                            d_blocks.remove(block)
-                        else:
-                            m_blocks.remove(block)
+                            d_blocks_to_remove.add(id(block))
+                        elif block in m_blocks:
+                            m_blocks_to_remove.add(id(block))
+    
+    # Bulk removal
+    if explosions_to_remove:
+        state.grenade_explosions[:] = [e for e in state.grenade_explosions if id(e) not in explosions_to_remove]
+    if friendlies_to_remove:
+        state.friendly_ai[:] = [f for f in state.friendly_ai if id(f) not in friendlies_to_remove]
+    if d_blocks_to_remove and lev:
+        lev.destructible_blocks[:] = [b for b in d_blocks if id(b) not in d_blocks_to_remove]
+    if m_blocks_to_remove and lev:
+        lev.moveable_blocks[:] = [b for b in m_blocks if id(b) not in m_blocks_to_remove]
 
 
 def handle_missile_collisions(state, ctx: dict) -> None:
+    """Handle missile collisions with filter-based removal."""
     player = state.player_rect
     offscreen = ctx.get("rect_offscreen")
     kill = ctx.get("kill_enemy")
     md = ctx.get("missile_damage", 800)
 
-    for missile in state.missiles[:]:
-        if offscreen and offscreen(missile["rect"]):
-            if missile in state.missiles:
-                state.missiles.remove(missile)
+    missiles_to_remove = set()
+    friendlies_to_remove = set()
+
+    for missile in state.missiles:
+        if id(missile) in missiles_to_remove:
             continue
+        
+        if offscreen and offscreen(missile["rect"]):
+            missiles_to_remove.add(id(missile))
+            continue
+        
         hit = False
         hit_ally = None  # Track which ally was hit (if any)
         
@@ -476,13 +682,14 @@ def handle_missile_collisions(state, ctx: dict) -> None:
         elif missile.get("target_enemy") and missile["target_enemy"] in state.enemies:
             if missile["rect"].colliderect(missile["target_enemy"]["rect"]):
                 hit = True
+        
         if hit:
             pos = pygame.Vector2(missile["rect"].center)
             rad = missile.get("explosion_radius", 150)
             dmg = missile.get("damage", md)
             
             # Damage enemies in explosion radius
-            for enemy in state.enemies[:]:
+            for enemy in state.enemies:
                 if (pygame.Vector2(enemy["rect"].center) - pos).length() <= rad:
                     enemy["hp"] -= dmg
                     set_enemy_damage_flash(enemy, ctx)
@@ -508,10 +715,9 @@ def handle_missile_collisions(state, ctx: dict) -> None:
                         "timer": 2.0,
                         "color": (100, 200, 255),  # Blue for ally damage
                     })
-                # Remove ally if dead
+                # Mark ally for removal if dead
                 if hit_ally["hp"] <= 0:
-                    if hit_ally in state.friendly_ai:
-                        state.friendly_ai.remove(hit_ally)
+                    friendlies_to_remove.add(id(hit_ally))
                     if getattr(state, "dropped_ally", None) == hit_ally:
                         state.dropped_ally = None
             
@@ -520,5 +726,10 @@ def handle_missile_collisions(state, ctx: dict) -> None:
                 if (pygame.Vector2(player.center) - pos).length() <= rad and not state.shield_active:
                     apply_player_damage(state, dmg, ctx)
             
-            if missile in state.missiles:
-                state.missiles.remove(missile)
+            missiles_to_remove.add(id(missile))
+    
+    # Bulk removal
+    if missiles_to_remove:
+        state.missiles[:] = [m for m in state.missiles if id(m) not in missiles_to_remove]
+    if friendlies_to_remove:
+        state.friendly_ai[:] = [f for f in state.friendly_ai if id(f) not in friendlies_to_remove]

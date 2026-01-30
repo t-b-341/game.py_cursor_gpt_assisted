@@ -11,6 +11,7 @@ from .events import (
     EnemyHitEvent,
     EnemyPositionEvent,
     EnemySpawnEvent,
+    FrameTimeEvent,
     FriendlyAIDeathEvent,
     FriendlyAIPositionEvent,
     FriendlyAIShotEvent,
@@ -89,6 +90,7 @@ class Telemetry:
         self._friendly_death_buf: list[tuple] = []
         self._wave_enemy_types_buf: list[tuple] = []
         self._run_state_buf: list[tuple] = []
+        self._frame_time_buf: list[tuple] = []
 
     def start_run(self, started_at_iso: str, player_max_hp: int) -> int:
         cur = self.conn.cursor()
@@ -376,6 +378,18 @@ class Telemetry:
             (self.run_id, float(event.t), int(event.wave_number), event.enemy_type, int(event.count))
         )
 
+    def log_frame_time(self, event: FrameTimeEvent) -> None:
+        """Log frame timing data for performance analysis."""
+        if self.run_id is None:
+            return
+        self._frame_time_buf.append(
+            (
+                self.run_id, float(event.t), float(event.frame_time_ms), float(event.fps),
+                int(event.player_bullets), int(event.enemy_projectiles),
+                int(event.enemies), int(event.friendly_projectiles),
+            )
+        )
+
     def tick(self, dt: float) -> None:
         self._time_since_flush += float(dt)
         if self._time_since_flush >= self.flush_interval_s:
@@ -387,6 +401,7 @@ class Telemetry:
             + len(self._bullet_metadata_buf) + len(self._score_buf) + len(self._level_buf)
             + len(self._boss_buf) + len(self._weapon_switch_buf) + len(self._pickup_buf)
             + len(self._overshield_buf) + len(self._wave_enemy_types_buf) + len(self._run_state_buf)
+            + len(self._frame_time_buf)
         )
         if total >= self.max_buffer:
             self.flush()
@@ -572,6 +587,13 @@ class Telemetry:
                 self._wave_enemy_types_buf,
             )
             self._wave_enemy_types_buf.clear()
+            wrote_any = True
+        if self._frame_time_buf:
+            cur.executemany(
+                "INSERT INTO frame_times (run_id, t, frame_time_ms, fps, player_bullets, enemy_projectiles, enemies, friendly_projectiles) VALUES (?, ?, ?, ?, ?, ?, ?, ?);",
+                self._frame_time_buf,
+            )
+            self._frame_time_buf.clear()
             wrote_any = True
 
         if wrote_any:

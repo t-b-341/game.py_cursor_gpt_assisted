@@ -11,13 +11,22 @@ import pygame
 
 from constants import STATE_PLAYING, AIM_ARROWS
 from rendering import RenderContext, draw_health_bar, draw_centered_text, render_hud_text
+from systems.fps_tracker import get_average_fps, get_fps_history, get_stats
 
 if TYPE_CHECKING:
     from state import GameState
 
 
+# FPS graph colors
+FPS_GRAPH_COLOR = (50, 255, 50)  # Green
+FPS_TEXT_COLOR = (50, 255, 50)  # Green
+FPS_GRAPH_BG = (20, 20, 20, 180)  # Semi-transparent dark
+FPS_TARGET_LINE_COLOR = (255, 255, 100)  # Yellow for 60 FPS line
+FPS_WARNING_COLOR = (255, 150, 50)  # Orange for low FPS
+
+
 def render_hud(state: "GameState", ctx: dict, render_ctx: RenderContext) -> None:
-    """Draw HUD layer: entity health bars, score, metrics, and cooldown bars."""
+    """Draw HUD layer: entity health bars, score, metrics, cooldown bars, and FPS graph."""
     if not ctx or not render_ctx:
         return
     screen = render_ctx.screen
@@ -26,6 +35,7 @@ def render_hud(state: "GameState", ctx: dict, render_ctx: RenderContext) -> None
     ui_show_health_bars = ctx.get("ui_show_health_bars", True)
     ui_show_hud = ctx.get("ui_show_hud", True)
     ui_show_metrics = ctx.get("ui_show_metrics", True)
+    ui_show_fps = ctx.get("ui_show_fps", True)  # FPS graph toggle
     if not font or not big_font or not small_font:
         return
     _draw_entity_health_bars(screen, state, ui_show_health_bars)
@@ -33,6 +43,9 @@ def render_hud(state: "GameState", ctx: dict, render_ctx: RenderContext) -> None
         _draw_score(screen, state, big_font, WIDTH)
         if ui_show_metrics:
             _draw_metrics_and_bars(screen, state, ctx, font, small_font, WIDTH, HEIGHT)
+    # Draw FPS graph in bottom-left corner
+    if ui_show_fps:
+        _draw_fps_graph(screen, small_font, WIDTH, HEIGHT)
 
 
 def render_overlays(state: "GameState", ctx: dict, render_ctx: RenderContext) -> None:
@@ -90,6 +103,83 @@ def render(state: "GameState", screen: pygame.Surface, ctx: dict) -> None:
     render_ctx = RenderContext.from_screen_and_ctx(screen, ctx)
     render_hud(state, ctx, render_ctx)
     render_overlays(state, ctx, render_ctx)
+
+
+def _draw_fps_graph(screen: pygame.Surface, small_font: Any, WIDTH: int, HEIGHT: int) -> None:
+    """Draw FPS graph with average in bottom-left corner."""
+    # Graph dimensions and position
+    graph_width = 120
+    graph_height = 50
+    padding = 8
+    x = padding
+    y = HEIGHT - 140 - graph_height  # Above health bar area
+    
+    # Get FPS data
+    stats = get_stats()
+    avg_fps = stats["avg_fps"]
+    fps_history = get_fps_history(graph_width)
+    
+    if not fps_history:
+        return
+    
+    # Create semi-transparent background
+    bg_surf = pygame.Surface((graph_width + padding * 2, graph_height + 35), pygame.SRCALPHA)
+    bg_surf.fill((20, 20, 20, 180))
+    screen.blit(bg_surf, (x - padding, y - padding))
+    
+    # Draw FPS text
+    if avg_fps >= 55:
+        text_color = FPS_GRAPH_COLOR  # Green
+    elif avg_fps >= 30:
+        text_color = FPS_WARNING_COLOR  # Orange
+    else:
+        text_color = (255, 80, 80)  # Red
+    
+    fps_text = f"FPS: {avg_fps:.0f}"
+    text_surf = small_font.render(fps_text, True, text_color)
+    screen.blit(text_surf, (x, y - padding + 2))
+    
+    # Draw graph border
+    graph_rect = pygame.Rect(x, y + 15, graph_width, graph_height)
+    pygame.draw.rect(screen, (60, 60, 60), graph_rect, 1)
+    
+    # Dynamic scale based on max observed FPS (supports high refresh rate displays)
+    max_scale = 200 if stats["max_fps"] > 120 else 120
+    
+    # Draw 60 FPS target line
+    target_y = graph_rect.bottom - int((60 / max_scale) * graph_height)
+    pygame.draw.line(screen, FPS_TARGET_LINE_COLOR, 
+                     (graph_rect.left, target_y), (graph_rect.right, target_y), 1)
+    
+    # Draw 30 FPS warning line
+    warn_y = graph_rect.bottom - int((30 / max_scale) * graph_height)
+    pygame.draw.line(screen, (255, 80, 80), 
+                     (graph_rect.left, warn_y), (graph_rect.right, warn_y), 1)
+    
+    # Draw FPS graph line
+    if len(fps_history) >= 2:
+        points = []
+        for i, fps in enumerate(fps_history):
+            # Map index to x position
+            px = graph_rect.left + int((i / max(1, len(fps_history) - 1)) * (graph_width - 1))
+            # Map FPS to y position (dynamic range, clamped)
+            clamped_fps = max(0, min(max_scale, fps))
+            py = graph_rect.bottom - int((clamped_fps / max_scale) * graph_height)
+            points.append((px, py))
+        
+        # Draw the line with anti-aliasing
+        if len(points) >= 2:
+            pygame.draw.lines(screen, FPS_GRAPH_COLOR, False, points, 2)
+    
+    # Draw min/max labels
+    min_fps = stats["min_fps"]
+    max_fps = stats["max_fps"]
+    
+    # Small labels for min/max
+    min_text = small_font.render(f"min:{min_fps:.0f}", True, (150, 150, 150))
+    max_text = small_font.render(f"max:{max_fps:.0f}", True, (150, 150, 150))
+    screen.blit(min_text, (x, graph_rect.bottom + 2))
+    screen.blit(max_text, (x + graph_width - max_text.get_width(), graph_rect.bottom + 2))
 
 
 def _draw_entity_health_bars(screen: pygame.Surface, state, show: bool) -> None:

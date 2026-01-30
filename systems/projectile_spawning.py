@@ -45,6 +45,11 @@ def spawn_player_bullet_and_log(state: GameState, ctx: AppContext):
     """
     if state.player_rect is None:
         return
+    
+    # Check projectile limit for performance
+    max_bullets = getattr(ctx.config, "max_player_bullets", 200)
+    if max_bullets > 0 and len(state.player_bullets) >= max_bullets:
+        return  # Don't spawn more bullets if at limit
     # Determine aiming direction based on aiming mode
     if ctx.config.aim_mode == AIM_ARROWS:
         # Arrow key aiming
@@ -195,10 +200,17 @@ def spawn_player_bullet_and_log(state: GameState, ctx: AppContext):
 def spawn_enemy_projectile(enemy: dict, state: GameState, telemetry_client=None, telemetry_enabled: bool = False):
     """Spawn projectile from enemy targeting nearest threat (player or friendly AI).
     
-    Respects max-enemies-targeting-player cap.
+    Respects max-enemies-targeting-player cap and projectile limits.
     """
     if state.player_rect is None:
         return
+    
+    # Check projectile limit for performance
+    ctx = getattr(state, "level_context", None)
+    config = ctx.get("config") if ctx else None
+    max_projectiles = getattr(config, "max_enemy_projectiles", 300) if config else 300
+    if max_projectiles > 0 and len(state.enemy_projectiles) >= max_projectiles:
+        return  # Don't spawn more projectiles if at limit
     e_pos = pygame.Vector2(enemy["rect"].center)
     ctx = getattr(state, "level_context", None)
     allow_player = id(enemy) in ctx.get("_player_targeting_slots", set()) if ctx else True

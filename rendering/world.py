@@ -1,5 +1,9 @@
 """
 World rendering: background, terrain, entities, projectiles, effects, beams.
+
+Performance optimizations:
+- Cached projectile surfaces avoid recreating shapes each frame
+- Batch blitting for projectiles of the same type
 """
 from __future__ import annotations
 
@@ -14,6 +18,9 @@ from .context import RenderContext
 _wall_texture_cache = {}
 _trapezoid_surface_cache: dict = {}
 _triangle_surface_cache: dict = {}
+
+# Projectile surface cache: (color, shape, size) -> Surface
+_projectile_surface_cache: dict[tuple, pygame.Surface] = {}
 
 
 def _create_cached_silver_wall_texture(width: int, height: int) -> pygame.Surface:
@@ -114,17 +121,35 @@ def draw_cracked_brick_wall_texture(screen: pygame.Surface, rect: pygame.Rect, c
         screen.blit(scaled, rect.topleft)
 
 
+def _get_cached_projectile_surface(color: tuple[int, int, int], shape: str, size: tuple[int, int]) -> pygame.Surface:
+    """Get or create a cached surface for a projectile shape."""
+    # Round size to reduce cache entries (projectiles are typically similar sizes)
+    w, h = max(4, (size[0] // 4) * 4), max(4, (size[1] // 4) * 4)
+    cache_key = (color, shape, w, h)
+    
+    if cache_key not in _projectile_surface_cache:
+        # Create surface with alpha for proper blending
+        surf = pygame.Surface((w, h), pygame.SRCALPHA)
+        
+        if shape == "circle":
+            pygame.draw.circle(surf, color, (w // 2, h // 2), w // 2)
+        elif shape == "diamond":
+            hw, hh = w // 2, h // 2
+            points = [(hw, 0), (w, hh), (hw, h), (0, hh)]
+            pygame.draw.polygon(surf, color, points)
+        else:  # rect
+            pygame.draw.rect(surf, color, (0, 0, w, h))
+        
+        _projectile_surface_cache[cache_key] = surf
+    
+    return _projectile_surface_cache[cache_key]
+
+
 def draw_projectile(screen: pygame.Surface, rect: pygame.Rect, color: tuple[int, int, int], shape: str) -> None:
-    """Draw a projectile with the specified shape."""
-    if shape == "circle":
-        pygame.draw.circle(screen, color, rect.center, rect.w // 2)
-    elif shape == "diamond":
-        cx, cy = rect.center
-        hw, hh = rect.w // 2, rect.h // 2
-        points = [(cx, cy - hh), (cx + hw, cy), (cx, cy + hh), (cx - hw, cy)]
-        pygame.draw.polygon(screen, color, points)
-    else:
-        pygame.draw.rect(screen, color, rect)
+    """Draw a projectile with the specified shape using cached surfaces."""
+    surf = _get_cached_projectile_surface(color, shape, (rect.w, rect.h))
+    # Blit cached surface (faster than drawing primitives each frame)
+    screen.blit(surf, rect.topleft)
 
 
 def _draw_terrain(screen: pygame.Surface, state: Any, ctx: dict) -> None:
@@ -247,13 +272,42 @@ def _draw_pickups(screen: pygame.Surface, state: Any, ctx: dict) -> None:
 
 
 def _draw_projectiles(screen: pygame.Surface, state: Any) -> None:
-    """Draw enemy, player, and friendly projectiles."""
-    for proj in getattr(state, "enemy_projectiles", []):
-        draw_projectile(screen, proj["rect"], proj["color"], proj.get("shape", "circle"))
-    for bullet in getattr(state, "player_bullets", []):
-        draw_projectile(screen, bullet["rect"], bullet["color"], bullet.get("shape", "circle"))
-    for proj in getattr(state, "friendly_projectiles", []):
-        draw_projectile(screen, proj["rect"], proj["color"], proj.get("shape", "circle"))
+    """Draw enemy, player, and friendly projectiles with cached surface blitting.
+    
+    Uses pre-rendered cached surfaces instead of drawing primitives each frame.
+    Groups by cache key (color, shape, size) for efficient batch processing.
+    """
+    # Collect all projectiles grouped by their visual cache key
+    # cache_key -> list of (x, y) positions
+    batches: dict[tuple, list[tuple[int, int]]] = {}
+    
+    all_projectiles = (
+        list(getattr(state, "enemy_projectiles", [])) +
+        list(getattr(state, "player_bullets", [])) +
+        list(getattr(state, "friendly_projectiles", []))
+    )
+    
+    for proj in all_projectiles:
+        rect = proj.get("rect")
+        if not rect:
+            continue
+        
+        color = proj.get("color", (255, 255, 255))
+        shape = proj.get("shape", "circle")
+        # Round size to reduce cache entries
+        w, h = max(4, (rect.w // 4) * 4), max(4, (rect.h // 4) * 4)
+        cache_key = (color, shape, w, h)
+        
+        if cache_key not in batches:
+            batches[cache_key] = []
+        batches[cache_key].append((rect.x, rect.y))
+    
+    # Blit cached surfaces for each batch
+    for cache_key, positions in batches.items():
+        color, shape, w, h = cache_key
+        surf = _get_cached_projectile_surface(color, shape, (w, h))
+        for x, y in positions:
+            screen.blit(surf, (x, y))
 
 
 def _draw_allies_and_enemies(screen: pygame.Surface, state: Any) -> None:

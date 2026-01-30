@@ -460,6 +460,21 @@ def init_schema(conn: sqlite3.Connection) -> None:
         );
     """)
 
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS frame_times (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            run_id INTEGER NOT NULL,
+            t REAL NOT NULL,
+            frame_time_ms REAL NOT NULL,
+            fps REAL NOT NULL,
+            player_bullets INTEGER NOT NULL,
+            enemy_projectiles INTEGER NOT NULL,
+            enemies INTEGER NOT NULL,
+            friendly_projectiles INTEGER NOT NULL,
+            FOREIGN KEY(run_id) REFERENCES runs(id) ON DELETE CASCADE
+        );
+    """)
+
     conn.commit()
 
     _add_column_if_missing(conn, "runs", "damage_dealt", "damage_dealt INTEGER NOT NULL DEFAULT 0")
@@ -495,6 +510,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
     _create_index_if_missing(conn, "friendly_ai_deaths", "idx_friendly_deaths_run_t", "run_id, t")
     _create_index_if_missing(conn, "wave_enemy_types", "idx_wave_enemy_types_run_wave", "run_id, wave_number")
     _create_index_if_missing(conn, "wave_enemy_types", "idx_wave_enemy_types_type", "enemy_type")
+    _create_index_if_missing(conn, "frame_times", "idx_frame_times_run_t", "run_id, t")
 
     conn.commit()
     _create_views(conn)
