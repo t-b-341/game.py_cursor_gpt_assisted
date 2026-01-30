@@ -27,7 +27,7 @@ class UiState:
     ui_show_fps_selected: int = 0  # 0=Show FPS, 1=Hide FPS
     beam_selection_selected: int = 3
     endurance_mode_selected: int = 0
-    ui_telemetry_enabled_selected: int = 1
+    ui_telemetry_enabled_selected: int = 0  # Default: Enabled (0=Enabled, 1=Disabled)
     shader_options_selected_row: int = 0  # main menu shader section (0..6)
     pause_shader_options_row: int = 0     # pause submenu shader row (0..4)
     pause_audio_options_row: int = 0      # pause submenu audio row (0..3)

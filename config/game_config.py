@@ -70,7 +70,7 @@ class GameConfig:
     player_class: str = PLAYER_CLASS_BALANCED
     aim_mode: str = AIM_MOUSE
     aiming_mechanic: str = "mouse"  # "mouse", "lockon", "predictive", "directional", "hybrid"
-    enable_telemetry: bool = False
+    enable_telemetry: bool = True  # Default: Enabled for analytics/debugging
     show_metrics: bool = True
     show_hud: bool = True
     show_health_bars: bool = True
