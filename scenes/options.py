@@ -19,22 +19,123 @@ from scenes.transitions import SceneTransition
 from profile_system import load_profiles, save_profile, delete_profile, get_profile_display_text
 
 
+def _get_menu_option_rects(width: int, height: int, y_start: int, num_options: int, line_height: int = 40) -> list[pygame.Rect]:
+    """Calculate clickable rectangles for centered menu options."""
+    rects = []
+    option_width = 400  # Approximate clickable width
+    for i in range(num_options):
+        y = y_start + i * line_height
+        rect = pygame.Rect((width - option_width) // 2, y - 15, option_width, line_height)
+        rects.append(rect)
+    return rects
+
+
 class OptionsScene:
     """Options / main menu. All menu_section navigation and start-game intent via return value."""
 
     def state_id(self) -> str:
         return STATE_MENU
 
+    def __init__(self):
+        self._last_input_result = None
+        self._option_rects: list[pygame.Rect] = []  # Cached option rectangles for mouse clicks
+    
     def handle_input(self, events, game_state, ctx: dict) -> dict:
         out = {"screen": None, "quit": False, "restart": False, "restart_to_wave1": False, "replay": False, "pop": False, "start_game": False}
         app_ctx = ctx.get("app_ctx")
         if app_ctx is None:
             return out
         cfg = app_ctx.config
+        width = ctx.get("width", 1920)
+        height = ctx.get("height", 1080)
         # Always use game_state.ui.menu_section directly, not a local copy
         # This ensures changes to menu_section are immediately reflected in the same event processing loop
 
         for event in events:
+            # Handle mouse clicks for menu navigation
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                mouse_pos = event.pos
+                ms = game_state.ui.menu_section
+                y = height // 2
+                
+                # Handle quit confirmation dialog
+                if game_state.ui.menu_confirm_quit:
+                    game_state.ui.menu_confirm_quit = False
+                    continue
+                
+                # Calculate option rectangles based on current menu section
+                if ms == 0:  # Difficulty selection
+                    rects = _get_menu_option_rects(width, height, y, len(difficulty_options))
+                    for i, rect in enumerate(rects):
+                        if rect.collidepoint(mouse_pos):
+                            game_state.ui.difficulty_selected = i
+                            cfg.difficulty = difficulty_options[i]
+                            game_state.ui.menu_section = 1.5
+                            break
+                elif ms == 1.5:  # Use character profile?
+                    rects = _get_menu_option_rects(width, height, y, 2)
+                    for i, rect in enumerate(rects):
+                        if rect.collidepoint(mouse_pos):
+                            game_state.ui.use_character_profile_selected = i
+                            cfg.profile_enabled = i == 1
+                            game_state.ui.menu_section = 2 if cfg.profile_enabled else 3
+                            break
+                elif ms == 2:  # Character profile type
+                    rects = _get_menu_option_rects(width, height, y, len(character_profile_options))
+                    for i, rect in enumerate(rects):
+                        if rect.collidepoint(mouse_pos):
+                            game_state.ui.character_profile_selected = i
+                            if i == 0:
+                                game_state.ui.menu_section = 7
+                            elif i == 1:
+                                game_state.ui.custom_profile_stat_selected = 0
+                                game_state.ui.menu_section = 6
+                            else:
+                                game_state.ui.saved_profile_selected = 0
+                                game_state.ui.menu_section = 8
+                            break
+                elif ms == 3:  # HUD options
+                    rects = _get_menu_option_rects(width, height, y, 2)
+                    for i, rect in enumerate(rects):
+                        if rect.collidepoint(mouse_pos):
+                            game_state.ui.ui_show_metrics_selected = i
+                            cfg.show_metrics = i == 0
+                            cfg.show_hud = cfg.show_metrics
+                            game_state.ui.menu_section = 3.25
+                            break
+                elif ms == 3.25:  # FPS toggle
+                    rects = _get_menu_option_rects(width, height, y, 2)
+                    for i, rect in enumerate(rects):
+                        if rect.collidepoint(mouse_pos):
+                            game_state.ui.ui_show_fps_selected = i
+                            cfg.show_fps = i == 0
+                            game_state.ui.menu_section = 3.5
+                            break
+                elif ms == 3.5:  # Telemetry
+                    rects = _get_menu_option_rects(width, height, y, 2)
+                    for i, rect in enumerate(rects):
+                        if rect.collidepoint(mouse_pos):
+                            game_state.ui.ui_telemetry_enabled_selected = i
+                            cfg.enable_telemetry = i == 0
+                            game_state.ui.menu_section = 4 if cfg.testing_mode else 5
+                            break
+                elif ms == 5:  # Ready to start
+                    # Click anywhere to start
+                    start_rect = pygame.Rect((width - 400) // 2, y - 20, 400, 80)
+                    if start_rect.collidepoint(mouse_pos):
+                        out["screen"] = STATE_PLAYING
+                        out["start_game"] = True
+                        return out
+                elif ms == 7:  # Class selection
+                    rects = _get_menu_option_rects(width, height, y, len(player_class_options))
+                    for i, rect in enumerate(rects):
+                        if rect.collidepoint(mouse_pos):
+                            game_state.ui.player_class_selected = i
+                            cfg.player_class = player_class_options[i]
+                            game_state.ui.menu_section = 3
+                            break
+                continue
+            
             if event.type != pygame.KEYDOWN:
                 continue
             if game_state.ui.menu_confirm_quit:

@@ -107,6 +107,7 @@ def render_overlays(state: "GameState", ctx: dict, render_ctx: RenderContext) ->
         _draw_wave_reset_debug(screen, state, small_font, WIDTH, HEIGHT)
     _draw_screen_damage_flash(screen, state, ctx, WIDTH, HEIGHT)
     _draw_wave_banner(screen, state, ctx, big_font, WIDTH, HEIGHT)
+    _draw_missile_warning(screen, state, big_font, WIDTH, HEIGHT)
     _draw_low_health_warning(screen, state, big_font, WIDTH, HEIGHT)
 
 
@@ -140,6 +141,46 @@ def _draw_wave_banner(screen: pygame.Surface, state: "GameState", ctx: dict, big
 
 # Low health warning threshold (percentage of max HP)
 LOW_HEALTH_THRESHOLD = 0.30  # 30% health
+
+
+def _draw_missile_warning(screen: pygame.Surface, state: "GameState", big_font: Any, WIDTH: int, HEIGHT: int) -> None:
+    """Draw flashing 'MISSILES LOCKED ON' warning when enemy missiles are targeting the player."""
+    if not big_font:
+        return
+    
+    # Check if any missiles are actively targeting the player (not lost lock)
+    missiles = getattr(state, "missiles", [])
+    enemy_missiles_targeting_player = [
+        m for m in missiles 
+        if m.get("target_player") and not m.get("lost_lock", False)
+    ]
+    
+    if not enemy_missiles_targeting_player:
+        return
+    
+    # Create pulsing effect using run_time - faster pulse for urgency
+    import math
+    run_time = getattr(state, "run_time", 0.0)
+    pulse = 0.5 + 0.5 * math.sin(run_time * 10.0)  # Fast pulse at ~1.6Hz
+    
+    # Orange-yellow color that pulses in intensity (warning color)
+    intensity = int(200 + 55 * pulse)  # Range: 200-255
+    color = (intensity, int(intensity * 0.6), 0)  # Orange-ish
+    
+    # Create text with outline for visibility
+    text = "MISSILES LOCKED ON"
+    text_surface = big_font.render(text, True, color)
+    outline_surface = big_font.render(text, True, (0, 0, 0))
+    
+    # Position above center (so it doesn't overlap with HEALTH LOW)
+    text_rect = text_surface.get_rect(center=(WIDTH // 2, HEIGHT // 2 - 60))
+    
+    # Draw black outline
+    for dx, dy in [(-2, -2), (-2, 2), (2, -2), (2, 2), (-2, 0), (2, 0), (0, -2), (0, 2)]:
+        screen.blit(outline_surface, (text_rect.x + dx, text_rect.y + dy))
+    
+    # Draw main text
+    screen.blit(text_surface, text_rect)
 
 
 def _draw_low_health_warning(screen: pygame.Surface, state: "GameState", big_font: Any, WIDTH: int, HEIGHT: int) -> None:

@@ -1,6 +1,10 @@
 """Pause screen: handle_events and render. Uses RenderContext for display/fonts."""
 from __future__ import annotations
 
+import math
+import random
+from dataclasses import dataclass, field
+
 import pygame
 from constants import STATE_PLAYING, STATE_ENDURANCE, STATE_MENU, STATE_SAVE_GAME, pause_options, fps_cap_options
 from rendering import RenderContext, draw_centered_text
@@ -13,6 +17,267 @@ from systems.audio_system import (
 # Cached overlay surface to avoid per-frame allocation
 _overlay_cache: pygame.Surface | None = None
 _overlay_size: tuple[int, int] = (0, 0)
+
+
+# ============================================================================
+# Idle enemy animation system for pause screen
+# ============================================================================
+
+@dataclass
+class IdleEnemy:
+    """An animated enemy that floats around the pause screen."""
+    x: float
+    y: float
+    vx: float
+    vy: float
+    size: int
+    color: tuple[int, int, int]
+    shape: str  # "circle", "square", "triangle"
+    bob_offset: float = 0.0  # For bobbing animation
+    bob_speed: float = 2.0
+    time_to_exit: float = 0.0  # Timer for when to fly off screen
+    exiting: bool = False  # True when flying off screen
+    exit_target_x: float = 0.0
+    exit_target_y: float = 0.0
+    returning: bool = False  # True when returning to screen
+
+
+# Enemy colors based on actual game enemies
+ENEMY_COLORS = [
+    (255, 100, 100),  # Red - basic
+    (100, 100, 255),  # Blue - ranged
+    (255, 200, 100),  # Orange - fast
+    (150, 80, 200),   # Purple - ambient
+    (100, 255, 100),  # Green - healer
+    (255, 255, 100),  # Yellow - suicide
+]
+
+ENEMY_SHAPES = ["circle", "square", "triangle"]
+
+# Module-level state for idle enemies
+_idle_enemies: list[IdleEnemy] = []
+_idle_enemies_initialized: bool = False
+_screen_size: tuple[int, int] = (0, 0)
+
+
+def _init_idle_enemies(width: int, height: int, count: int = 8) -> None:
+    """Initialize idle enemies for the pause screen."""
+    global _idle_enemies, _idle_enemies_initialized, _screen_size
+    
+    _idle_enemies = []
+    _screen_size = (width, height)
+    
+    for _ in range(count):
+        enemy = _create_idle_enemy(width, height, spawn_onscreen=True)
+        _idle_enemies.append(enemy)
+    
+    _idle_enemies_initialized = True
+
+
+def _create_idle_enemy(width: int, height: int, spawn_onscreen: bool = True) -> IdleEnemy:
+    """Create a new idle enemy with random properties."""
+    size = random.randint(20, 45)
+    color = random.choice(ENEMY_COLORS)
+    shape = random.choice(ENEMY_SHAPES)
+    
+    if spawn_onscreen:
+        # Spawn within screen bounds (with margin)
+        margin = 100
+        x = random.uniform(margin, width - margin)
+        y = random.uniform(margin, height - margin)
+    else:
+        # Spawn off screen
+        side = random.randint(0, 3)
+        if side == 0:  # Top
+            x = random.uniform(0, width)
+            y = -size - 20
+        elif side == 1:  # Right
+            x = width + size + 20
+            y = random.uniform(0, height)
+        elif side == 2:  # Bottom
+            x = random.uniform(0, width)
+            y = height + size + 20
+        else:  # Left
+            x = -size - 20
+            y = random.uniform(0, height)
+    
+    # Random velocity (slow, drifting motion)
+    speed = random.uniform(20, 60)
+    angle = random.uniform(0, 2 * math.pi)
+    vx = math.cos(angle) * speed
+    vy = math.sin(angle) * speed
+    
+    # Time until this enemy decides to fly off screen
+    time_to_exit = random.uniform(5.0, 15.0)
+    
+    return IdleEnemy(
+        x=x, y=y, vx=vx, vy=vy,
+        size=size, color=color, shape=shape,
+        bob_offset=random.uniform(0, 2 * math.pi),
+        bob_speed=random.uniform(1.5, 3.0),
+        time_to_exit=time_to_exit,
+    )
+
+
+def update_idle_enemies(dt: float, width: int, height: int) -> None:
+    """Update all idle enemies (called each frame while paused)."""
+    global _idle_enemies, _idle_enemies_initialized, _screen_size
+    
+    # Reinitialize if screen size changed
+    if not _idle_enemies_initialized or _screen_size != (width, height):
+        _init_idle_enemies(width, height)
+        return
+    
+    margin = 150  # How far off screen before considered "exited"
+    
+    for enemy in _idle_enemies:
+        # Update bob animation
+        enemy.bob_offset += enemy.bob_speed * dt
+        
+        if enemy.exiting:
+            # Move towards exit target
+            dx = enemy.exit_target_x - enemy.x
+            dy = enemy.exit_target_y - enemy.y
+            dist = math.sqrt(dx * dx + dy * dy)
+            if dist > 1:
+                speed = 200  # Faster when exiting
+                enemy.x += (dx / dist) * speed * dt
+                enemy.y += (dy / dist) * speed * dt
+            
+            # Check if fully off screen
+            if (enemy.x < -margin or enemy.x > width + margin or
+                enemy.y < -margin or enemy.y > height + margin):
+                # Reset as returning enemy
+                enemy.exiting = False
+                enemy.returning = True
+                
+                # Pick a new entry point (opposite side)
+                side = random.randint(0, 3)
+                if side == 0:
+                    enemy.x = random.uniform(0, width)
+                    enemy.y = -enemy.size - 20
+                elif side == 1:
+                    enemy.x = width + enemy.size + 20
+                    enemy.y = random.uniform(0, height)
+                elif side == 2:
+                    enemy.x = random.uniform(0, width)
+                    enemy.y = height + enemy.size + 20
+                else:
+                    enemy.x = -enemy.size - 20
+                    enemy.y = random.uniform(0, height)
+                
+                # Set velocity towards center area
+                target_x = width // 2 + random.uniform(-200, 200)
+                target_y = height // 2 + random.uniform(-200, 200)
+                dx = target_x - enemy.x
+                dy = target_y - enemy.y
+                dist = math.sqrt(dx * dx + dy * dy)
+                if dist > 1:
+                    speed = random.uniform(40, 80)
+                    enemy.vx = (dx / dist) * speed
+                    enemy.vy = (dy / dist) * speed
+                
+                enemy.time_to_exit = random.uniform(5.0, 15.0)
+        
+        elif enemy.returning:
+            # Move with velocity until on screen
+            enemy.x += enemy.vx * dt
+            enemy.y += enemy.vy * dt
+            
+            # Check if back on screen
+            if 50 < enemy.x < width - 50 and 50 < enemy.y < height - 50:
+                enemy.returning = False
+        
+        else:
+            # Normal floating behavior
+            enemy.x += enemy.vx * dt
+            enemy.y += enemy.vy * dt
+            
+            # Bounce off screen edges (with some randomness)
+            if enemy.x < 50:
+                enemy.vx = abs(enemy.vx) + random.uniform(-10, 10)
+                enemy.x = 50
+            elif enemy.x > width - 50:
+                enemy.vx = -abs(enemy.vx) + random.uniform(-10, 10)
+                enemy.x = width - 50
+            
+            if enemy.y < 100:  # Keep above pause menu
+                enemy.vy = abs(enemy.vy) + random.uniform(-10, 10)
+                enemy.y = 100
+            elif enemy.y > height - 150:  # Keep above bottom text
+                enemy.vy = -abs(enemy.vy) + random.uniform(-10, 10)
+                enemy.y = height - 150
+            
+            # Occasionally change direction slightly
+            if random.random() < 0.01:  # 1% chance per frame
+                enemy.vx += random.uniform(-20, 20)
+                enemy.vy += random.uniform(-20, 20)
+                # Clamp speed
+                speed = math.sqrt(enemy.vx ** 2 + enemy.vy ** 2)
+                if speed > 80:
+                    enemy.vx = (enemy.vx / speed) * 80
+                    enemy.vy = (enemy.vy / speed) * 80
+            
+            # Check if it's time to exit
+            enemy.time_to_exit -= dt
+            if enemy.time_to_exit <= 0:
+                enemy.exiting = True
+                # Pick an exit point off screen
+                side = random.randint(0, 3)
+                if side == 0:
+                    enemy.exit_target_x = random.uniform(0, width)
+                    enemy.exit_target_y = -100
+                elif side == 1:
+                    enemy.exit_target_x = width + 100
+                    enemy.exit_target_y = random.uniform(0, height)
+                elif side == 2:
+                    enemy.exit_target_x = random.uniform(0, width)
+                    enemy.exit_target_y = height + 100
+                else:
+                    enemy.exit_target_x = -100
+                    enemy.exit_target_y = random.uniform(0, height)
+
+
+def render_idle_enemies(screen: pygame.Surface, run_time: float) -> None:
+    """Render all idle enemies on the pause screen."""
+    for enemy in _idle_enemies:
+        # Apply bobbing animation
+        bob_y = math.sin(enemy.bob_offset) * 5
+        
+        x = int(enemy.x)
+        y = int(enemy.y + bob_y)
+        size = enemy.size
+        color = enemy.color
+        
+        # Draw based on shape
+        if enemy.shape == "circle":
+            pygame.draw.circle(screen, color, (x, y), size // 2)
+            # Darker border
+            border_color = (max(0, color[0] - 60), max(0, color[1] - 60), max(0, color[2] - 60))
+            pygame.draw.circle(screen, border_color, (x, y), size // 2, 3)
+        
+        elif enemy.shape == "square":
+            rect = pygame.Rect(x - size // 2, y - size // 2, size, size)
+            pygame.draw.rect(screen, color, rect)
+            border_color = (max(0, color[0] - 60), max(0, color[1] - 60), max(0, color[2] - 60))
+            pygame.draw.rect(screen, border_color, rect, 3)
+        
+        elif enemy.shape == "triangle":
+            half = size // 2
+            points = [
+                (x, y - half),  # Top
+                (x - half, y + half),  # Bottom left
+                (x + half, y + half),  # Bottom right
+            ]
+            pygame.draw.polygon(screen, color, points)
+            border_color = (max(0, color[0] - 60), max(0, color[1] - 60), max(0, color[2] - 60))
+            pygame.draw.polygon(screen, border_color, points, 3)
+
+
+def reset_idle_enemies() -> None:
+    """Reset idle enemies (call when leaving pause screen)."""
+    global _idle_enemies_initialized
+    _idle_enemies_initialized = False
 
 
 def handle_events(events, game_state, ctx):
@@ -264,6 +529,10 @@ def render(render_ctx: RenderContext, game_state, screen_ctx) -> None:
         _overlay_size = (WIDTH, HEIGHT)
     
     screen.blit(_overlay_cache, (0, 0))
+    
+    # Render idle enemy animations (behind menu text)
+    run_time = getattr(game_state, "run_time", 0.0) if game_state else 0.0
+    render_idle_enemies(screen, run_time)
 
     if game_state is None:
         return

@@ -387,8 +387,19 @@ def _update_missiles(state, dt: float, ctx: dict) -> None:
     if player is None:
         return
 
+    # Check if player is dashing - missiles lose lock during dash
+    is_dashing = getattr(state, "is_jumping", False)
+    
     for missile in state.missiles[:]:
         if missile.get("target_player"):
+            # If player is dashing, missile loses lock permanently
+            # It will continue on its current trajectory
+            if is_dashing:
+                missile["target_player"] = False
+                missile["lost_lock"] = True  # Mark as having lost lock
+                # Keep current velocity - missile continues straight
+                continue
+            
             # Check if there's a dropped ally to draw missile aggro
             dropped_ally = getattr(state, "dropped_ally", None)
             if dropped_ally and dropped_ally in state.friendly_ai and dropped_ally.get("hp", 0) > 0:

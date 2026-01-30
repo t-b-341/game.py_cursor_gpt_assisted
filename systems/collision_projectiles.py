@@ -695,7 +695,9 @@ def handle_missile_collisions(state, ctx: dict) -> None:
                     hit_ally = dropped_ally
             
             # Also check player collision (missile may still hit player if no ally intercepts)
-            if not hit and player and missile["rect"].colliderect(player):
+            # Player can dodge missiles while dashing (is_jumping = True)
+            is_dashing = getattr(state, "is_jumping", False)
+            if not hit and player and missile["rect"].colliderect(player) and not is_dashing:
                 hit = True
                 if not state.shield_active:
                     apply_player_damage(state, missile.get("damage", md), ctx)

@@ -467,8 +467,15 @@ def _draw_effects(screen: pygame.Surface, state: Any, render_ctx: RenderContext 
         if render_ctx and not render_ctx.is_visible(r):
             continue
         screen_r = pygame.Rect(r.x - cam_x, r.y - cam_y, r.w, r.h)
-        pygame.draw.rect(screen, (160, 80, 220), screen_r)
-        pygame.draw.rect(screen, (100, 40, 160), screen_r, 2)
+        # Enemy missiles (target_player) are lime green, player missiles are purple
+        if missile.get("target_player"):
+            # Lime green for enemy missiles
+            pygame.draw.rect(screen, (50, 255, 50), screen_r)
+            pygame.draw.rect(screen, (30, 180, 30), screen_r, 2)
+        else:
+            # Purple for player missiles
+            pygame.draw.rect(screen, (160, 80, 220), screen_r)
+            pygame.draw.rect(screen, (100, 40, 160), screen_r, 2)
 
 
 def _draw_player(screen: pygame.Surface, state: Any, render_ctx: RenderContext = None) -> None:

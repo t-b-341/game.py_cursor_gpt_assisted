@@ -4,6 +4,7 @@ from __future__ import annotations
 from constants import STATE_PAUSED, STATE_PLAYING, STATE_ENDURANCE, STATE_MENU, STATE_SAVE_GAME
 from rendering import RenderContext
 from screens import pause as pause_screen
+from screens.pause import update_idle_enemies, reset_idle_enemies
 from scenes.transitions import SceneTransition
 
 
@@ -15,7 +16,10 @@ class PauseScene:
         return pause_screen.handle_events(events, game_state, ctx)
 
     def update(self, dt: float, game_state, ctx: dict) -> None:
-        pass
+        # Update idle enemy animations
+        width = ctx.get("width", 1920)
+        height = ctx.get("height", 1080)
+        update_idle_enemies(dt, width, height)
 
     def handle_input_transition(self, events, game_state, ctx: dict) -> SceneTransition:
         """Call existing handle_input logic and process the result. Return transition if needed."""
@@ -56,7 +60,9 @@ class PauseScene:
         pause_screen.render(render_ctx, game_state, ctx)
 
     def on_enter(self, game_state, ctx: dict) -> None:
-        pass
+        # Reset idle enemies when entering pause screen
+        reset_idle_enemies()
 
     def on_exit(self, game_state, ctx: dict) -> None:
-        pass
+        # Reset idle enemies when leaving pause screen
+        reset_idle_enemies()
