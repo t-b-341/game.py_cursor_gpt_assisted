@@ -25,9 +25,16 @@ from config_enemies import FRIENDLY_AI_TEMPLATES
 from allies import make_friendly_from_template
 
 
-def _scale_mouse_pos(pos: tuple[int, int], world_scale: float) -> tuple[float, float]:
-    """Scale mouse position from display space to world space."""
-    if world_scale > 1.0:
+def _scale_mouse_pos(pos: tuple[int, int], world_scale: float, camera=None) -> tuple[float, float]:
+    """Scale mouse position from display space to world space.
+    
+    If camera is provided, uses camera offset instead of world_scale.
+    """
+    if camera is not None:
+        # Camera mode: screen -> world
+        return camera.screen_to_world(pos[0], pos[1])
+    elif world_scale > 1.0:
+        # Legacy scaling mode
         return (float(pos[0] * world_scale), float(pos[1] * world_scale))
     return (float(pos[0]), float(pos[1]))
 
@@ -37,6 +44,8 @@ def handle_gameplay_input(events, game_state, ctx) -> None:
     ctx must have: controls, aiming_mode, width, height, spawn_player_bullet, spawn_laser_beam.
     Only call when game_state.current_screen is STATE_PLAYING or STATE_ENDURANCE.
     """
+    from systems.camera import get_camera
+    
     state = getattr(game_state, "current_screen", None)
     if state not in (STATE_PLAYING, STATE_ENDURANCE):
         return
@@ -45,8 +54,9 @@ def handle_gameplay_input(events, game_state, ctx) -> None:
     aiming_mode = ctx.get("aiming_mode")
     player = game_state.player_rect
     
-    # Get world scale for mouse coordinate conversion
+    # Get world scale and camera for mouse coordinate conversion
     world_scale = ctx.get("world_scale", 1.0)
+    camera = get_camera()  # Use camera if available
 
     # ---- Event-driven: direct allies, shield, overshield, grenade, missile, ally drop, weapon switch, dash ----
     direct_allies_binding = controls.get("direct_allies", MOUSE_BUTTON_RIGHT)
@@ -61,14 +71,14 @@ def handle_gameplay_input(events, game_state, ctx) -> None:
         if event.type == pygame.MOUSEBUTTONDOWN:
             if direct_allies_binding == MOUSE_BUTTON_RIGHT and event.button == 3:
                 # Scale mouse position to world coordinates
-                world_pos = _scale_mouse_pos(event.pos, world_scale)
+                world_pos = _scale_mouse_pos(event.pos, world_scale, camera)
                 game_state.ally_command_target = world_pos
                 game_state.ally_command_timer = 5.0
 
         if event.type == pygame.KEYDOWN:
             if direct_allies_binding != MOUSE_BUTTON_RIGHT and event.key == direct_allies_binding:
                 mx, my = pygame.mouse.get_pos()
-                world_pos = _scale_mouse_pos((mx, my), world_scale)
+                world_pos = _scale_mouse_pos((mx, my), world_scale, camera)
                 game_state.ally_command_target = world_pos
                 game_state.ally_command_timer = 5.0
 

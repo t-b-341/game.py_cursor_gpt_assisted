@@ -225,9 +225,17 @@ class GameApp:
         )
         
         # Scale world surface to display only for gameplay (world_scale > 1.0)
-        # Menus render directly to display and don't need scaling
+        # Skip scaling when camera is active (camera renders directly to display)
+        from systems.camera import get_camera
+        camera = get_camera()
         world_scale = getattr(self.ctx.config, 'world_scale', 1.0)
-        if is_gameplay and world_scale > 1.0 and self.ctx.world_surface is not None:
+        
+        # Only scale if:
+        # 1. In gameplay
+        # 2. World scale > 1.0
+        # 3. Camera is NOT active (camera renders directly to display, no scaling needed)
+        # 4. World surface exists
+        if is_gameplay and world_scale > 1.0 and camera is None and self.ctx.world_surface is not None:
             # Scale down the world surface to fit the display
             # Use scale() instead of smoothscale() for better performance
             # The visual difference at 1.33x is minimal

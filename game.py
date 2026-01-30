@@ -393,6 +393,18 @@ def _build_app_context(screen: pygame.Surface, clock: pygame.time.Clock, display
     )
     sync_from_config(ctx.config)
     print(f"World scale: {world_scale}x | Display: {display_width}x{display_height} | World: {world_width}x{world_height}")
+    
+    # Initialize camera for viewport management
+    from systems.camera import create_camera
+    camera = create_camera(
+        display_width=display_width,
+        display_height=display_height,
+        world_width=world_width,
+        world_height=world_height,
+        smoothing=8.0,  # Smooth camera follow
+    )
+    print(f"Camera initialized: viewport {display_width}x{display_height}, world {world_width}x{world_height}")
+    
     return ctx
 
 def _build_initial_game_state(ctx: AppContext) -> GameState:

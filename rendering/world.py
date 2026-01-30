@@ -157,11 +157,19 @@ def draw_projectile(screen: pygame.Surface, rect: pygame.Rect, color: tuple[int,
     screen.blit(surf, rect.topleft)
 
 
-def _draw_terrain(screen: pygame.Surface, state: Any, ctx: dict) -> None:
+def _draw_terrain(screen: pygame.Surface, state: Any, ctx: dict, render_ctx: RenderContext = None) -> None:
     """Draw static obstacles: trapezoid/triangle blocks, destructible/giant blocks, hazards, health zone."""
+    # Get camera offset for positioning
+    cam_x, cam_y = render_ctx.camera_offset if render_ctx else (0, 0)
+    
     trapezoid_blocks = ctx.get("trapezoid_blocks", [])
     triangle_blocks = ctx.get("triangle_blocks", [])
     for tr in trapezoid_blocks:
+        # Culling: skip if not visible
+        bounding = tr.get("bounding_rect", tr.get("rect"))
+        if render_ctx and bounding and not render_ctx.is_visible(bounding):
+            continue
+        
         block_id = f"trap_{id(tr)}"
         if block_id not in _trapezoid_surface_cache:
             points = tr.get("points", [])
@@ -177,9 +185,13 @@ def _draw_terrain(screen: pygame.Surface, state: Any, ctx: dict) -> None:
                 _trapezoid_surface_cache[block_id] = (cached_surf, (min_x - 5, min_y - 5))
         if block_id in _trapezoid_surface_cache:
             surf, offset = _trapezoid_surface_cache[block_id]
-            screen.blit(surf, offset)
+            screen.blit(surf, (offset[0] - cam_x, offset[1] - cam_y))
 
     for tr in triangle_blocks:
+        bounding = tr.get("bounding_rect", tr.get("rect"))
+        if render_ctx and bounding and not render_ctx.is_visible(bounding):
+            continue
+        
         block_id = f"tri_{id(tr)}"
         if block_id not in _triangle_surface_cache:
             points = tr.get("points", [])
@@ -195,103 +207,140 @@ def _draw_terrain(screen: pygame.Surface, state: Any, ctx: dict) -> None:
                 _triangle_surface_cache[block_id] = (cached_surf, (min_x - 5, min_y - 5))
         if block_id in _triangle_surface_cache:
             surf, offset = _triangle_surface_cache[block_id]
-            screen.blit(surf, offset)
+            screen.blit(surf, (offset[0] - cam_x, offset[1] - cam_y))
 
     for block in ctx.get("destructible_blocks", []):
-        if block.get("is_destructible") and block.get("hp", 0) > 0:
-            draw_cracked_brick_wall_texture(screen, block["rect"], block.get("crack_level", 0))
-        else:
-            draw_silver_wall_texture(screen, block["rect"])
+        rect = block.get("rect")
+        if render_ctx and rect and not render_ctx.is_visible(rect):
+            continue
+        screen_rect = pygame.Rect(rect.x - cam_x, rect.y - cam_y, rect.w, rect.h) if rect else None
+        if screen_rect:
+            if block.get("is_destructible") and block.get("hp", 0) > 0:
+                draw_cracked_brick_wall_texture(screen, screen_rect, block.get("crack_level", 0))
+            else:
+                draw_silver_wall_texture(screen, screen_rect)
+                
     for block in ctx.get("moveable_destructible_blocks", []):
-        if block.get("is_destructible") and block.get("hp", 0) > 0:
-            draw_cracked_brick_wall_texture(screen, block["rect"], block.get("crack_level", 0))
-        else:
-            draw_silver_wall_texture(screen, block["rect"])
+        rect = block.get("rect")
+        if render_ctx and rect and not render_ctx.is_visible(rect):
+            continue
+        screen_rect = pygame.Rect(rect.x - cam_x, rect.y - cam_y, rect.w, rect.h) if rect else None
+        if screen_rect:
+            if block.get("is_destructible") and block.get("hp", 0) > 0:
+                draw_cracked_brick_wall_texture(screen, screen_rect, block.get("crack_level", 0))
+            else:
+                draw_silver_wall_texture(screen, screen_rect)
+                
     for block in ctx.get("giant_blocks", []):
-        draw_silver_wall_texture(screen, block["rect"])
+        rect = block.get("rect")
+        if render_ctx and rect and not render_ctx.is_visible(rect):
+            continue
+        screen_rect = pygame.Rect(rect.x - cam_x, rect.y - cam_y, rect.w, rect.h) if rect else None
+        if screen_rect:
+            draw_silver_wall_texture(screen, screen_rect)
+            
     for block in ctx.get("super_giant_blocks", []):
-        draw_silver_wall_texture(screen, block["rect"])
+        rect = block.get("rect")
+        if render_ctx and rect and not render_ctx.is_visible(rect):
+            continue
+        screen_rect = pygame.Rect(rect.x - cam_x, rect.y - cam_y, rect.w, rect.h) if rect else None
+        if screen_rect:
+            draw_silver_wall_texture(screen, screen_rect)
 
     for hazard in ctx.get("hazard_obstacles", []):
         points = hazard.get("points", [])
         if len(points) >= 3:
-            pygame.draw.polygon(screen, hazard["color"], points)
-            pygame.draw.polygon(screen, (255, 255, 255), points, 2)
+            # Offset hazard points by camera
+            screen_pts = [(p.x - cam_x, p.y - cam_y) if hasattr(p, 'x') else (p[0] - cam_x, p[1] - cam_y) for p in points]
+            pygame.draw.polygon(screen, hazard["color"], screen_pts)
+            pygame.draw.polygon(screen, (255, 255, 255), screen_pts, 2)
 
     zone = ctx.get("moving_health_zone")
     if zone:
-        zone_width = zone["rect"].w
-        zone_height = zone["rect"].h
-        use_triangle = (getattr(state, "wave_in_level", 1) % 2 == 0)
-        
-        # Cache the zone surface by size, color, and shape
-        cache_key = (zone_width, zone_height, zone["color"], use_triangle)
-        if cache_key not in _health_zone_cache:
-            zone_surf = pygame.Surface((zone_width + 20, zone_height + 20), pygame.SRCALPHA)
+        zone_rect = zone["rect"]
+        if not render_ctx or render_ctx.is_visible(zone_rect):
+            zone_width = zone_rect.w
+            zone_height = zone_rect.h
+            use_triangle = (getattr(state, "wave_in_level", 1) % 2 == 0)
+            
+            # Cache the zone surface by size, color, and shape
+            cache_key = (zone_width, zone_height, zone["color"], use_triangle)
+            if cache_key not in _health_zone_cache:
+                zone_surf = pygame.Surface((zone_width + 20, zone_height + 20), pygame.SRCALPHA)
+                if use_triangle:
+                    triangle_points = [
+                        (zone_width // 2, 10),
+                        (10, zone_height + 10),
+                        (zone_width + 10, zone_height + 10),
+                    ]
+                    pygame.draw.polygon(zone_surf, zone["color"], triangle_points)
+                else:
+                    pygame.draw.rect(zone_surf, zone["color"], (10, 10, zone_width, zone_height))
+                _health_zone_cache[cache_key] = zone_surf.convert_alpha()
+            
+            zone_surf = _health_zone_cache[cache_key]
+            screen.blit(zone_surf, (zone_rect.x - 10 - cam_x, zone_rect.y - 10 - cam_y))
+            
+            # Draw border (position changes, so can't cache)
+            border_color = (50, 255, 50)
             if use_triangle:
-                triangle_points = [
-                    (zone_width // 2, 10),
-                    (10, zone_height + 10),
-                    (zone_width + 10, zone_height + 10),
-                ]
-                pygame.draw.polygon(zone_surf, zone["color"], triangle_points)
+                zone_center = (zone_rect.centerx - cam_x, zone_rect.centery - cam_y)
+                pygame.draw.polygon(screen, border_color, [
+                    (zone_center[0], zone_rect.y - cam_y),
+                    (zone_rect.x - cam_x, zone_rect.bottom - cam_y),
+                    (zone_rect.right - cam_x, zone_rect.bottom - cam_y),
+                ], 3)
             else:
-                pygame.draw.rect(zone_surf, zone["color"], (10, 10, zone_width, zone_height))
-            # Use convert_alpha() for hardware-accelerated blitting with transparency
-            _health_zone_cache[cache_key] = zone_surf.convert_alpha()
-        
-        zone_surf = _health_zone_cache[cache_key]
-        screen.blit(zone_surf, (zone["rect"].x - 10, zone["rect"].y - 10))
-        
-        # Draw border (position changes, so can't cache)
-        border_color = (50, 255, 50)
-        if use_triangle:
-            zone_center = (zone["rect"].centerx, zone["rect"].centery)
-            pygame.draw.polygon(screen, border_color, [
-                (zone_center[0], zone["rect"].y),
-                (zone["rect"].x, zone["rect"].bottom),
-                (zone["rect"].right, zone["rect"].bottom),
-            ], 3)
-        else:
-            pygame.draw.rect(screen, border_color, zone["rect"], 3)
+                screen_zone_rect = pygame.Rect(zone_rect.x - cam_x, zone_rect.y - cam_y, zone_rect.w, zone_rect.h)
+                pygame.draw.rect(screen, border_color, screen_zone_rect, 3)
 
     for pad in ctx.get("teleporter_pads", []):
         r = pad.get("rect")
         if not r:
             continue
-        cx, cy = r.centerx, r.centery
+        if render_ctx and not render_ctx.is_visible(r):
+            continue
+        cx, cy = r.centerx - cam_x, r.centery - cam_y
         half = r.w // 2
         pts = [(cx, cy - half), (cx + half, cy), (cx, cy + half), (cx - half, cy)]
         pygame.draw.polygon(screen, (50, 220, 80), pts)
         pygame.draw.polygon(screen, (180, 80, 220), pts, 3)
 
 
-def _draw_pickups(screen: pygame.Surface, state: Any, ctx: dict) -> None:
+def _draw_pickups(screen: pygame.Surface, state: Any, ctx: dict, render_ctx: RenderContext = None) -> None:
     """Draw pickups and their labels."""
+    cam_x, cam_y = render_ctx.camera_offset if render_ctx else (0, 0)
     weapon_names = ctx.get("weapon_names", {})
     small_font = ctx.get("small_font")
     for pickup in getattr(state, "pickups", []):
-        pygame.draw.circle(screen, pickup["color"], pickup["rect"].center, pickup["rect"].w // 2)
-        pygame.draw.circle(screen, (255, 255, 255), pickup["rect"].center, pickup["rect"].w // 2, 2)
+        rect = pickup["rect"]
+        # Culling
+        if render_ctx and not render_ctx.is_visible(rect):
+            continue
+        center = (rect.centerx - cam_x, rect.centery - cam_y)
+        pygame.draw.circle(screen, pickup["color"], center, rect.w // 2)
+        pygame.draw.circle(screen, (255, 255, 255), center, rect.w // 2, 2)
         if small_font:
             if pickup.get("is_weapon_drop", False):
                 pickup_name = weapon_names.get(pickup.get("type", ""), pickup.get("type", "").upper())
             else:
                 pickup_name = pickup.get("type", "").upper().replace("_", " ")
             name_surf = small_font.render(pickup_name, True, (255, 255, 255))
-            name_rect = name_surf.get_rect(center=(pickup["rect"].centerx, pickup["rect"].y - 20))
+            name_rect = name_surf.get_rect(center=(rect.centerx - cam_x, rect.y - 20 - cam_y))
             outline_surf = small_font.render(pickup_name, True, (0, 0, 0))
             for dx, dy in [(-1, -1), (-1, 1), (1, -1), (1, 1)]:
                 screen.blit(outline_surf, (name_rect.x + dx, name_rect.y + dy))
             screen.blit(name_surf, name_rect)
 
 
-def _draw_projectiles(screen: pygame.Surface, state: Any) -> None:
+def _draw_projectiles(screen: pygame.Surface, state: Any, render_ctx: RenderContext = None) -> None:
     """Draw enemy, player, and friendly projectiles with cached surface blitting.
     
     Uses pre-rendered cached surfaces instead of drawing primitives each frame.
     Groups by cache key (color, shape, size) for efficient batch processing.
     """
+    cam_x, cam_y = render_ctx.camera_offset if render_ctx else (0, 0)
+    
     # Collect all projectiles grouped by their visual cache key
     # cache_key -> list of (x, y) positions
     batches: dict[tuple, list[tuple[int, int]]] = {}
@@ -307,6 +356,10 @@ def _draw_projectiles(screen: pygame.Surface, state: Any) -> None:
         if not rect:
             continue
         
+        # Culling: skip off-screen projectiles
+        if render_ctx and not render_ctx.is_visible(rect):
+            continue
+        
         color = proj.get("color", (255, 255, 255))
         shape = proj.get("shape", "circle")
         # Round size to reduce cache entries
@@ -315,7 +368,8 @@ def _draw_projectiles(screen: pygame.Surface, state: Any) -> None:
         
         if cache_key not in batches:
             batches[cache_key] = []
-        batches[cache_key].append((rect.x, rect.y))
+        # Apply camera offset to position
+        batches[cache_key].append((rect.x - cam_x, rect.y - cam_y))
     
     # Blit cached surfaces for each batch using blits() for better performance
     for cache_key, positions in batches.items():
@@ -329,22 +383,44 @@ def _draw_projectiles(screen: pygame.Surface, state: Any) -> None:
             screen.blit(surf, positions[0])
 
 
-def _draw_allies_and_enemies(screen: pygame.Surface, state: Any) -> None:
+def _draw_allies_and_enemies(screen: pygame.Surface, state: Any, render_ctx: RenderContext = None) -> None:
     """Draw friendly AI and enemies (unified entity.draw or rect fallback)."""
+    cam_x, cam_y = render_ctx.camera_offset if render_ctx else (0, 0)
+    
     for friendly in getattr(state, "friendly_ai", []):
+        r = friendly.get("rect")
+        if render_ctx and r and not render_ctx.is_visible(r):
+            continue
         if hasattr(friendly, "draw"):
-            friendly.draw(screen)
+            # For objects with custom draw, pass camera offset
+            if hasattr(friendly, "draw_with_offset"):
+                friendly.draw_with_offset(screen, cam_x, cam_y)
+            else:
+                # Fallback: draw at offset position
+                if r:
+                    screen_r = pygame.Rect(r.x - cam_x, r.y - cam_y, r.w, r.h)
+                    pygame.draw.rect(screen, friendly.get("color", (100, 200, 100)), screen_r)
         else:
-            r = friendly.get("rect")
             if r:
-                pygame.draw.rect(screen, friendly.get("color", (100, 200, 100)), r)
+                screen_r = pygame.Rect(r.x - cam_x, r.y - cam_y, r.w, r.h)
+                pygame.draw.rect(screen, friendly.get("color", (100, 200, 100)), screen_r)
+                
     enemies_list = getattr(state, "enemies", [])
     highlight_when_few = len(enemies_list) <= 5
     for enemy in enemies_list:
         r = enemy.get("rect") if isinstance(enemy, dict) else getattr(enemy, "rect", None)
+        if render_ctx and r and not render_ctx.is_visible(r):
+            continue
         if hasattr(enemy, "draw"):
-            enemy.draw(screen)
+            if hasattr(enemy, "draw_with_offset"):
+                enemy.draw_with_offset(screen, cam_x, cam_y)
+            elif r:
+                # Fallback for dict-based enemies
+                screen_r = pygame.Rect(r.x - cam_x, r.y - cam_y, r.w, r.h)
+                base_color = enemy.get("color", (200, 50, 50))
+                pygame.draw.rect(screen, base_color, screen_r)
         elif r:
+            screen_r = pygame.Rect(r.x - cam_x, r.y - cam_y, r.w, r.h)
             base_color = enemy.get("color", (200, 50, 50))
             flash_t = enemy.get("damage_flash_timer", 0.0)
             if flash_t > 0:
@@ -352,71 +428,96 @@ def _draw_allies_and_enemies(screen: pygame.Surface, state: Any) -> None:
                 base_color = tuple(min(255, int(c + (255 - c) * flash_frac)) for c in base_color)
             # Draw rhomboid shape for evasive enemies, rectangle for others
             if enemy.get("shape") == "rhomboid":
-                cx, cy = r.centerx, r.centery
-                hw, hh = r.width // 2, r.height // 2
+                cx, cy = screen_r.centerx, screen_r.centery
+                hw, hh = screen_r.width // 2, screen_r.height // 2
                 points = [(cx, cy - hh), (cx + hw, cy), (cx, cy + hh), (cx - hw, cy)]
                 pygame.draw.polygon(screen, base_color, points)
             else:
-                pygame.draw.rect(screen, base_color, r)
+                pygame.draw.rect(screen, base_color, screen_r)
         if highlight_when_few and r:
-            out = r.inflate(8, 8)
+            screen_r = pygame.Rect(r.x - cam_x, r.y - cam_y, r.w, r.h)
+            out = screen_r.inflate(8, 8)
             pygame.draw.rect(screen, (255, 255, 0), out, 3)
 
 
-def _draw_effects(screen: pygame.Surface, state: Any) -> None:
+def _draw_effects(screen: pygame.Surface, state: Any, render_ctx: RenderContext = None) -> None:
     """Draw grenade explosions and missiles."""
+    cam_x, cam_y = render_ctx.camera_offset if render_ctx else (0, 0)
+    
     for explosion in getattr(state, "grenade_explosions", []):
-        pygame.draw.circle(screen, (255, 100, 0), (explosion["x"], explosion["y"]), explosion["radius"], 3)
-        pygame.draw.circle(screen, (255, 200, 0), (explosion["x"], explosion["y"]), explosion["radius"] // 2)
+        ex, ey = explosion["x"] - cam_x, explosion["y"] - cam_y
+        pygame.draw.circle(screen, (255, 100, 0), (int(ex), int(ey)), explosion["radius"], 3)
+        pygame.draw.circle(screen, (255, 200, 0), (int(ex), int(ey)), explosion["radius"] // 2)
+        
     for missile in getattr(state, "missiles", []):
-        pygame.draw.rect(screen, (160, 80, 220), missile["rect"])
-        pygame.draw.rect(screen, (100, 40, 160), missile["rect"], 2)
+        r = missile["rect"]
+        if render_ctx and not render_ctx.is_visible(r):
+            continue
+        screen_r = pygame.Rect(r.x - cam_x, r.y - cam_y, r.w, r.h)
+        pygame.draw.rect(screen, (160, 80, 220), screen_r)
+        pygame.draw.rect(screen, (100, 40, 160), screen_r, 2)
 
 
-def _draw_player(screen: pygame.Surface, state: Any) -> None:
+def _draw_player(screen: pygame.Surface, state: Any, render_ctx: RenderContext = None) -> None:
     """Draw player circle (and border); shield-active uses light blue tint."""
+    cam_x, cam_y = render_ctx.camera_offset if render_ctx else (0, 0)
+    
     player = getattr(state, "player_rect", None)
     if player is None:
         return
+    
+    # Player center in screen coords
+    center = (player.centerx - cam_x, player.centery - cam_y)
+    
     player_color = (255, 255, 255)
     border_color = (200, 200, 200)
     if getattr(state, "shield_active", False):
         player_color = (100, 200, 255)  # Light blue when shield active
         border_color = (150, 220, 255)
-    pygame.draw.circle(screen, border_color, player.center, player.w // 2 + 2, 2)
-    pygame.draw.circle(screen, player_color, player.center, player.w // 2)
+    pygame.draw.circle(screen, border_color, center, player.w // 2 + 2, 2)
+    pygame.draw.circle(screen, player_color, center, player.w // 2)
 
 
-def _draw_beams(screen: pygame.Surface, state: Any) -> None:
+def _draw_beams(screen: pygame.Surface, state: Any, render_ctx: RenderContext = None) -> None:
     """Draw laser and wave beams (player and enemy)."""
+    cam_x, cam_y = render_ctx.camera_offset if render_ctx else (0, 0)
+    
     for beam in getattr(state, "laser_beams", []):
         if "start" in beam and "end" in beam:
-            pygame.draw.line(
-                screen, beam.get("color", (255, 50, 50)), beam["start"], beam["end"], beam.get("width", 5)
-            )
+            start = beam["start"]
+            end = beam["end"]
+            # Apply camera offset
+            s = (start.x - cam_x, start.y - cam_y) if hasattr(start, 'x') else (start[0] - cam_x, start[1] - cam_y)
+            e = (end.x - cam_x, end.y - cam_y) if hasattr(end, 'x') else (end[0] - cam_x, end[1] - cam_y)
+            pygame.draw.line(screen, beam.get("color", (255, 50, 50)), s, e, beam.get("width", 5))
+            
     for beam in getattr(state, "enemy_laser_beams", []):
         if "start" in beam and "end" in beam:
             start, end = beam["start"], beam["end"]
+            # Apply camera offset
+            sx, sy = (start.x - cam_x, start.y - cam_y) if hasattr(start, 'x') else (start[0] - cam_x, start[1] - cam_y)
+            ex, ey = (end.x - cam_x, end.y - cam_y) if hasattr(end, 'x') else (end[0] - cam_x, end[1] - cam_y)
+            
             deploy_timer = beam.get("deploy_timer", 0.0)
             deploy_time = max(0.001, beam.get("deploy_time", 1.0))
             if deploy_timer > 0:
                 frac = 1.0 - (deploy_timer / deploy_time)
-                mid = pygame.Vector2(
-                    start.x + (end.x - start.x) * frac,
-                    start.y + (end.y - start.y) * frac,
-                )
+                mid = (sx + (ex - sx) * frac, sy + (ey - sy) * frac)
                 color = beam.get("color", (200, 80, 255))
                 deploy_color = (color[0] // 2, color[1] // 2, min(255, color[2] // 2 + 128))
-                pygame.draw.line(
-                    screen, deploy_color, start, mid, max(1, beam.get("width", 4) - 1)
-                )
+                pygame.draw.line(screen, deploy_color, (sx, sy), mid, max(1, beam.get("width", 4) - 1))
             else:
-                pygame.draw.line(
-                    screen, beam.get("color", (200, 80, 255)), start, end, beam.get("width", 4)
-                )
+                pygame.draw.line(screen, beam.get("color", (200, 80, 255)), (sx, sy), (ex, ey), beam.get("width", 4))
 
 
 from systems.perf_timing import perf_timer
+
+
+def _track_culling_stats(render_ctx: RenderContext, total: int, visible: int) -> None:
+    """Track entity culling stats on the camera."""
+    if render_ctx and render_ctx.camera:
+        render_ctx.camera.entities_total += total
+        render_ctx.camera.entities_culled += (total - visible)
 
 
 def render_background(state: Any, ctx: dict, render_ctx: RenderContext) -> None:
@@ -429,23 +530,23 @@ def render_background(state: Any, ctx: dict, render_ctx: RenderContext) -> None:
         theme = level_themes.get(getattr(state, "current_level", 1), default_theme)
         bg = theme.get("bg_color", (0, 0, 0))
         render_ctx.screen.fill(bg)
-        _draw_terrain(render_ctx.screen, state, ctx)
-        _draw_pickups(render_ctx.screen, state, ctx)
+        _draw_terrain(render_ctx.screen, state, ctx, render_ctx)
+        _draw_pickups(render_ctx.screen, state, ctx, render_ctx)
 
 
 def render_entities(state: Any, ctx: dict, render_ctx: RenderContext) -> None:
     """Draw entities: allies, enemies, and player. Mid-layer of the frame."""
     with perf_timer("render_entities"):
-        _draw_allies_and_enemies(render_ctx.screen, state)
-        _draw_player(render_ctx.screen, state)
+        _draw_allies_and_enemies(render_ctx.screen, state, render_ctx)
+        _draw_player(render_ctx.screen, state, render_ctx)
 
 
 def render_projectiles(state: Any, ctx: dict, render_ctx: RenderContext) -> None:
     """Draw projectiles, particles (explosions, missiles), and beams. On top of entities."""
     with perf_timer("render_projectiles"):
-        _draw_projectiles(render_ctx.screen, state)
-        _draw_effects(render_ctx.screen, state)
-        _draw_beams(render_ctx.screen, state)
+        _draw_projectiles(render_ctx.screen, state, render_ctx)
+        _draw_effects(render_ctx.screen, state, render_ctx)
+        _draw_beams(render_ctx.screen, state, render_ctx)
 
 
 def render_gameplay(state: Any, screen: pygame.Surface, ctx: dict) -> None:

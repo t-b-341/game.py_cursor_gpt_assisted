@@ -147,6 +147,24 @@ def _sim_enforce_entity_limits(gs: GameState, sim_dt: float, app_ctx: AppContext
         gs.laser_beams[:] = gs.laser_beams[-max_lasers:]
 
 
+def _sim_camera_update(gs: GameState, sim_dt: float, app_ctx: AppContext) -> None:
+    """Update camera to follow the player. Should run after movement systems."""
+    from systems.camera import get_camera
+    from systems.perf_timing import perf_timer
+    
+    with perf_timer("camera_update"):
+        camera = get_camera()
+        if camera is None:
+            return
+        
+        player = gs.player_rect
+        if player is not None:
+            camera.follow(player, sim_dt)
+            
+            # Reset stats for next frame
+            camera.reset_stats()
+
+
 SIMULATION_SYSTEMS = [
     _sim_player_and_ability_timers,
     _sim_damage_and_weapon_message_cleanup,
@@ -160,4 +178,5 @@ SIMULATION_SYSTEMS = [
     _sim_wave_beams_cleanup,
     _sim_limit_damage_numbers,
     _sim_enforce_entity_limits,
+    _sim_camera_update,  # Update camera after all movement
 ]

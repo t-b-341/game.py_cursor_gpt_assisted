@@ -3,6 +3,10 @@ Collision and push movement systems for player and enemies.
 
 This module handles solid collision detection and block pushing mechanics,
 separated from higher-level movement logic.
+
+Optimizations:
+- Spatial grid for enemy-block collision (O(1) average instead of O(n))
+- Frame-based caching to avoid rebuilding grids
 """
 from __future__ import annotations
 from typing import TYPE_CHECKING
@@ -11,10 +15,88 @@ import pygame
 
 from geometry_utils import can_move_rect, clamp_rect_to_screen
 from hazards import check_point_in_hazard
+from .spatial_grid import SpatialGrid
 
 if TYPE_CHECKING:
     from state import GameState
     from level_state import LevelState
+
+
+# Module-level spatial grid for enemy-block collisions
+_enemy_block_grid: SpatialGrid | None = None
+_enemy_block_grid_frame: int = -1  # Frame ID when grid was built
+_enemy_block_grid_level_id: int = -1  # Level ID to detect level changes
+
+
+def _get_enemy_block_grid(level: "LevelState", state: "GameState") -> SpatialGrid:
+    """Get or rebuild the spatial grid for enemy-block collisions.
+    
+    Grid is rebuilt once per frame or when level changes.
+    """
+    global _enemy_block_grid, _enemy_block_grid_frame, _enemy_block_grid_level_id
+    
+    frame_id = getattr(state, "_collision_frame_id", 0)
+    level_id = id(level)
+    
+    # Check if we can reuse the cached grid
+    if (_enemy_block_grid is not None and 
+        _enemy_block_grid_frame == frame_id and 
+        _enemy_block_grid_level_id == level_id):
+        return _enemy_block_grid
+    
+    # Rebuild grid
+    width = getattr(level, "width", 1920)
+    height = getattr(level, "height", 1080)
+    
+    if _enemy_block_grid is None:
+        _enemy_block_grid = SpatialGrid(width, height, cell_size=128)
+    else:
+        _enemy_block_grid.clear()
+    
+    # Insert all collidable blocks
+    for b in level.static_blocks:
+        if b.get("rect"):
+            _enemy_block_grid.insert(b, b["rect"])
+    
+    for b in level.destructible_blocks:
+        if b.get("rect"):
+            _enemy_block_grid.insert(b, b["rect"])
+    
+    for b in level.moveable_blocks:
+        if b.get("rect"):
+            _enemy_block_grid.insert(b, b["rect"])
+    
+    for gb in level.giant_blocks:
+        if gb.get("rect"):
+            _enemy_block_grid.insert(gb, gb["rect"])
+    
+    for sgb in level.super_giant_blocks:
+        if sgb.get("rect"):
+            _enemy_block_grid.insert(sgb, sgb["rect"])
+    
+    for tb in level.trapezoid_blocks:
+        br = tb.get("bounding_rect", tb.get("rect"))
+        if br:
+            _enemy_block_grid.insert(tb, br)
+    
+    for tr in level.triangle_blocks:
+        br = tr.get("bounding_rect", tr.get("rect"))
+        if br:
+            _enemy_block_grid.insert(tr, br)
+    
+    # Insert pickups (enemies avoid these)
+    for pickup in state.pickups:
+        if pickup.get("rect"):
+            _enemy_block_grid.insert(pickup, pickup["rect"])
+    
+    # Insert health zone if present
+    if level.moving_health_zone and level.moving_health_zone.get("rect"):
+        _enemy_block_grid.insert(level.moving_health_zone, level.moving_health_zone["rect"])
+    
+    _enemy_block_grid_frame = frame_id
+    _enemy_block_grid_level_id = level_id
+    
+    return _enemy_block_grid
 
 
 def _check_player_collision_with_block(
@@ -92,63 +174,33 @@ def _check_enemy_collision(
     """
     Check if enemy collides with any solid object.
     
+    Uses spatial grid for O(1) average case instead of O(n) linear scan.
+    
     Returns:
         True if collision detected, False otherwise
     """
-    # Check static blocks
-    for b in level.static_blocks:
-        if enemy_rect.colliderect(b["rect"]):
-            return True
+    # Use spatial grid for fast collision checking
+    grid = _get_enemy_block_grid(level, state)
     
-    # Check destructible blocks
-    for b in level.destructible_blocks:
-        if enemy_rect.colliderect(b["rect"]):
+    # Query only objects in nearby cells
+    for obj in grid.query_rect(enemy_rect):
+        rect = obj.get("rect") if isinstance(obj, dict) else getattr(obj, "rect", None)
+        if rect is None:
+            # Trapezoid/triangle blocks may have bounding_rect
+            rect = obj.get("bounding_rect") if isinstance(obj, dict) else getattr(obj, "bounding_rect", None)
+        if rect and enemy_rect.colliderect(rect):
             return True
-    
-    # Check moveable blocks
-    for b in level.moveable_blocks:
-        if enemy_rect.colliderect(b["rect"]):
-            return True
-    
-    # Check giant blocks
-    for gb in level.giant_blocks:
-        if enemy_rect.colliderect(gb["rect"]):
-            return True
-    
-    # Check super giant blocks
-    for sgb in level.super_giant_blocks:
-        if enemy_rect.colliderect(sgb["rect"]):
-            return True
-    
-    # Check trapezoid blocks
-    for tb in level.trapezoid_blocks:
-        if enemy_rect.colliderect(tb.get("bounding_rect", tb.get("rect"))):
-            return True
-    
-    # Check triangle blocks
-    for tr in level.triangle_blocks:
-        if enemy_rect.colliderect(tr.get("bounding_rect", tr.get("rect"))):
-            return True
-    
-    # Check pickups
-    for pickup in state.pickups:
-        if enemy_rect.colliderect(pickup["rect"]):
-            return True
-    
-    # Check moving health zone
-    if level.moving_health_zone and enemy_rect.colliderect(level.moving_health_zone["rect"]):
-        return True
     
     # Check player
     if state.player_rect is not None and enemy_rect.colliderect(state.player_rect):
         return True
     
-    # Check teleporter pads
+    # Check teleporter pads (usually small list, no grid needed)
     for pad in state.teleporter_pads:
         if enemy_rect.colliderect(pad["rect"]):
             return True
     
-    # Check friendly AI (skip self)
+    # Check friendly AI (skip self) - usually small list
     for f in state.friendly_ai:
         if f["rect"] is enemy_rect:
             continue
@@ -156,6 +208,8 @@ def _check_enemy_collision(
             return True
     
     # Check other enemies (prevent stacking)
+    # This is O(n) per enemy = O(n^2) total, but enemies are already in a list
+    # For large enemy counts, could use enemy grid, but typically < 50 enemies
     for other_e in state.enemies:
         if other_e["rect"] is not enemy_rect and enemy_rect.colliderect(other_e["rect"]):
             return True

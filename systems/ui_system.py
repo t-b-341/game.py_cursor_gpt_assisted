@@ -51,14 +51,23 @@ def render_hud(state: "GameState", ctx: dict, render_ctx: RenderContext) -> None
         return
     screen = render_ctx.screen
     font, big_font, small_font = render_ctx.font, render_ctx.big_font, render_ctx.small_font
-    WIDTH, HEIGHT = render_ctx.width, render_ctx.height
+    
+    # Use display dimensions for fixed HUD elements (not world dimensions)
+    # When camera is active, screen is display size but width/height are world size
+    if render_ctx.camera:
+        WIDTH = render_ctx.display_width or render_ctx.width
+        HEIGHT = render_ctx.display_height or render_ctx.height
+    else:
+        WIDTH, HEIGHT = render_ctx.width, render_ctx.height
+    
     ui_show_health_bars = ctx.get("ui_show_health_bars", True)
     ui_show_hud = ctx.get("ui_show_hud", True)
     ui_show_metrics = ctx.get("ui_show_metrics", True)
     ui_show_fps = ctx.get("ui_show_fps", True)  # FPS graph toggle
     if not font or not big_font or not small_font:
         return
-    _draw_entity_health_bars(screen, state, ui_show_health_bars)
+    # Pass camera for correct health bar positioning (world-space)
+    _draw_entity_health_bars(screen, state, ui_show_health_bars, camera=render_ctx.camera)
     if ui_show_hud:
         _draw_score(screen, state, big_font, WIDTH)
         if ui_show_metrics:
@@ -78,11 +87,19 @@ def render_overlays(state: "GameState", ctx: dict, render_ctx: RenderContext) ->
         return
     screen = render_ctx.screen
     font, big_font, small_font = render_ctx.font, render_ctx.big_font, render_ctx.small_font
-    WIDTH, HEIGHT = render_ctx.width, render_ctx.height
+    
+    # Use display dimensions for fixed overlay elements (not world dimensions)
+    if render_ctx.camera:
+        WIDTH = render_ctx.display_width or render_ctx.width
+        HEIGHT = render_ctx.display_height or render_ctx.height
+    else:
+        WIDTH, HEIGHT = render_ctx.width, render_ctx.height
+    
     ui_show_metrics = ctx.get("ui_show_metrics", True)
     if not font or not small_font:
         return
-    _draw_damage_numbers(screen, state, font, small_font)
+    # Pass camera for correct damage number positioning (world-space)
+    _draw_damage_numbers(screen, state, font, small_font, camera=render_ctx.camera)
     _draw_defeat_messages(screen, state, small_font, WIDTH, HEIGHT)
     _draw_weapon_pickup_messages(screen, state, font, WIDTH, HEIGHT)
     _draw_wave_countdown(screen, state, font, big_font, WIDTH, HEIGHT)
@@ -216,7 +233,9 @@ def _draw_fps_graph(screen: pygame.Surface, small_font: Any, WIDTH: int, HEIGHT:
 
 
 def _draw_perf_overlay(screen: pygame.Surface, state, small_font, WIDTH: int, HEIGHT: int) -> None:
-    """Draw performance overlay with entity counts for debugging frame drops."""
+    """Draw performance overlay with entity counts and camera stats for debugging frame drops."""
+    from systems.camera import get_camera
+    
     # Position in top-right corner
     x = WIDTH - 200
     y = 10
@@ -236,11 +255,16 @@ def _draw_perf_overlay(screen: pygame.Surface, state, small_font, WIDTH: int, HE
         ("Wave Beams", len(getattr(state, "wave_beams", []))),
     ]
     
+    # Get camera culling stats
+    camera = get_camera()
+    camera_stats = camera.get_culling_stats() if camera else None
+    
     # Calculate total
     total = sum(c[1] for c in counts)
     
-    # Draw background
-    bg_height = (len(counts) + 2) * line_height + 10
+    # Calculate background height (include camera stats if available)
+    extra_lines = 3 if camera_stats else 0
+    bg_height = (len(counts) + 2 + extra_lines) * line_height + 10
     bg_surf = pygame.Surface((190, bg_height), pygame.SRCALPHA)
     bg_surf.fill((20, 20, 20, 200))
     screen.blit(bg_surf, (x - 5, y - 5))
@@ -269,21 +293,54 @@ def _draw_perf_overlay(screen: pygame.Surface, state, small_font, WIDTH: int, HE
     total_color = (100, 255, 100) if total < 300 else (255, 255, 100) if total < 600 else (255, 100, 100)
     total_text = _get_cached_text(small_font, f"TOTAL: {total}", total_color)
     screen.blit(total_text, (x, y))
+    y += line_height
+    
+    # Draw camera/culling stats if available
+    if camera_stats:
+        y += 5
+        # Culling rate - higher is better (more entities skipped)
+        cull_pct = int(camera_stats["cull_rate"] * 100)
+        cull_color = (100, 255, 100) if cull_pct > 30 else (200, 200, 200)
+        cull_text = _get_cached_text(small_font, f"Culled: {cull_pct}%", cull_color)
+        screen.blit(cull_text, (x, y))
+        y += line_height
+        
+        # Camera position
+        cam_pos_text = _get_cached_text(small_font, f"Cam: {camera_stats['viewport_x']},{camera_stats['viewport_y']}", (150, 150, 255))
+        screen.blit(cam_pos_text, (x, y))
 
 
-def _draw_entity_health_bars(screen: pygame.Surface, state, show: bool) -> None:
+def _draw_entity_health_bars(screen: pygame.Surface, state, show: bool, camera=None) -> None:
+    """Draw health bars for allies and enemies. Uses camera offset if provided."""
     if not show:
         return
+    
+    # Get camera offset for positioning
+    cam_x, cam_y = (int(camera.x), int(camera.y)) if camera else (0, 0)
+    
     for friendly in getattr(state, "friendly_ai", []):
         if friendly.get("hp", 0) > 0:
             r = friendly.get("rect")
             if r:
-                draw_health_bar(screen, r.x, r.y - 10, r.w, 5, friendly["hp"], friendly.get("max_hp", friendly["hp"]))
+                # Skip if off-screen (culling)
+                if camera and not camera.is_visible(r):
+                    continue
+                # Apply camera offset
+                screen_x = r.x - cam_x
+                screen_y = r.y - 10 - cam_y
+                draw_health_bar(screen, screen_x, screen_y, r.w, 5, friendly["hp"], friendly.get("max_hp", friendly["hp"]))
+                
     for enemy in getattr(state, "enemies", []):
         if enemy.get("hp", 0) > 0:
             r = enemy.get("rect")
             if r:
-                draw_health_bar(screen, r.x, r.y - 10, r.w, 5, enemy["hp"], enemy.get("max_hp", enemy["hp"]))
+                # Skip if off-screen (culling)
+                if camera and not camera.is_visible(r):
+                    continue
+                # Apply camera offset
+                screen_x = r.x - cam_x
+                screen_y = r.y - 10 - cam_y
+                draw_health_bar(screen, screen_x, screen_y, r.w, 5, enemy["hp"], enemy.get("max_hp", enemy["hp"]))
 
 
 def _draw_score(screen: pygame.Surface, state, big_font, WIDTH: int) -> None:
@@ -419,7 +476,11 @@ def _draw_metrics_and_bars(
     screen.blit(controls_surf, controls_rect)
 
 
-def _draw_damage_numbers(screen: pygame.Surface, state, font, small_font) -> None:
+def _draw_damage_numbers(screen: pygame.Surface, state, font, small_font, camera=None) -> None:
+    """Draw floating damage numbers. Uses camera offset if provided."""
+    # Get camera offset for positioning
+    cam_x, cam_y = (int(camera.x), int(camera.y)) if camera else (0, 0)
+    
     for dmg_num in getattr(state, "damage_numbers", []):
         if dmg_num.get("timer", 0) > 0:
             alpha = int(255 * (dmg_num["timer"] / 2.0))
@@ -428,7 +489,10 @@ def _draw_damage_numbers(screen: pygame.Surface, state, font, small_font) -> Non
                 text_surf = font.render(dmg_num["value"], True, color[:3])
             else:
                 text_surf = small_font.render(str(int(dmg_num.get("damage", 0))), True, color[:3])
-            screen.blit(text_surf, (dmg_num["x"], dmg_num["y"]))
+            # Apply camera offset
+            screen_x = dmg_num["x"] - cam_x
+            screen_y = dmg_num["y"] - cam_y
+            screen.blit(text_surf, (screen_x, screen_y))
 
 
 def _draw_defeat_messages(screen: pygame.Surface, state, small_font, WIDTH: int, HEIGHT: int) -> None:

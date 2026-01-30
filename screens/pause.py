@@ -10,6 +10,11 @@ from systems.audio_system import (
 )
 
 
+# Cached overlay surface to avoid per-frame allocation
+_overlay_cache: pygame.Surface | None = None
+_overlay_size: tuple[int, int] = (0, 0)
+
+
 def handle_events(events, game_state, ctx):
     """
     Process pause-screen events. Mutates game_state.ui.pause_selected.
@@ -243,15 +248,22 @@ def handle_events(events, game_state, ctx):
 
 def render(render_ctx: RenderContext, game_state, screen_ctx) -> None:
     """Draw pause overlay and menu. render_ctx: screen, fonts, width, height."""
+    global _overlay_cache, _overlay_size
+    
     screen = render_ctx.screen
     WIDTH = render_ctx.width
     HEIGHT = render_ctx.height
     font = render_ctx.font
     big_font = render_ctx.big_font
-    overlay = pygame.Surface((WIDTH, HEIGHT))
-    overlay.set_alpha(128)
-    overlay.fill((0, 0, 0))
-    screen.blit(overlay, (0, 0))
+    
+    # Reuse cached overlay surface (avoids per-frame allocation)
+    if _overlay_cache is None or _overlay_size != (WIDTH, HEIGHT):
+        _overlay_cache = pygame.Surface((WIDTH, HEIGHT))
+        _overlay_cache.set_alpha(128)
+        _overlay_cache.fill((0, 0, 0))
+        _overlay_size = (WIDTH, HEIGHT)
+    
+    screen.blit(_overlay_cache, (0, 0))
 
     if game_state is None:
         return

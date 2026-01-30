@@ -83,48 +83,97 @@ hazard_obstacles: list[dict] = [
 ]
 
 
-def generate_paraboloid_points(center: pygame.Vector2, width: float, height: float, rotation: float) -> list[pygame.Vector2]:
-    """Generate points for a paraboloid shape (parabolic curve in 2D)."""
-    points = []
-    num_points = 100  # Number of points for smooth curve
+# Pre-computed base paraboloid points (unit size, no rotation)
+# These are computed once at module load and reused
+_NUM_PARABOLOID_POINTS = 50  # Reduced from 100 for performance (still smooth)
+_BASE_PARABOLOID_T = [(i / _NUM_PARABOLOID_POINTS) * 2.0 - 1.0 for i in range(_NUM_PARABOLOID_POINTS + 1)]
+_BASE_PARABOLOID_X = [t * 0.5 for t in _BASE_PARABOLOID_T]  # Unit half-width
+_BASE_PARABOLOID_Y = [(t ** 2) * 0.5 for t in _BASE_PARABOLOID_T]  # Unit half-height
 
-    for i in range(num_points + 1):
-        t = (i / num_points) * 2.0 - 1.0
-        x_local = t * (width / 2)
-        y_local = (t ** 2) * (height / 2)  # Parabolic curve
-        cos_r = math.cos(rotation)
-        sin_r = math.sin(rotation)
-        x_rotated = x_local * cos_r - y_local * sin_r
-        y_rotated = x_local * sin_r + y_local * cos_r
-        point = pygame.Vector2(
-            center.x + x_rotated,
-            center.y + y_rotated
-        )
-        points.append(point)
+# Pre-computed trapezoid local points (unit size)
+_BASE_TRAPEZOID_LOCAL = [
+    (-0.3, -0.5),  # Top left (60% of width / 2)
+    (0.3, -0.5),   # Top right
+    (0.5, 0.5),    # Bottom right
+    (-0.5, 0.5),   # Bottom left
+]
 
-    return points
+# Cache for hazard points keyed by (id, rotation_quantized)
+_hazard_points_cache: dict[tuple, list[pygame.Vector2]] = {}
+_ROTATION_QUANTIZE = 0.05  # ~3 degree steps for caching
 
 
-def generate_trapezoid_points(center: pygame.Vector2, width: float, height: float, rotation: float) -> list[pygame.Vector2]:
-    """Generate points for a trapezoid shape."""
-    points = []
-    top_width = width * 0.6
-    bottom_width = width
-    local_points = [
-        (-top_width / 2, -height / 2),  # Top left
-        (top_width / 2, -height / 2),   # Top right
-        (bottom_width / 2, height / 2),  # Bottom right
-        (-bottom_width / 2, height / 2),  # Bottom left
-    ]
+def _quantize_rotation(rotation: float) -> float:
+    """Quantize rotation to reduce cache misses."""
+    return round(rotation / _ROTATION_QUANTIZE) * _ROTATION_QUANTIZE
+
+
+def generate_paraboloid_points(center: pygame.Vector2, width: float, height: float, rotation: float, hazard_id: int = 0) -> list[pygame.Vector2]:
+    """Generate points for a paraboloid shape (parabolic curve in 2D). Uses caching."""
+    rot_q = _quantize_rotation(rotation)
+    cache_key = ("paraboloid", hazard_id, rot_q)
+    
+    cached = _hazard_points_cache.get(cache_key)
+    if cached is not None:
+        # Fast path: translate cached points to new center
+        cx, cy = center.x, center.y
+        return [pygame.Vector2(p.x + cx, p.y + cy) for p in cached]
+    
+    # Compute rotated unit points (centered at origin)
     cos_r = math.cos(rotation)
     sin_r = math.sin(rotation)
-    for x_local, y_local in local_points:
-        x_rotated = x_local * cos_r - y_local * sin_r
-        y_rotated = x_local * sin_r + y_local * cos_r
-        point = pygame.Vector2(center.x + x_rotated, center.y + y_rotated)
-        points.append(point)
+    unit_points = []
+    for bx, by in zip(_BASE_PARABOLOID_X, _BASE_PARABOLOID_Y):
+        x_scaled = bx * width
+        y_scaled = by * height
+        x_rot = x_scaled * cos_r - y_scaled * sin_r
+        y_rot = x_scaled * sin_r + y_scaled * cos_r
+        unit_points.append(pygame.Vector2(x_rot, y_rot))
+    
+    # Cache unit points (origin-centered)
+    _hazard_points_cache[cache_key] = unit_points
+    
+    # Limit cache size
+    if len(_hazard_points_cache) > 100:
+        # Remove oldest entries
+        keys_to_remove = list(_hazard_points_cache.keys())[:50]
+        for k in keys_to_remove:
+            del _hazard_points_cache[k]
+    
+    # Translate to center
+    cx, cy = center.x, center.y
+    return [pygame.Vector2(p.x + cx, p.y + cy) for p in unit_points]
 
-    return points
+
+def generate_trapezoid_points(center: pygame.Vector2, width: float, height: float, rotation: float, hazard_id: int = 0) -> list[pygame.Vector2]:
+    """Generate points for a trapezoid shape. Uses caching."""
+    rot_q = _quantize_rotation(rotation)
+    cache_key = ("trapezoid", hazard_id, rot_q)
+    
+    cached = _hazard_points_cache.get(cache_key)
+    if cached is not None:
+        cx, cy = center.x, center.y
+        return [pygame.Vector2(p.x + cx, p.y + cy) for p in cached]
+    
+    cos_r = math.cos(rotation)
+    sin_r = math.sin(rotation)
+    unit_points = []
+    for bx, by in _BASE_TRAPEZOID_LOCAL:
+        x_scaled = bx * width
+        y_scaled = by * height
+        x_rot = x_scaled * cos_r - y_scaled * sin_r
+        y_rot = x_scaled * sin_r + y_scaled * cos_r
+        unit_points.append(pygame.Vector2(x_rot, y_rot))
+    
+    _hazard_points_cache[cache_key] = unit_points
+    
+    if len(_hazard_points_cache) > 100:
+        keys_to_remove = list(_hazard_points_cache.keys())[:50]
+        for k in keys_to_remove:
+            del _hazard_points_cache[k]
+    
+    cx, cy = center.x, center.y
+    return [pygame.Vector2(p.x + cx, p.y + cy) for p in unit_points]
 
 
 def check_point_in_hazard(point: pygame.Vector2, hazard_points: list[pygame.Vector2], bounding_rect: pygame.Rect) -> bool:
@@ -187,7 +236,7 @@ def resolve_hazard_collision(hazard1: dict, hazard2: dict) -> None:
 
 def update_hazard_obstacles(dt: float, hazard_list: list, current_lvl: int, width: int, height: int) -> None:
     """Update all rotating hazard obstacles (paraboloids/trapezoids) with collision physics."""
-    for hazard in hazard_list:
+    for idx, hazard in enumerate(hazard_list):
         if current_lvl >= 2:
             hazard["shape"] = "trapezoid"
         else:
@@ -223,19 +272,22 @@ def update_hazard_obstacles(dt: float, hazard_list: list, current_lvl: int, widt
             hazard["center"].y = height - hazard["height"] // 2
             hazard["velocity"].y = -abs(hazard["velocity"].y)
 
+        # Use hazard index as ID for caching
         if hazard["shape"] == "trapezoid":
             hazard["points"] = generate_trapezoid_points(
                 hazard["center"],
                 hazard["width"],
                 hazard["height"],
-                hazard["rotation_angle"]
+                hazard["rotation_angle"],
+                hazard_id=idx
             )
         else:
             hazard["points"] = generate_paraboloid_points(
                 hazard["center"],
                 hazard["width"],
                 hazard["height"],
-                hazard["rotation_angle"]
+                hazard["rotation_angle"],
+                hazard_id=idx
             )
 
         if hazard["points"]:
