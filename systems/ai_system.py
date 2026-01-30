@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 import pygame
 
 from constants import STATE_NAME_INPUT
+from .perf_timing import perf_timer
 
 if TYPE_CHECKING:
     from state import GameState
@@ -15,11 +16,12 @@ if TYPE_CHECKING:
 
 def update(state: "GameState", dt: float) -> None:
     """Run AI updates for enemies and allies. Called from gameplay screen."""
-    ctx = getattr(state, "level_context", None)
-    if ctx is None:
-        return
-    _update_ally_ai(state, dt, ctx)
-    _update_enemy_ai(state, dt, ctx)
+    with perf_timer("ai_system"):
+        ctx = getattr(state, "level_context", None)
+        if ctx is None:
+            return
+        _update_ally_ai(state, dt, ctx)
+        _update_enemy_ai(state, dt, ctx)
 
 
 def _update_ally_ai(state, dt: float, ctx: dict) -> None:

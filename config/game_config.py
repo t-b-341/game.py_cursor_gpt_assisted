@@ -66,7 +66,8 @@ class GameConfig:
     show_health_bars: bool = True
     show_player_health_bar: bool = True
     show_fps: bool = True  # Show FPS graph in bottom-left corner
-    target_fps: int = 144  # Target frame rate (60, 120, 144, 240, or 0 for uncapped)
+    show_perf_overlay: bool = False  # Show detailed performance overlay with entity counts
+    target_fps: int = 0  # Target frame rate (60, 120, 144, 240, or 0 for uncapped/max)
     profile_enabled: bool = False
     testing_mode: bool = False
     invulnerability_mode: bool = False

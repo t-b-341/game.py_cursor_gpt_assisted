@@ -66,6 +66,10 @@ def render_hud(state: "GameState", ctx: dict, render_ctx: RenderContext) -> None
     # Draw FPS graph in bottom-left corner
     if ui_show_fps:
         _draw_fps_graph(screen, small_font, WIDTH, HEIGHT)
+    # Draw performance overlay if enabled (shows entity counts for debugging)
+    ui_show_perf_overlay = ctx.get("ui_show_perf_overlay", False)
+    if ui_show_perf_overlay:
+        _draw_perf_overlay(screen, state, small_font, WIDTH, HEIGHT)
 
 
 def render_overlays(state: "GameState", ctx: dict, render_ctx: RenderContext) -> None:
@@ -209,6 +213,62 @@ def _draw_fps_graph(screen: pygame.Surface, small_font: Any, WIDTH: int, HEIGHT:
     max_text = small_font.render(f"max:{max_fps:.0f}", True, (150, 150, 150))
     screen.blit(min_text, (x, graph_rect.bottom + 2))
     screen.blit(max_text, (x + graph_width - max_text.get_width(), graph_rect.bottom + 2))
+
+
+def _draw_perf_overlay(screen: pygame.Surface, state, small_font, WIDTH: int, HEIGHT: int) -> None:
+    """Draw performance overlay with entity counts for debugging frame drops."""
+    # Position in top-right corner
+    x = WIDTH - 200
+    y = 10
+    line_height = 18
+    
+    # Gather entity counts
+    counts = [
+        ("Enemies", len(getattr(state, "enemies", []))),
+        ("Player Bullets", len(getattr(state, "player_bullets", []))),
+        ("Enemy Projectiles", len(getattr(state, "enemy_projectiles", []))),
+        ("Friendly Projectiles", len(getattr(state, "friendly_projectiles", []))),
+        ("Missiles", len(getattr(state, "missiles", []))),
+        ("Explosions", len(getattr(state, "grenade_explosions", []))),
+        ("Laser Beams", len(getattr(state, "laser_beams", []))),
+        ("Damage Numbers", len(getattr(state, "damage_numbers", []))),
+        ("Friendly AI", len(getattr(state, "friendly_ai", []))),
+        ("Wave Beams", len(getattr(state, "wave_beams", []))),
+    ]
+    
+    # Calculate total
+    total = sum(c[1] for c in counts)
+    
+    # Draw background
+    bg_height = (len(counts) + 2) * line_height + 10
+    bg_surf = pygame.Surface((190, bg_height), pygame.SRCALPHA)
+    bg_surf.fill((20, 20, 20, 200))
+    screen.blit(bg_surf, (x - 5, y - 5))
+    
+    # Draw header
+    header = _get_cached_text(small_font, "PERF OVERLAY", (255, 200, 50))
+    screen.blit(header, (x, y))
+    y += line_height + 5
+    
+    # Draw entity counts with color coding
+    for name, count in counts:
+        # Color code: green (low), yellow (medium), red (high)
+        if count < 50:
+            color = (100, 255, 100)
+        elif count < 150:
+            color = (255, 255, 100)
+        else:
+            color = (255, 100, 100)
+        
+        text = _get_cached_text(small_font, f"{name}: {count}", color)
+        screen.blit(text, (x, y))
+        y += line_height
+    
+    # Draw total
+    y += 5
+    total_color = (100, 255, 100) if total < 300 else (255, 255, 100) if total < 600 else (255, 100, 100)
+    total_text = _get_cached_text(small_font, f"TOTAL: {total}", total_color)
+    screen.blit(total_text, (x, y))
 
 
 def _draw_entity_health_bars(screen: pygame.Surface, state, show: bool) -> None:

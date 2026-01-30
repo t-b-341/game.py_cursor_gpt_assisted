@@ -2,8 +2,13 @@
 Profile game.py execution using cProfile.
 
 This script executes game.py in a controlled way using runpy, wraps it in cProfile,
-and automatically stops profiling after ~10 seconds to avoid infinite loops.
+and automatically stops profiling after a configurable duration.
 Results are saved to profiling_results.txt (human-readable) and profiling_results.prof (for SnakeViz).
+
+Usage:
+    python profile_game.py           # Run for 30 seconds (default)
+    python profile_game.py 60        # Run for 60 seconds
+    python profile_game.py 0         # Run until manually closed
 """
 import cProfile
 import os
@@ -13,6 +18,9 @@ import sys
 import threading
 import time
 from io import StringIO
+
+# Default profiling duration (seconds) - longer to capture late-game behavior
+DEFAULT_DURATION = 30
 
 
 def detect_startup_mechanism():
@@ -34,10 +42,12 @@ def detect_startup_mechanism():
         return f"Error detecting: {e}"
 
 
-def timeout_handler():
-    """Stop profiling after ~10 seconds by quitting pygame."""
-    time.sleep(10.0)
-    print("\n[Profiler] 10 seconds elapsed, stopping profiling...")
+def timeout_handler(duration: float):
+    """Stop profiling after duration seconds by quitting pygame."""
+    if duration <= 0:
+        return  # No timeout
+    time.sleep(duration)
+    print(f"\n[Profiler] {duration} seconds elapsed, stopping profiling...")
     try:
         import pygame
         pygame.event.post(pygame.event.Event(pygame.QUIT))
@@ -45,15 +55,26 @@ def timeout_handler():
         pass
 
 
-def run_profiling():
-    """Run the profiling session."""
+def run_profiling(duration: float = DEFAULT_DURATION):
+    """Run the profiling session.
+    
+    Args:
+        duration: How long to profile in seconds. 0 = until manual close.
+    """
     print("[Profiler] Starting profiling session...")
     print("[Profiler] Detected startup mechanism:", detect_startup_mechanism())
-    print("[Profiler] Will profile for ~10 seconds...")
+    if duration > 0:
+        print(f"[Profiler] Will profile for ~{duration} seconds...")
+    else:
+        print("[Profiler] Will profile until game is closed...")
+    
+    # Enable per-system timing
+    os.environ["GAME_PERF_TIMING"] = "1"
     
     # Start timeout thread
-    timeout_thread = threading.Thread(target=timeout_handler, daemon=True)
-    timeout_thread.start()
+    if duration > 0:
+        timeout_thread = threading.Thread(target=timeout_handler, args=(duration,), daemon=True)
+        timeout_thread.start()
     
     # Create profiler
     profiler = cProfile.Profile()
@@ -139,13 +160,23 @@ def summarize_slowest_functions(stats_lines):
 
 def main():
     """Main profiling entry point."""
+    # Parse command-line duration argument
+    duration = DEFAULT_DURATION
+    if len(sys.argv) > 1:
+        try:
+            duration = float(sys.argv[1])
+            if duration < 0:
+                duration = 0
+        except ValueError:
+            print(f"[Profiler] Invalid duration '{sys.argv[1]}', using default {DEFAULT_DURATION}s")
+    
     max_retries = 3
     retry_count = 0
     
     while retry_count < max_retries:
         try:
             # Run profiling
-            profiler_instance = run_profiling()
+            profiler_instance = run_profiling(duration)
             
             # Check if we got any stats
             try:
@@ -196,7 +227,20 @@ def main():
             else:
                 print("  (No function data available)")
             
+            # Print per-system timing if available
+            try:
+                from systems.perf_timing import format_timing_report, is_enabled
+                if is_enabled():
+                    print("\n" + "="*80)
+                    print("PER-SYSTEM TIMING (requires GAME_PERF_TIMING=1):")
+                    print("="*80)
+                    print(format_timing_report())
+            except ImportError:
+                pass
+            
             print("\n[Profiler] Profiling complete!")
+            print("[Profiler] Tip: Use 'python profile_game.py 60' for longer profiling sessions")
+            print("[Profiler] Tip: View profiling_results.prof with SnakeViz: 'snakeviz profiling_results.prof'")
             return 0
             
         except Exception as e:

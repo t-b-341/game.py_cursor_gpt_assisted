@@ -238,3 +238,10 @@ class FrameTimeEvent:
     enemy_projectiles: int  # Number of enemy projectiles
     enemies: int  # Number of enemies
     friendly_projectiles: int  # Number of friendly projectiles
+    # Additional entity counts for performance analysis
+    missiles: int = 0  # Number of active missiles
+    explosions: int = 0  # Number of active explosions
+    laser_beams: int = 0  # Number of active laser beams
+    damage_numbers: int = 0  # Number of floating damage numbers
+    friendly_ai: int = 0  # Number of friendly AI units
+    wave_number: int = 0  # Current wave (for correlation)

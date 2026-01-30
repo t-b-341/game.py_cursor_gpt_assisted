@@ -322,9 +322,10 @@ def _create_window_and_clock() -> tuple[pygame.Surface, pygame.time.Clock, int, 
     screen_info = pygame.display.Info()
     WIDTH, HEIGHT = screen_info.current_w, screen_info.current_h
     set_screen_dimensions(WIDTH, HEIGHT)
-    # Use hardware acceleration and double buffering for better performance
+    # Use hardware acceleration, double buffering, and disable vsync for max FPS
     display_flags = pygame.FULLSCREEN | pygame.HWSURFACE | pygame.DOUBLEBUF
-    screen = pygame.display.set_mode((WIDTH, HEIGHT), display_flags)
+    # vsync=0 disables vertical sync for uncapped frame rates
+    screen = pygame.display.set_mode((WIDTH, HEIGHT), display_flags, vsync=0)
     pygame.display.set_caption("Mouse Aim Shooter + Telemetry (SQLite)")
 
     clock = pygame.time.Clock()
@@ -365,7 +366,8 @@ def _build_app_context(screen: pygame.Surface, clock: pygame.time.Clock, display
     world_height = int(display_height * world_scale)
     
     # Create world surface for rendering (larger than display)
-    world_surface = pygame.Surface((world_width, world_height))
+    # Use convert() for hardware-accelerated blitting
+    world_surface = pygame.Surface((world_width, world_height)).convert()
     
     # Update screen dimensions used by physics/collision
     set_screen_dimensions(world_width, world_height)
@@ -1194,6 +1196,7 @@ def _render_current_scene(
                 "ui_show_metrics": ctx.config.show_metrics,
                 "ui_show_health_bars": ctx.config.show_health_bars,
                 "ui_show_fps": ctx.config.show_fps,
+                "ui_show_perf_overlay": getattr(ctx.config, "show_perf_overlay", False),
                 "overshield_max": overshield_max,
                 "grenade_cooldown": grenade_cooldown,
                 "missile_cooldown": missile_cooldown,
@@ -1214,6 +1217,7 @@ def _render_current_scene(
             gameplay_ctx["ui_show_metrics"] = ctx.config.show_metrics
             gameplay_ctx["ui_show_health_bars"] = ctx.config.show_health_bars
             gameplay_ctx["ui_show_fps"] = ctx.config.show_fps
+            gameplay_ctx["ui_show_perf_overlay"] = getattr(ctx.config, "show_perf_overlay", False)
             gameplay_ctx["current_state"] = current_state
             # Update level references if level changed
             if lv:

@@ -225,6 +225,10 @@ def handle_events(events, game_state, ctx):
                         current_idx = 0
                     next_idx = (current_idx + 1) % len(fps_cap_options)
                     cfg.target_fps = fps_cap_options[next_idx]
+            elif choice == "Perf Overlay":
+                # Toggle performance overlay (shows entity counts)
+                if cfg is not None:
+                    cfg.show_perf_overlay = not getattr(cfg, 'show_perf_overlay', False)
             elif choice == "Save & Quit":
                 if game_state is not None:
                     game_state.ui.save_and_quit = True  # Flag to go to title after saving
@@ -319,6 +323,9 @@ def render(render_ctx: RenderContext, game_state, screen_ctx) -> None:
             target_fps = getattr(cfg, 'target_fps', 144)
             fps_cap_text = "Uncapped" if target_fps == 0 else str(target_fps)
             display_option = f"FPS Cap: {fps_cap_text}"
+        elif option == "Perf Overlay" and cfg is not None:
+            perf_state = "On" if getattr(cfg, 'show_perf_overlay', False) else "Off"
+            display_option = f"Perf Overlay ({perf_state})"
         
         color = (255, 255, 0) if i == pause_selected else (200, 200, 200)
         draw_centered_text(screen, font, big_font, WIDTH, f"{'->' if i == pause_selected else '  '} {display_option}", y_offset + i * 40, color)

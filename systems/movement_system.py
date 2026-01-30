@@ -32,25 +32,28 @@ _gpu_bullet_logged = False
 if TYPE_CHECKING:
     from state import GameState
 
+from .perf_timing import perf_timer
+
 
 def update(state: "GameState", dt: float) -> None:
     """Update movement for all moving entities. Called from gameplay."""
-    ctx = getattr(state, "level_context", None)
-    if ctx is None:
-        return
+    with perf_timer("movement_system"):
+        ctx = getattr(state, "level_context", None)
+        if ctx is None:
+            return
 
-    player = state.player_rect
-    if player is None:
-        return
+        player = state.player_rect
+        if player is None:
+            return
 
-    _update_player(state, dt, ctx)
-    _update_enemies(state, dt, ctx)
-    _update_player_bullets(state, dt, ctx)
-    _update_enemy_projectiles(state, dt, ctx)
-    _update_friendly_projectiles(state, dt, ctx)
-    _update_missiles(state, dt, ctx)
-    _update_ecs_position_velocity(state, dt)
-    # Ally AI is run in ai_system.update()
+        _update_player(state, dt, ctx)
+        _update_enemies(state, dt, ctx)
+        _update_player_bullets(state, dt, ctx)
+        _update_enemy_projectiles(state, dt, ctx)
+        _update_friendly_projectiles(state, dt, ctx)
+        _update_missiles(state, dt, ctx)
+        _update_ecs_position_velocity(state, dt)
+        # Ally AI is run in ai_system.update()
 
 
 def _update_player(state, dt: float, ctx: dict) -> None:

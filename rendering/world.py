@@ -102,7 +102,8 @@ def draw_silver_wall_texture(screen: pygame.Surface, rect: pygame.Rect) -> None:
     """Draw a silver wall texture for indestructible blocks (uses cached surface when possible)."""
     cache_key = (rect.w // 10 * 10, rect.h // 10 * 10)
     if cache_key not in _wall_texture_cache:
-        _wall_texture_cache[cache_key] = _create_cached_silver_wall_texture(cache_key[0], cache_key[1])
+        # Use convert() for hardware-accelerated blitting
+        _wall_texture_cache[cache_key] = _create_cached_silver_wall_texture(cache_key[0], cache_key[1]).convert()
     cached_surf = _wall_texture_cache[cache_key]
     if cache_key[0] == rect.w and cache_key[1] == rect.h:
         screen.blit(cached_surf, rect.topleft)
@@ -143,7 +144,8 @@ def _get_cached_projectile_surface(color: tuple[int, int, int], shape: str, size
         else:  # rect
             pygame.draw.rect(surf, color, (0, 0, w, h))
         
-        _projectile_surface_cache[cache_key] = surf
+        # Use convert_alpha() for hardware-accelerated blitting with transparency
+        _projectile_surface_cache[cache_key] = surf.convert_alpha()
     
     return _projectile_surface_cache[cache_key]
 
@@ -235,7 +237,8 @@ def _draw_terrain(screen: pygame.Surface, state: Any, ctx: dict) -> None:
                 pygame.draw.polygon(zone_surf, zone["color"], triangle_points)
             else:
                 pygame.draw.rect(zone_surf, zone["color"], (10, 10, zone_width, zone_height))
-            _health_zone_cache[cache_key] = zone_surf
+            # Use convert_alpha() for hardware-accelerated blitting with transparency
+            _health_zone_cache[cache_key] = zone_surf.convert_alpha()
         
         zone_surf = _health_zone_cache[cache_key]
         screen.blit(zone_surf, (zone["rect"].x - 10, zone["rect"].y - 10))
@@ -314,12 +317,16 @@ def _draw_projectiles(screen: pygame.Surface, state: Any) -> None:
             batches[cache_key] = []
         batches[cache_key].append((rect.x, rect.y))
     
-    # Blit cached surfaces for each batch
+    # Blit cached surfaces for each batch using blits() for better performance
     for cache_key, positions in batches.items():
         color, shape, w, h = cache_key
         surf = _get_cached_projectile_surface(color, shape, (w, h))
-        for x, y in positions:
-            screen.blit(surf, (x, y))
+        # Use blits() for batch blitting (faster than individual blit calls)
+        if len(positions) > 1:
+            blit_list = [(surf, pos) for pos in positions]
+            screen.blits(blit_list, doreturn=False)
+        elif positions:
+            screen.blit(surf, positions[0])
 
 
 def _draw_allies_and_enemies(screen: pygame.Surface, state: Any) -> None:
@@ -409,30 +416,36 @@ def _draw_beams(screen: pygame.Surface, state: Any) -> None:
                 )
 
 
+from systems.perf_timing import perf_timer
+
+
 def render_background(state: Any, ctx: dict, render_ctx: RenderContext) -> None:
     """Draw background (theme fill), terrain/obstacles, and pickups. First layer of the frame."""
-    if not ctx:
-        return
-    level_themes = ctx.get("level_themes", {})
-    default_theme = level_themes.get(1, {})
-    theme = level_themes.get(getattr(state, "current_level", 1), default_theme)
-    bg = theme.get("bg_color", (0, 0, 0))
-    render_ctx.screen.fill(bg)
-    _draw_terrain(render_ctx.screen, state, ctx)
-    _draw_pickups(render_ctx.screen, state, ctx)
+    with perf_timer("render_background"):
+        if not ctx:
+            return
+        level_themes = ctx.get("level_themes", {})
+        default_theme = level_themes.get(1, {})
+        theme = level_themes.get(getattr(state, "current_level", 1), default_theme)
+        bg = theme.get("bg_color", (0, 0, 0))
+        render_ctx.screen.fill(bg)
+        _draw_terrain(render_ctx.screen, state, ctx)
+        _draw_pickups(render_ctx.screen, state, ctx)
 
 
 def render_entities(state: Any, ctx: dict, render_ctx: RenderContext) -> None:
     """Draw entities: allies, enemies, and player. Mid-layer of the frame."""
-    _draw_allies_and_enemies(render_ctx.screen, state)
-    _draw_player(render_ctx.screen, state)
+    with perf_timer("render_entities"):
+        _draw_allies_and_enemies(render_ctx.screen, state)
+        _draw_player(render_ctx.screen, state)
 
 
 def render_projectiles(state: Any, ctx: dict, render_ctx: RenderContext) -> None:
     """Draw projectiles, particles (explosions, missiles), and beams. On top of entities."""
-    _draw_projectiles(render_ctx.screen, state)
-    _draw_effects(render_ctx.screen, state)
-    _draw_beams(render_ctx.screen, state)
+    with perf_timer("render_projectiles"):
+        _draw_projectiles(render_ctx.screen, state)
+        _draw_effects(render_ctx.screen, state)
+        _draw_beams(render_ctx.screen, state)
 
 
 def render_gameplay(state: Any, screen: pygame.Surface, ctx: dict) -> None:

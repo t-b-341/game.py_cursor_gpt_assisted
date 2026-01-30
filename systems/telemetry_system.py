@@ -61,11 +61,17 @@ def log_frame_time(gs: GameState, dt: float, app_ctx: AppContext) -> None:
     frame_time_ms = dt * 1000.0
     fps = 1.0 / dt if dt > 0 else 0.0
     
-    # Get entity counts
+    # Get entity counts - comprehensive list for performance debugging
     player_bullets = len(getattr(gs, "player_bullets", []))
     enemy_projectiles = len(getattr(gs, "enemy_projectiles", []))
     enemies = len(getattr(gs, "enemies", []))
     friendly_projectiles = len(getattr(gs, "friendly_projectiles", []))
+    missiles = len(getattr(gs, "missiles", []))
+    explosions = len(getattr(gs, "grenade_explosions", []))
+    laser_beams = len(getattr(gs, "laser_beams", []))
+    damage_numbers = len(getattr(gs, "damage_numbers", []))
+    friendly_ai = len(getattr(gs, "friendly_ai", []))
+    wave_number = getattr(gs, "wave_number", 0)
     
     app_ctx.telemetry_client.log_frame_time(
         FrameTimeEvent(
@@ -76,6 +82,12 @@ def log_frame_time(gs: GameState, dt: float, app_ctx: AppContext) -> None:
             enemy_projectiles=enemy_projectiles,
             enemies=enemies,
             friendly_projectiles=friendly_projectiles,
+            missiles=missiles,
+            explosions=explosions,
+            laser_beams=laser_beams,
+            damage_numbers=damage_numbers,
+            friendly_ai=friendly_ai,
+            wave_number=wave_number,
         )
     )
 

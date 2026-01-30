@@ -261,8 +261,13 @@ class GameApp:
         try:
             while running:
                 # Use config's target_fps (allows dynamic changes via pause menu)
-                target_fps = getattr(self.ctx.config, 'target_fps', 144)
-                dt = self.ctx.clock.tick(target_fps) / 1000.0  # Wall-clock delta for this frame
+                # 0 = uncapped (max FPS)
+                target_fps = getattr(self.ctx.config, 'target_fps', 0)
+                if target_fps > 0:
+                    dt = self.ctx.clock.tick(target_fps) / 1000.0
+                else:
+                    # Uncapped: use tick_busy_loop for more accurate timing at high FPS
+                    dt = self.ctx.clock.tick_busy_loop() / 1000.0
                 game_module._perf_record_frame(dt)  # no-op unless GAME_DEBUG_PERF=1
                 
                 # Record frame time for FPS graph (always active)
