@@ -1020,7 +1020,7 @@ def _render_current_scene(
                 "ui_show_health_bars": ctx.config.show_health_bars,
                 "ui_show_fps": ctx.config.show_fps,
                 "ui_show_perf_overlay": getattr(ctx.config, "show_perf_overlay", False),
-                "overshield_max": overshield_max,
+                "overshield_max": game_state.player_max_hp,  # Overshield max = player max HP (TAB activation amount)
                 "grenade_cooldown": grenade_cooldown,
                 "missile_cooldown": missile_cooldown,
                 "ally_drop_cooldown": ally_drop_cooldown,
@@ -1093,7 +1093,7 @@ def _render_current_scene(
                 "ui_show_metrics": ctx.config.show_metrics,
                 "ui_show_health_bars": ctx.config.show_health_bars,
                 "ui_show_fps": ctx.config.show_fps,
-                "overshield_max": overshield_max,
+                "overshield_max": game_state.player_max_hp,  # Overshield max = player max HP
                 "grenade_cooldown": grenade_cooldown,
                 "missile_cooldown": missile_cooldown,
                 "ally_drop_cooldown": ally_drop_cooldown,

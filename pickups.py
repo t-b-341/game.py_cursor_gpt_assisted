@@ -13,7 +13,6 @@ if TYPE_CHECKING:
 
 from constants import (
     boost_meter_max,
-    overshield_max,
     jump_cooldown,
     fire_rate_buff_duration,
     ally_drop_cooldown,
@@ -29,8 +28,9 @@ def _apply_boost_pickup(game_state: "GameState", ctx: "AppContext", pickup_type:
 
 
 def _apply_overshield_pickup(game_state: "GameState", ctx: "AppContext", pickup_type: str) -> None:
-    """Apply armor/overshield pickup effect."""
-    game_state.overshield = min(overshield_max, game_state.overshield + 25)
+    """Apply armor/overshield pickup effect. Caps at player_max_hp (same as TAB activation)."""
+    overshield_cap = game_state.player_max_hp
+    game_state.overshield = min(overshield_cap, game_state.overshield + 25)
 
 
 def _apply_dash_recharge_pickup(game_state: "GameState", ctx: "AppContext", pickup_type: str) -> None:
@@ -44,8 +44,8 @@ def _apply_firerate_pickup(game_state: "GameState", ctx: "AppContext", pickup_ty
 
 
 def _apply_health_pickup(game_state: "GameState", ctx: "AppContext", pickup_type: str) -> None:
-    """Apply health pickup effect - restores 100 HP (capped at max HP)."""
-    game_state.player_hp = min(game_state.player_max_hp, game_state.player_hp + 100)
+    """Apply health pickup effect - restores 250 HP (capped at max HP)."""
+    game_state.player_hp = min(game_state.player_max_hp, game_state.player_hp + 250)
 
 
 def _apply_max_health_pickup(game_state: "GameState", ctx: "AppContext", pickup_type: str) -> None:
