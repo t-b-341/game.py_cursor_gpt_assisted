@@ -121,20 +121,20 @@ def handle_gameplay_input(events, game_state, ctx) -> None:
                         play_sfx("ROCKET")
 
             if event.key == controls.get("ally_drop", pygame.K_q) and player:
-                if game_state.ally_drop_timer >= ally_drop_cooldown_val:
-                    if FRIENDLY_AI_TEMPLATES:
-                        ally_template = random.choice(FRIENDLY_AI_TEMPLATES)
-                        pc = pygame.Vector2(player.center)
-                        d = (-game_state.last_move_velocity.normalize() if game_state.last_move_velocity.length_squared() > 0
-                             else pygame.Vector2(0, 1))
-                        pos = pc + d * 60
-                        friendly = make_friendly_from_template(ally_template, 1.0, 1.0)
-                        hp = max(1, game_state.player_max_hp // 2)
-                        friendly["hp"] = friendly["max_hp"] = hp
-                        friendly["rect"].center = (int(pos.x), int(pos.y))
-                        friendly["is_dropped_ally"] = True
-                        game_state.friendly_ai.append(friendly)
-                        game_state.dropped_ally = friendly
+                # Only use ability if cooldown is ready - otherwise ignore the keypress
+                if game_state.ally_drop_timer >= ally_drop_cooldown_val and FRIENDLY_AI_TEMPLATES:
+                    ally_template = random.choice(FRIENDLY_AI_TEMPLATES)
+                    pc = pygame.Vector2(player.center)
+                    d = (-game_state.last_move_velocity.normalize() if game_state.last_move_velocity.length_squared() > 0
+                         else pygame.Vector2(0, 1))
+                    pos = pc + d * 60
+                    friendly = make_friendly_from_template(ally_template, 1.0, 1.0)
+                    hp = max(1, game_state.player_max_hp // 2)
+                    friendly["hp"] = friendly["max_hp"] = hp
+                    friendly["rect"].center = (int(pos.x), int(pos.y))
+                    friendly["is_dropped_ally"] = True
+                    game_state.friendly_ai.append(friendly)
+                    game_state.dropped_ally = friendly
                     game_state.ally_drop_timer = 0.0
 
             if event.key == pygame.K_1 and "triple" in game_state.unlocked_weapons:
