@@ -275,7 +275,18 @@ def _draw_fps_graph(screen: pygame.Surface, small_font: Any, WIDTH: int, HEIGHT:
     pygame.draw.rect(screen, (60, 60, 60), graph_rect, 1)
     
     # Dynamic scale based on max observed FPS (supports high refresh rate displays)
-    max_scale = 200 if stats["max_fps"] > 120 else 120
+    # Scale up in tiers: 120, 200, 300, 500, 1000 based on actual max FPS
+    max_fps = stats["max_fps"]
+    if max_fps > 500:
+        max_scale = 1000
+    elif max_fps > 300:
+        max_scale = 500
+    elif max_fps > 200:
+        max_scale = 300
+    elif max_fps > 120:
+        max_scale = 200
+    else:
+        max_scale = 120
     
     # Draw 60 FPS target line
     target_y = graph_rect.bottom - int((60 / max_scale) * graph_height)
@@ -518,7 +529,10 @@ def _draw_metrics_and_bars(
     pygame.draw.rect(screen, (255, 255, 255), (missile_x, bar_y, bar_width, bar_height), 2)
     screen.blit(_get_cached_text(small_font, "MISSILE (R)", (255, 255, 255)), (missile_x + 5, bar_y + 2))
 
-    ally_progress = min(1.0, state.ally_drop_timer / ally_drop_cooldown)
+    # Apply cooldown multiplier from spawn_boost pickups
+    ally_cooldown_mult = state.player_stat_multipliers.get("ally_drop_cooldown", 1.0)
+    effective_ally_cooldown = ally_drop_cooldown * ally_cooldown_mult
+    ally_progress = min(1.0, state.ally_drop_timer / effective_ally_cooldown) if effective_ally_cooldown > 0 else 1.0
     ally_x = missile_x + bar_width + 10
     pygame.draw.rect(screen, (60, 60, 60), (ally_x, bar_y, bar_width, bar_height))
     pygame.draw.rect(screen, (200, 100, 255) if ally_progress >= 1.0 else (100, 100, 100),

@@ -22,6 +22,8 @@ def handle_enemy_laser_beam_collisions(state, dt: float, ctx: dict) -> None:
             continue
         damage_per_sec = beam.get("damage", 80 * 60)
         if line_rect(beam["start"], beam["end"], player):
+            if state.shield_active:
+                continue  # Shield blocks enemy laser beams
             apply_player_damage(state, int(damage_per_sec * dt), ctx)
 
 

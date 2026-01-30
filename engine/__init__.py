@@ -16,6 +16,10 @@ from .run_manager import (
     try_again,
     load_game,
 )
+from .render_loop import (
+    get_current_state,
+    render_current_scene,
+)
 
 __all__ = [
     # Input loop
@@ -33,4 +37,7 @@ __all__ = [
     "replay",
     "try_again",
     "load_game",
+    # Render loop
+    "get_current_state",
+    "render_current_scene",
 ]

@@ -182,6 +182,25 @@ class TestEnemyProjectileVsPlayer:
         assert state.player_hp == hp_before
         assert proj not in state.enemy_projectiles
 
+    def test_enemy_laser_beam_blocked_by_shield(self, state_for_collisions):
+        """Shield should block enemy laser beams (no damage while shield active)."""
+        state = state_for_collisions
+        state.shield_active = True
+        hp_before = state.player_hp
+        # Beam passes through player position (100, 100 is player center)
+        beam = {
+            "start": (50, 100),
+            "end": (150, 100),
+            "timer": 1.0,
+            "deploy_timer": 0.0,  # Already deployed
+            "damage": 80 * 60,  # High damage per second
+        }
+        state.enemy_laser_beams.append(beam)
+
+        collision_update(state, 0.016)
+
+        assert state.player_hp == hp_before, "Shield should block enemy laser beam damage"
+
 
 class TestPickupCollection:
     """Player overlapping a pickup collects it and apply_effect is called."""

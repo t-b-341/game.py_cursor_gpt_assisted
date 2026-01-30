@@ -146,3 +146,77 @@ class RenderContext:
         if self.camera:
             return (int(self.camera.x), int(self.camera.y))
         return (0, 0)
+
+
+def build_gameplay_ctx(
+    app_ctx: Any,
+    game_state: Any,
+    current_state: str,
+    level_themes: dict,
+    width: int | None = None,
+    height: int | None = None,
+) -> dict:
+    """Build the gameplay_ctx dict for rendering.
+    
+    This centralizes the gameplay context construction to avoid duplication
+    in _render_current_scene (used for both gameplay and pause overlay).
+    
+    Args:
+        app_ctx: AppContext with config, fonts, etc.
+        game_state: GameState with level, teleporter_pads, etc.
+        current_state: Current screen state (STATE_PLAYING, STATE_PAUSED, etc.)
+        level_themes: Dict of level themes
+        width: Override width (uses app_ctx.width if None)
+        height: Override height (uses app_ctx.height if None)
+    
+    Returns:
+        Dict with all gameplay rendering context
+    """
+    from config_weapons import WEAPON_NAMES
+    from constants import (
+        grenade_cooldown,
+        missile_cooldown,
+        ally_drop_cooldown,
+        overshield_recharge_cooldown,
+        shield_duration,
+    )
+    
+    w = width if width is not None else app_ctx.width
+    h = height if height is not None else app_ctx.height
+    lv = game_state.level
+    
+    return {
+        "level_themes": level_themes,
+        "trapezoid_blocks": lv.trapezoid_blocks if lv else [],
+        "triangle_blocks": lv.triangle_blocks if lv else [],
+        "destructible_blocks": lv.destructible_blocks if lv else [],
+        "moveable_destructible_blocks": lv.moveable_blocks if lv else [],
+        "giant_blocks": lv.giant_blocks if lv else [],
+        "super_giant_blocks": lv.super_giant_blocks if lv else [],
+        "hazard_obstacles": lv.hazard_obstacles if lv else [],
+        "moving_health_zone": lv.moving_health_zone if lv else None,
+        "teleporter_pads": game_state.teleporter_pads,
+        "small_font": app_ctx.small_font,
+        "weapon_names": WEAPON_NAMES,
+        "WIDTH": w,
+        "HEIGHT": h,
+        "font": app_ctx.font,
+        "big_font": app_ctx.big_font,
+        "ui_show_hud": app_ctx.config.show_hud,
+        "ui_show_metrics": app_ctx.config.show_metrics,
+        "ui_show_health_bars": app_ctx.config.show_health_bars,
+        "ui_show_fps": app_ctx.config.show_fps,
+        "ui_show_perf_overlay": getattr(app_ctx.config, "show_perf_overlay", False),
+        "overshield_max": game_state.player_max_hp,
+        "grenade_cooldown": grenade_cooldown,
+        "missile_cooldown": missile_cooldown,
+        "ally_drop_cooldown": ally_drop_cooldown,
+        "overshield_recharge_cooldown": overshield_recharge_cooldown,
+        "shield_duration": shield_duration,
+        "aiming_mode": app_ctx.config.aim_mode,
+        "current_state": current_state,
+        "enable_screen_flash": getattr(app_ctx.config, "enable_screen_flash", True),
+        "screen_flash_duration": getattr(app_ctx.config, "screen_flash_duration", 0.25),
+        "screen_flash_max_alpha": getattr(app_ctx.config, "screen_flash_max_alpha", 100),
+        "enable_wave_banner": getattr(app_ctx.config, "enable_wave_banner", True),
+    }

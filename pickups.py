@@ -105,11 +105,11 @@ def _apply_random_damage_pickup(game_state: "GameState", ctx: "AppContext", pick
 
 
 def _apply_spawn_boost_pickup(game_state: "GameState", ctx: "AppContext", pickup_type: str) -> None:
-    """Apply spawn boost pickup effect - reduces ally drop cooldown by 20% (minimum 1 second)."""
-    # Note: ally_drop_cooldown is a module-level variable in game.py that gets passed around
-    # We need to modify it via the game module
-    import game
-    game.ally_drop_cooldown = max(1.0, game.ally_drop_cooldown * 0.8)
+    """Apply spawn boost pickup effect - reduces ally drop cooldown by 20% (stacks multiplicatively)."""
+    # Store cooldown multiplier in player_stat_multipliers (stacks with each pickup)
+    mults = game_state.player_stat_multipliers
+    current_mult = mults.get("ally_drop_cooldown", 1.0)
+    mults["ally_drop_cooldown"] = max(0.2, current_mult * 0.8)  # Min 20% of original (5 pickups)
 
 
 def _switch_weapon(game_state: "GameState", ctx: "AppContext", weapon_name: str) -> None:

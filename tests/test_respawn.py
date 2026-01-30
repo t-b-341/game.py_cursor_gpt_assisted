@@ -3,20 +3,21 @@ import os
 import unittest
 
 # Source check avoids importing game (which may init display). We only need the contract.
-GAME_PY = os.path.join(os.path.dirname(__file__), "..", "game.py")
+# reset_after_death was moved from game.py to systems/enemy_death.py
+ENEMY_DEATH_PY = os.path.join(os.path.dirname(__file__), "..", "systems", "enemy_death.py")
 
 
 def _get_reset_after_death_source() -> str:
-    """Return the source of reset_after_death from game.py without importing game."""
-    with open(GAME_PY, "r", encoding="utf-8") as f:
+    """Return the source of reset_after_death from systems/enemy_death.py without importing."""
+    with open(ENEMY_DEATH_PY, "r", encoding="utf-8") as f:
         text = f.read()
     start = text.find("def reset_after_death(")
     if start == -1:
-        raise LookupError("reset_after_death not found in game.py")
-    # End at next top-level "def " or "if __name__" (at line start after newline).
+        raise LookupError("reset_after_death not found in systems/enemy_death.py")
+    # End at next top-level "def " or end of file.
     search_from = start + 22
     candidates = []
-    for marker in ("\ndef ", "\nif __name__"):
+    for marker in ("\ndef ",):
         j = text.find(marker, search_from)
         if j != -1:
             candidates.append(j)

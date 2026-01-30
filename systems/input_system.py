@@ -176,7 +176,10 @@ def handle_gameplay_input(events, game_state, ctx) -> None:
 
             if event.key == controls.get("ally_drop", pygame.K_q) and player:
                 # Only use ability if cooldown is ready - otherwise ignore the keypress
-                if game_state.ally_drop_timer >= ally_drop_cooldown_val and FRIENDLY_AI_TEMPLATES:
+                # Apply cooldown multiplier from spawn_boost pickups
+                cooldown_mult = game_state.player_stat_multipliers.get("ally_drop_cooldown", 1.0)
+                effective_cooldown = ally_drop_cooldown_val * cooldown_mult
+                if game_state.ally_drop_timer >= effective_cooldown and FRIENDLY_AI_TEMPLATES:
                     ally_template = random.choice(FRIENDLY_AI_TEMPLATES)
                     pc = pygame.Vector2(player.center)
                     d = (-game_state.last_move_velocity.normalize() if game_state.last_move_velocity.length_squared() > 0

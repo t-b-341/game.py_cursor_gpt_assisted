@@ -9,7 +9,7 @@ Re-exports from context, world, hud, overlays, and menu_helpers so existing impo
 """
 from __future__ import annotations
 
-from .context import RenderContext
+from .context import RenderContext, build_gameplay_ctx
 from .hud import draw_centered_text, draw_health_bar, render_hud_text
 from .menu_helpers import (
     get_menu_option_rects,
@@ -29,6 +29,7 @@ from .world import (
 
 __all__ = [
     "RenderContext",
+    "build_gameplay_ctx",
     "draw_centered_text",
     "draw_health_bar",
     "render_hud_text",

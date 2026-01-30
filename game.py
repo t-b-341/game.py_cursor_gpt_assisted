@@ -206,14 +206,14 @@ from config.projectile_defs import get_projectile_def
 # - Remove SCREEN_HANDLERS from screens/__init__.py (currently unused)
 # -----------------------------------------------------------------------------
 from screens.gameplay import render as gameplay_render
-from rendering_shaders import render_gameplay_with_optional_shaders, render_gameplay_frame_to_surface
+from rendering_shaders import render_gameplay_with_optional_shaders
 from scenes import SceneStack, GameplayScene, PauseScene, HighScoreScene, NameInputScene, ShaderTestScene, TitleScene, OptionsScene, QuickLaunchScene
 from scenes.game_over import GameOverScene
 from scenes.victory import VictoryScene
 from scenes.save_game import SaveGameScene
 from scenes.load_game import LoadGameScene
-from scenes.transitions import SceneTransition, KIND_NONE, KIND_PUSH, KIND_POP, KIND_REPLACE, KIND_QUIT_GAME
-from visual_effects import apply_menu_effects, apply_pause_effects
+from scenes.transitions import SceneTransition, KIND_NONE, KIND_PUSH, KIND_POP, KIND_REPLACE, KIND_QUIT_GAME, apply_scene_transition
+# apply_menu_effects, apply_pause_effects now in engine/render_loop.py
 from shader_effects import get_menu_shader_stack, get_pause_shader_stack, get_gameplay_shader_stack
 from simulation_systems import SIMULATION_SYSTEMS
 from systems.spawn_system import start_wave as spawn_system_start_wave
@@ -408,80 +408,9 @@ def _build_initial_game_state(ctx: AppContext) -> GameState:
     game_state.level = level
     game_state.teleporter_pads = place_teleporter_pads(level, ctx.width, ctx.height)
     
-    # Level context for movement_system and collision_system (callables and data; avoids circular imports)
-    def _make_level_context():
-        w, h = ctx.width, ctx.height
-        lv = game_state.level
-
-        def _log_player_death(t, px, py, lives_left, wave_num):
-            if ctx.config.enable_telemetry and ctx.telemetry_client:
-                ctx.telemetry_client.log_player_death(
-                    PlayerDeathEvent(t=t, player_x=px, player_y=py, lives_left=lives_left, wave_number=wave_num)
-                )
-
-        return {
-            "move_player": lambda p, dx, dy: move_player_with_push(p, dx, dy, lv, w, h),
-            "move_enemy": lambda s, rect, mx, my: move_enemy_with_push(rect, mx, my, lv, s, w, h),
-            "clamp": lambda r: clamp_rect_to_screen(r, w, h),
-            "blocks": lv.static_blocks,
-            "width": w,
-            "height": h,
-            "main_area_rect": pygame.Rect(int(w * 0.25), int(h * 0.25), int(w * 0.5), int(h * 0.5)),
-            "rect_offscreen": lambda r: r.right < 0 or r.left > w or r.bottom < 0 or r.top > h,
-            "vec_toward": vec_toward,
-            "update_friendly_ai": lambda s, dt: update_friendly_ai(
-                s.friendly_ai, s.enemies, lv.static_blocks, dt,
-                find_nearest_enemy, vec_toward,
-                lambda rect, mx, my, bl: move_enemy_with_push(rect, mx, my, lv, s, w, h),
-                lambda f, t: spawn_friendly_projectile(f, t, s.friendly_projectiles, vec_toward, ctx.telemetry_client, s.run_time),
-                state=s,
-                player_rect=getattr(s, "player_rect", None),
-                spawn_ally_missile_func=lambda f, t, st: spawn_ally_missile(f, t, st),
-            ),
-            "kill_enemy": lambda e, s: kill_enemy(e, s, w, h, getattr(ctx, "event_bus", None)),
-            "destructible_blocks": lv.destructible_blocks,
-            "moveable_destructible_blocks": lv.moveable_blocks,
-            "giant_blocks": lv.giant_blocks,
-            "super_giant_blocks": lv.super_giant_blocks,
-            "trapezoid_blocks": lv.trapezoid_blocks,
-            "triangle_blocks": lv.triangle_blocks,
-            "hazard_obstacles": lv.hazard_obstacles,
-            "moving_health_zone": lv.moving_health_zone,
-            "teleporter_pads": game_state.teleporter_pads,
-            "check_point_in_hazard": check_point_in_hazard,
-            "line_rect_intersection": line_rect_intersection,
-            "testing_mode": ctx.config.testing_mode,
-            "invulnerability_mode": ctx.config.invulnerability_mode,
-            "reset_after_death": lambda s: reset_after_death(s, w, h),
-            "create_pickup_collection_effect": create_pickup_collection_effect,
-            "apply_pickup_effect": lambda pt, s: apply_pickup_effect(pt, s, ctx),
-            "enemy_projectile_size": enemy_projectile_size,
-            "enemy_projectiles_color": enemy_projectiles_color,
-            "missile_damage": missile_damage,
-            "find_nearest_threat": find_nearest_threat,
-            "spawn_enemy_projectile": lambda e, s: spawn_enemy_projectile(e, s, ctx.telemetry_client, ctx.config.enable_telemetry),
-            "spawn_enemy_projectile_predictive": spawn_enemy_projectile_predictive,
-            "difficulty": ctx.config.difficulty,
-            "random_spawn_position": random_spawn_position,
-            "telemetry": ctx.telemetry_client,
-            "telemetry_enabled": ctx.config.enable_telemetry,
-            "overshield_recharge_cooldown": overshield_recharge_cooldown,
-            "ally_drop_cooldown": ally_drop_cooldown,
-            "play_sfx": play_sfx,
-            "damage_flash_duration": getattr(ctx.config, "damage_flash_duration", 0.12),
-            "screen_flash_duration": getattr(ctx.config, "screen_flash_duration", 0.25),
-            "screen_flash_max_alpha": getattr(ctx.config, "screen_flash_max_alpha", 100),
-            "enable_damage_flash": getattr(ctx.config, "enable_damage_flash", True),
-            "enable_screen_flash": getattr(ctx.config, "enable_screen_flash", True),
-            "enable_damage_wobble": getattr(ctx.config, "enable_damage_wobble", False),
-            "enable_wave_banner": getattr(ctx.config, "enable_wave_banner", True),
-            "wave_banner_duration": getattr(ctx.config, "wave_banner_duration", 1.5),
-            "base_enemies_per_wave": getattr(ctx.config, "base_enemies_per_wave", 12),
-            "enemy_spawn_multiplier": getattr(ctx.config, "enemy_spawn_multiplier", 3.5),
-            "log_player_death": _log_player_death,
-            "config": ctx.config,
-        }
-    game_state.level_context = _make_level_context()
+    # Level context for movement_system and collision_system (callables and data)
+    from level_utils import make_level_context
+    game_state.level_context = make_level_context(ctx, game_state)
     game_state.run_id = None  # Will be set when game starts
     return game_state
 
@@ -673,104 +602,9 @@ def _get_current_scene(scene_stack: SceneStack):
     return scene_stack.current()
 
 
-def _get_current_state(scene_stack: SceneStack) -> str | None:
-    """Get the current state ID from the top scene in the stack, or None if empty."""
-    scene = scene_stack.current()
-    if scene is None:
-        return None
-    return scene.state_id()
+# _get_current_state imported from engine.render_loop
 
-
-def _apply_scene_transition(transition: SceneTransition, scene_stack: SceneStack, ctx, game_state) -> bool:
-    """Apply a SceneTransition to the scene stack and game state.
-    
-    Returns True if the transition should cause the loop to exit (QUIT_GAME).
-    For PUSH/REPLACE, scene_name should be a state constant like STATE_PAUSED, STATE_MENU, etc.
-    Falls back to old state-machine logic where needed.
-    """
-    if transition.kind == KIND_NONE:
-        return False
-    
-    if transition.kind == KIND_QUIT_GAME:
-        return True  # Signal to exit loop
-    
-    if transition.kind == KIND_POP:
-        scene_stack.pop()
-        # Restore previous screen state
-        state = game_state.previous_screen or STATE_PLAYING
-        game_state.current_screen = state
-        return False
-    
-    if transition.kind == KIND_PUSH:
-        scene_name = transition.scene_name
-        if scene_name == STATE_PAUSED:
-            scene_stack.push(PauseScene())
-        elif scene_name == STATE_MENU:
-            scene_stack.push(OptionsScene())
-        elif scene_name == STATE_QUICK_LAUNCH:
-            scene_stack.push(QuickLaunchScene())
-        elif scene_name == STATE_TITLE:
-            scene_stack.push(TitleScene())
-        elif scene_name == STATE_NAME_INPUT:
-            scene_stack.push(NameInputScene())
-        elif scene_name == STATE_HIGH_SCORES:
-            scene_stack.push(HighScoreScene())
-        elif scene_name == STATE_GAME_OVER:
-            scene_stack.push(GameOverScene())
-        elif scene_name == STATE_VICTORY:
-            scene_stack.push(VictoryScene())
-        elif scene_name == STATE_SAVE_GAME:
-            scene_stack.push(SaveGameScene())
-        elif scene_name == STATE_LOAD_GAME:
-            scene_stack.push(LoadGameScene())
-        elif scene_name in (STATE_PLAYING, STATE_ENDURANCE):
-            scene_stack.push(GameplayScene(scene_name))
-        elif scene_name == "SHADER_TEST":
-            scene_stack.push(ShaderTestScene())
-        elif scene_name == "SHADER_SETTINGS":
-            from scenes.shader_settings import ShaderSettingsScreen
-            scene_stack.push(ShaderSettingsScreen())
-        # Update current_screen to match the pushed scene
-        if scene_name:
-            game_state.current_screen = scene_name
-        return False
-    
-    if transition.kind == KIND_REPLACE:
-        scene_name = transition.scene_name
-        scene_stack.clear()
-        if scene_name == STATE_PAUSED:
-            scene_stack.push(PauseScene())
-        elif scene_name == STATE_MENU:
-            scene_stack.push(OptionsScene())
-        elif scene_name == STATE_QUICK_LAUNCH:
-            scene_stack.push(QuickLaunchScene())
-        elif scene_name == STATE_TITLE:
-            scene_stack.push(TitleScene())
-        elif scene_name == STATE_NAME_INPUT:
-            scene_stack.push(NameInputScene())
-        elif scene_name == STATE_HIGH_SCORES:
-            scene_stack.push(HighScoreScene())
-        elif scene_name == STATE_GAME_OVER:
-            scene_stack.push(GameOverScene())
-        elif scene_name == STATE_VICTORY:
-            scene_stack.push(VictoryScene())
-        elif scene_name == STATE_SAVE_GAME:
-            scene_stack.push(SaveGameScene())
-        elif scene_name == STATE_LOAD_GAME:
-            scene_stack.push(LoadGameScene())
-        elif scene_name in (STATE_PLAYING, STATE_ENDURANCE):
-            scene_stack.push(GameplayScene(scene_name))
-        elif scene_name == "SHADER_TEST":
-            scene_stack.push(ShaderTestScene())
-        elif scene_name == "SHADER_SETTINGS":
-            from scenes.shader_settings import ShaderSettingsScreen
-            scene_stack.push(ShaderSettingsScreen())
-        # Update current_screen to match the replaced scene
-        if scene_name:
-            game_state.current_screen = scene_name
-        return False
-    
-    return False
+# Scene transition logic is now in scenes/transitions.py (apply_scene_transition)
 
 
 # -----------------------------------------------------------------------------
@@ -781,6 +615,10 @@ from engine.input_loop import (
     handle_global_events as _engine_handle_global_events,
     handle_scene_events as _engine_handle_scene_events,
     handle_debug_keys as _engine_handle_debug_keys,
+)
+from engine.render_loop import (
+    get_current_state as _get_current_state,
+    render_current_scene as _render_current_scene,
 )
 
 
@@ -855,7 +693,7 @@ def _handle_events(
             scene_result = getattr(current_scene, "_last_input_result", None) if current_scene else None
         
         if transition.kind != KIND_NONE:
-            should_quit = _apply_scene_transition(transition, scene_stack, ctx, game_state)
+            should_quit = apply_scene_transition(transition, scene_stack, game_state)
             if should_quit:
                 return False, previous_game_state, pause_selected, controls_selected, controls_rebinding
             handled_by_screen = True
@@ -933,39 +771,21 @@ def _handle_events(
         elif result.get("screen") is not None and not result.get("start_game"):
             new_screen = result["screen"]
             game_state.current_screen = new_screen
-            if new_screen == STATE_MENU:
+            # Play ambient music for menu screens
+            if new_screen in (STATE_MENU, STATE_QUICK_LAUNCH):
                 play_music("ambient2", loop=True)
-                scene_stack.clear()
-                scene_stack.push(OptionsScene())
-            elif new_screen == STATE_QUICK_LAUNCH:
-                play_music("ambient2", loop=True)
-                scene_stack.clear()
-                scene_stack.push(QuickLaunchScene())
-            elif new_screen == STATE_TITLE:
-                scene_stack.clear()
-                scene_stack.push(TitleScene())
-            elif new_screen == STATE_PAUSED:
-                scene_stack.push(PauseScene())
-            elif new_screen == STATE_NAME_INPUT:
-                scene_stack.push(NameInputScene())
-            elif new_screen == STATE_HIGH_SCORES:
-                scene_stack.push(HighScoreScene())
-            elif new_screen == STATE_GAME_OVER:
-                scene_stack.clear()
-                scene_stack.push(GameOverScene())
-            elif new_screen == STATE_VICTORY:
-                scene_stack.clear()
-                scene_stack.push(VictoryScene())
-            elif new_screen == STATE_SAVE_GAME:
-                scene_stack.push(SaveGameScene())
-            elif new_screen == STATE_LOAD_GAME:
-                scene_stack.push(LoadGameScene())
-            elif new_screen in (STATE_PLAYING, STATE_ENDURANCE):
-                if current_state == STATE_PAUSED:
-                    scene_stack.pop()
-                else:
+            # Determine if we should clear or just push
+            clear_first = new_screen in (STATE_MENU, STATE_QUICK_LAUNCH, STATE_TITLE, STATE_GAME_OVER, STATE_VICTORY)
+            pop_if_paused = new_screen in (STATE_PLAYING, STATE_ENDURANCE) and current_state == STATE_PAUSED
+            if pop_if_paused:
+                scene_stack.pop()
+            else:
+                if clear_first:
                     scene_stack.clear()
-                    scene_stack.push(GameplayScene(new_screen))
+                from scenes.transitions import create_scene_for_state
+                scene = create_scene_for_state(new_screen)
+                if scene:
+                    scene_stack.push(scene)
         handled_by_screen = True
     
     # Step 4: Handle debug keys (F3 for shader profile info)
@@ -996,7 +816,7 @@ def _step_simulation(
             try:
                 transition = current_scene.update_transition(FIXED_DT, game_state, screen_ctx)
                 if transition.kind != KIND_NONE:
-                    should_quit = _apply_scene_transition(transition, scene_stack, ctx, game_state)
+                    should_quit = apply_scene_transition(transition, scene_stack, game_state)
                     if should_quit:
                         break
             except AttributeError:
@@ -1010,183 +830,7 @@ def _step_simulation(
     return simulation_accumulator, should_quit
 
 
-def _render_current_scene(
-    ctx: AppContext,
-    game_state: GameState,
-    scene_stack: SceneStack,
-    screen_ctx: dict,
-    pause_shaders_enabled: bool = False,
-    menu_shaders_enabled: bool = False,
-) -> None:
-    """Render the current scene based on game state."""
-    current_state = _get_current_state(scene_stack) or game_state.current_screen
-    theme = level_themes.get(game_state.current_level, level_themes[1])
-    if current_state not in (STATE_PLAYING, STATE_ENDURANCE):
-        ctx.screen.fill(theme["bg_color"])
-
-    if current_state == STATE_PLAYING or current_state == STATE_ENDURANCE:
-        lv = game_state.level
-        # Cache gameplay_ctx on game_state to avoid recreating dict every frame
-        gameplay_ctx = getattr(game_state, "_cached_gameplay_ctx", None)
-        if gameplay_ctx is None:
-            gameplay_ctx = {
-                "level_themes": level_themes,
-                "trapezoid_blocks": lv.trapezoid_blocks if lv else [],
-                "triangle_blocks": lv.triangle_blocks if lv else [],
-                "destructible_blocks": lv.destructible_blocks if lv else [],
-                "moveable_destructible_blocks": lv.moveable_blocks if lv else [],
-                "giant_blocks": lv.giant_blocks if lv else [],
-                "super_giant_blocks": lv.super_giant_blocks if lv else [],
-                "hazard_obstacles": lv.hazard_obstacles if lv else [],
-                "moving_health_zone": lv.moving_health_zone if lv else None,
-                "teleporter_pads": game_state.teleporter_pads,
-                "small_font": ctx.small_font,
-                "weapon_names": WEAPON_NAMES,
-                "WIDTH": ctx.width,
-                "HEIGHT": ctx.height,
-                "font": ctx.font,
-                "big_font": ctx.big_font,
-                "ui_show_hud": ctx.config.show_hud,
-                "ui_show_metrics": ctx.config.show_metrics,
-                "ui_show_health_bars": ctx.config.show_health_bars,
-                "ui_show_fps": ctx.config.show_fps,
-                "ui_show_perf_overlay": getattr(ctx.config, "show_perf_overlay", False),
-                "overshield_max": game_state.player_max_hp,  # Overshield max = player max HP (TAB activation amount)
-                "grenade_cooldown": grenade_cooldown,
-                "missile_cooldown": missile_cooldown,
-                "ally_drop_cooldown": ally_drop_cooldown,
-                "overshield_recharge_cooldown": overshield_recharge_cooldown,
-                "shield_duration": shield_duration,
-                "aiming_mode": ctx.config.aim_mode,
-                "current_state": current_state,
-                "enable_screen_flash": getattr(ctx.config, "enable_screen_flash", True),
-                "screen_flash_duration": getattr(ctx.config, "screen_flash_duration", 0.25),
-                "screen_flash_max_alpha": getattr(ctx.config, "screen_flash_max_alpha", 100),
-                "enable_wave_banner": getattr(ctx.config, "enable_wave_banner", True),
-            }
-            game_state._cached_gameplay_ctx = gameplay_ctx
-        else:
-            # Update only values that can change (config toggles and current state)
-            gameplay_ctx["ui_show_hud"] = ctx.config.show_hud
-            gameplay_ctx["ui_show_metrics"] = ctx.config.show_metrics
-            gameplay_ctx["ui_show_health_bars"] = ctx.config.show_health_bars
-            gameplay_ctx["ui_show_fps"] = ctx.config.show_fps
-            gameplay_ctx["ui_show_perf_overlay"] = getattr(ctx.config, "show_perf_overlay", False)
-            gameplay_ctx["current_state"] = current_state
-            # Update level references if level changed
-            if lv:
-                gameplay_ctx["trapezoid_blocks"] = lv.trapezoid_blocks
-                gameplay_ctx["triangle_blocks"] = lv.triangle_blocks
-                gameplay_ctx["destructible_blocks"] = lv.destructible_blocks
-                gameplay_ctx["moveable_destructible_blocks"] = lv.moveable_blocks
-                gameplay_ctx["giant_blocks"] = lv.giant_blocks
-                gameplay_ctx["super_giant_blocks"] = lv.super_giant_blocks
-                gameplay_ctx["hazard_obstacles"] = lv.hazard_obstacles
-                gameplay_ctx["moving_health_zone"] = lv.moving_health_zone
-            gameplay_ctx["teleporter_pads"] = game_state.teleporter_pads
-        render_ctx = RenderContext.from_app_ctx(ctx)
-        render_gameplay_with_optional_shaders(render_ctx, game_state, {"app_ctx": ctx, "gameplay_ctx": gameplay_ctx})
-        
-        # Clean up expired UI tokens (state updates; timers decremented in update loop)
-        for dmg_num in game_state.damage_numbers[:]:
-            if dmg_num["timer"] <= 0:
-                game_state.damage_numbers.remove(dmg_num)
-        for msg in game_state.weapon_pickup_messages[:]:
-            if msg["timer"] <= 0:
-                game_state.weapon_pickup_messages.remove(msg)
-    elif current_state in (STATE_TITLE, STATE_MENU, STATE_QUICK_LAUNCH, STATE_PAUSED, STATE_HIGH_SCORES, STATE_NAME_INPUT, STATE_GAME_OVER, STATE_VICTORY, STATE_SAVE_GAME, STATE_LOAD_GAME, "SHADER_TEST", "SHADER_SETTINGS"):
-        # Use display render context for menus (not world surface)
-        render_ctx = RenderContext.for_menu(ctx)
-        # When paused + enable_pause_shaders: render gameplay frame, apply pause stack, then draw UI on top
-        if current_state == STATE_PAUSED and pause_shaders_enabled:
-            lv = game_state.level
-            # Use display dimensions for pause overlay
-            display_w = getattr(ctx, 'display_width', ctx.width)
-            display_h = getattr(ctx, 'display_height', ctx.height)
-            gameplay_ctx_pause = {
-                "level_themes": level_themes,
-                "trapezoid_blocks": lv.trapezoid_blocks if lv else [],
-                "triangle_blocks": lv.triangle_blocks if lv else [],
-                "destructible_blocks": lv.destructible_blocks if lv else [],
-                "moveable_destructible_blocks": lv.moveable_blocks if lv else [],
-                "giant_blocks": lv.giant_blocks if lv else [],
-                "super_giant_blocks": lv.super_giant_blocks if lv else [],
-                "hazard_obstacles": lv.hazard_obstacles if lv else [],
-                "moving_health_zone": lv.moving_health_zone if lv else None,
-                "teleporter_pads": game_state.teleporter_pads,
-                "small_font": ctx.small_font,
-                "weapon_names": WEAPON_NAMES,
-                "WIDTH": display_w,
-                "HEIGHT": display_h,
-                "font": ctx.font,
-                "big_font": ctx.big_font,
-                "ui_show_hud": ctx.config.show_hud,
-                "ui_show_metrics": ctx.config.show_metrics,
-                "ui_show_health_bars": ctx.config.show_health_bars,
-                "ui_show_fps": ctx.config.show_fps,
-                "overshield_max": game_state.player_max_hp,  # Overshield max = player max HP
-                "grenade_cooldown": grenade_cooldown,
-                "missile_cooldown": missile_cooldown,
-                "ally_drop_cooldown": ally_drop_cooldown,
-                "overshield_recharge_cooldown": overshield_recharge_cooldown,
-                "shield_duration": shield_duration,
-                "aiming_mode": ctx.config.aim_mode,
-                "current_state": current_state,
-                "enable_screen_flash": getattr(ctx.config, "enable_screen_flash", True),
-                "screen_flash_duration": getattr(ctx.config, "screen_flash_duration", 0.25),
-                "screen_flash_max_alpha": getattr(ctx.config, "screen_flash_max_alpha", 100),
-                "enable_wave_banner": getattr(ctx.config, "enable_wave_banner", True),
-            }
-            # Use cached offscreen surface to avoid per-frame allocation
-            offscreen = ctx.get_offscreen_surface(display_w, display_h)
-            offscreen.fill((0, 0, 0, 255))
-            render_gameplay_frame_to_surface(
-                offscreen, display_w, display_h,
-                ctx.font, ctx.big_font, ctx.small_font,
-                game_state, {"app_ctx": ctx, "gameplay_ctx": gameplay_ctx_pause},
-            )
-            pause_stack = get_pause_shader_stack(ctx.config)
-            surf = offscreen
-            eff_ctx = {"time": time.perf_counter()}
-            for eff in pause_stack:
-                surf = eff.apply(surf, 0.016, eff_ctx)
-            ctx.screen.blit(surf, (0, 0))
-        current_scene = scene_stack.current()
-        if current_scene:
-            current_scene.render(render_ctx, game_state, screen_ctx)
-        # Note: All states should have scenes on the stack. If no scene exists, we skip rendering.
-        # This is a safety fallback - scenes should always be present for PAUSED, HIGH_SCORES, NAME_INPUT, etc.
-        # Config-based shader stacks and legacy lightweight effects
-        if current_state == STATE_PAUSED and not pause_shaders_enabled:
-            apply_pause_effects(render_ctx.screen, ctx)
-        elif current_state in (STATE_TITLE, STATE_MENU, STATE_QUICK_LAUNCH):
-            apply_menu_effects(render_ctx.screen, ctx)
-        # Apply config-based menu shader stack when enable_menu_shaders and menu_shader_profile != "none"
-        if current_state in (STATE_TITLE, STATE_MENU, STATE_QUICK_LAUNCH) and menu_shaders_enabled:
-            try:
-                menu_stack = get_menu_shader_stack(ctx.config)
-                if menu_stack:
-                    display = render_ctx.screen
-                    surf = display
-                    eff_ctx = {"time": game_state.run_time}
-                    for eff in menu_stack:
-                        if surf is None:
-                            break
-                        surf = eff.apply(surf, 0.016, eff_ctx)
-                    if surf is not None and surf is not display:
-                        display.blit(surf, (0, 0))
-            except Exception as e:
-                # If shader application fails, log and continue without shaders
-                print(f"[Menu shader] Error applying shader stack: {e}")
-                import traceback
-                traceback.print_exc()
-    elif current_state == STATE_VICTORY:
-        # Victory screen - handled by VictoryScene in the scene stack
-        # This branch should not be reached since STATE_VICTORY is now included in the scene rendering block above
-        render_ctx = RenderContext.for_menu(ctx)
-        current_scene = _get_current_scene(scene_stack)
-        if current_scene:
-            current_scene.render(render_ctx, game_state, screen_ctx)
+# _render_current_scene imported from engine.render_loop
 
 
 def _handle_exit(ctx: AppContext, game_state: GameState) -> None:
@@ -1228,539 +872,35 @@ def main():
 
 
 # -----------------------------------------------------------------------------
-# LEGACY MODULE-LEVEL STATE
-# Most game state has been migrated to GameState. The variables below are kept
-# for compatibility with tests and edge cases. New code should use state.xxx
+# LEGACY MODULE-LEVEL STATE (MINIMAL)
+# All game state is in GameState. These are kept only for external compatibility.
+# New code should use state.xxx instead.
 # -----------------------------------------------------------------------------
 controls = {}  # Initialized in _create_app() after pygame.init()
 
-# ----------------------------
-# Player (initialized in main() after WIDTH/HEIGHT are set)
-# ----------------------------
-player = None  # Will be initialized in main() after WIDTH/HEIGHT are set
-player_speed = 450  # px/s (base speed, modified by class) - 1.5x (300 * 1.5)
-player_max_hp = 7500  # base HP (modified by class) - 10x (750 * 10)
-player_hp = player_max_hp
-
-# player_class_stats and overshield_max are now imported from constants.py
-overshield = 0  # Current overshield amount
-# overshield_recharge_cooldown is now imported from constants.py
-overshield_recharge_timer = 0.0  # Time since last overshield activation
-# shield_recharge_cooldown is now imported from constants.py
-shield_recharge_timer = 0.0  # Time since shield was used
-# pygame.mouse.set_visible(True)  # Moved to main() after pygame.init()
-
-# LIVES_START is now imported from constants.py
-lives = LIVES_START
-
-# Track most recent movement keys so latest press wins on conflicts
-last_horizontal_key = None  # keycode of current "latest" horizontal key
-last_vertical_key = None  # keycode of current "latest" vertical key
-last_move_velocity = pygame.Vector2(0, 0)
-
-# Dash mechanic (space bar) - constants imported from constants.py
-jump_cooldown_timer = 0.0
-jump_velocity = pygame.Vector2(0, 0)  # Current jump velocity
-jump_timer = 0.0
-is_jumping = False
-
-# Boost / slow
-previous_boost_state = False  # Track for telemetry
-previous_slow_state = False  # Track for telemetry
-
-# Boost/slow constants imported from constants.py
-boost_meter = boost_meter_max
-
-# Fire-rate pickup buff
-fire_rate_buff_t = 0.0
-fire_rate_buff_duration = 10.0
-fire_rate_mult = 0.55  # reduces cooldown while active
-
-# Shield system (Left Alt key) - constants imported from constants.py
-shield_active = False
-shield_duration_remaining = 0.0
-shield_cooldown = shield_recharge_cooldown  # From constants (5.0, half of original 10)
-shield_cooldown_remaining = 0.0
-shield_recharge_cooldown = shield_recharge_cooldown  # Imported from constants.py (default 10.0), will be set when shield is activated
-shield_recharge_timer = 0.0
-
-# Permanent player stat multipliers (from pickups)
-player_stat_multipliers = {
-    "speed": 1.0,
-    "firerate": 1.0,  # permanent firerate boost (stacks with temporary buff)
-    "bullet_size": 1.0,
-    "bullet_speed": 1.0,
-    "bullet_damage": 1.0,
-    "bullet_knockback": 1.0,
-    "bullet_penetration": 0,  # number of enemies bullet can pierce through
-    "bullet_explosion_radius": 0.0,  # explosion radius in pixels (0 = no explosion)
-}
-
-# Random damage multiplier (from "random_damage" pickup)
-# This multiplies the base damage, and changes randomly when pickup is collected
-random_damage_multiplier = 1.0  # Starts at 1.0x
-
-# Damage number display system (floating damage numbers over enemies)
-damage_numbers: list[dict] = []  # List of {x, y, damage, timer, color}
-weapon_pickup_messages: list[dict] = []  # List of {weapon_name, timer, color} for displaying weapon pickup notifications
-
-# Weapon mode system (keys 1-6 to switch)
-# "basic" = normal bullets, "triple" = triple shot, "giant" = giant bullets, "laser" = laser beam
-current_weapon_mode = "giant"
-previous_weapon_mode = "giant"  # Track for telemetry
-unlocked_weapons: set[str] = {"basic", "giant", "triple", "laser"}  # Keys 1=triple, 2=laser, 3=giant
-
-# Laser beam system - constants imported from constants.py
-laser_beams: list[dict] = []  # List of active laser beams
-laser_time_since_shot = 999.0
-
-# Wave beam system (trigonometric wave patterns) - constants imported from constants.py
-wave_beams: list[dict] = []  # List of active wave beams
-wave_beam_time_since_shot = 999.0
-wave_beam_pattern_index = 0  # Current wave pattern (cycles through patterns)
-
-# hazard_obstacles imported from hazards.py
-# Level geometry is built in build_level_geometry() and stored in game_state.level (LevelState).
-
-# Teleporter pads: set in main() via place_teleporter_pads() from level_builder.py. Other modules may reference this.
-# TELEPORTER_SIZE is defined in level_builder.py; used by place_teleporter_pads()
-teleporter_pads: list = []
-
-# Level geometry functions moved to level_builder.py:
-# - build_level_geometry()
-# - place_teleporter_pads()
-# - generate_wave_beam_points()
-# - check_wave_beam_collision()
-
-# Track which zones player is currently in (for telemetry)
-player_current_zones = set()  # Set of zone names player is in
-
-# Player health regeneration rate (can be increased by pickups)
-player_health_regen_rate = 0.0  # Base regeneration rate (0 = no regen)
-
-# Bouncing destructor shapes (line 79)
-destructor_shapes: list[dict] = []  # Large shapes that bounce around destroying things
-
-# ----------------------------
-# Player bullets - constants imported from constants.py
-# ----------------------------
-player_bullets: list[dict] = []
-player_time_since_shot = 999.0
-player_bullet_shape_index = 0
-
-# Grenade system - constants imported from constants.py
-grenade_explosions: list[dict] = []  # List of active explosions {x, y, radius, max_radius, timer, damage}
-grenade_time_since_used = 999.0  # Time since last grenade
-
-# Missile system (seeking missiles) - constants imported from constants.py
-missiles: list[dict] = []  # List of active missiles {rect, vel, target_enemy, speed, damage, explosion_radius}
-missile_time_since_used = 999.0  # Time since last missile
-missile_explosion_radius = 100  # Explosion radius
-missile_speed = 200  # Missile movement speed (reduced by 0.5x)
-
-# ----------------------------
-# Enemy templates are now imported from config_enemies.py
-# ----------------------------
-enemy_templates = ENEMY_TEMPLATES  # Alias for compatibility
-
-# Boss enemy template is now imported from config_enemies.py
-# Note: rect position will be set at runtime in spawn_boss()
-# boss_template will be created from BOSS_TEMPLATE.copy() when needed in start_wave()
-# We keep a reference here for compatibility, but it will be copied at runtime
-boss_template = BOSS_TEMPLATE  # Reference (will be copied when spawning boss)
-
-enemies: list[dict] = []
-
-# ----------------------------
-# Friendly AI
-# ----------------------------
-# Friendly AI templates are now imported from config_enemies.py
-friendly_ai_templates = FRIENDLY_AI_TEMPLATES  # Alias for compatibility
-
-friendly_ai: list[dict] = []
-
-# Dropped ally system (distracts enemies)
-dropped_ally: dict | None = None  # Single dropped ally that distracts enemies
-# NOTE: ally_drop_cooldown is imported from constants (set in config/balance.py)
-ally_drop_timer = 0.0  # Time since last ally drop
-friendly_projectiles: list[dict] = []
-
-# ----------------------------
-# Enemy projectiles
-# ----------------------------
-enemy_projectiles: list[dict] = []
-# Enemy projectile constants are now imported from constants.py
-enemy_projectile_size = ENEMY_PROJECTILE_SIZE
-enemy_projectile_damage = ENEMY_PROJECTILE_DAMAGE
-enemy_projectiles_color = ENEMY_PROJECTILES_COLOR
-enemy_projectile_shapes = ["circle", "square", "diamond"]
-
-# ----------------------------
-# Run counters (runs table) - initialized in main()
-# ----------------------------
-running = True  # Will be set in main()
-run_time = 0.0
-
-shots_fired = 0
-hits = 0
-
-damage_taken = 0
-damage_dealt = 0
-
-enemies_spawned = 0
-enemies_killed = 0
-deaths = 0
-score = 0
-survival_time = 0.0  # Total time survived in seconds
-
-# High score system - HIGH_SCORES_DB imported from constants.py
-player_name_input = ""  # Current name being typed
-name_input_active = False  # Whether we're in name input mode
-final_score_for_high_score = 0  # Score to save when name is entered
-
-# POS_SAMPLE_INTERVAL imported from constants.py
-pos_timer = 0.0
-
-# Waves / progression
-wave_number = 1
-wave_in_level = 1  # Wave within current level (1, 2, or 3)
-wave_respawn_delay = 2.5  # seconds between waves
-time_to_next_wave = 0.0
-wave_active = True
-# Enemy spawn constants are now imported from config_enemies.py
-base_enemies_per_wave = BASE_ENEMIES_PER_WAVE
-max_enemies_per_wave = MAX_ENEMIES_PER_WAVE
-boss_active = False
-
-# Pickups - PICKUP_SPAWN_INTERVAL imported from constants.py
-pickups: list[dict] = []
-pickup_spawn_timer = 0.0
-
-# Scoring constants imported from constants.py
-# Weapon key mapping imported from constants.py
-# Removed: enemy_spawn_boost_level - enemies no longer collect pickups
-
-# Weapon key mapping (uses pygame constants, so must stay here)
+# Weapon key mapping (uses pygame constants)
 WEAPON_KEY_MAP = {
     pygame.K_1: "triple",
     pygame.K_2: "laser",
     pygame.K_3: "giant",
 }
 
-# Visual effects for pickups
-pickup_particles: list[dict] = []  # particles around pickups
-collection_effects: list[dict] = []  # effects when pickups are collected
+# Lowercase aliases for constants (external compatibility)
+enemy_projectile_size = ENEMY_PROJECTILE_SIZE
+enemy_projectile_damage = ENEMY_PROJECTILE_DAMAGE
+enemy_projectiles_color = ENEMY_PROJECTILES_COLOR
 
+# Template aliases (external compatibility)
+enemy_templates = ENEMY_TEMPLATES
+boss_template = BOSS_TEMPLATE
+friendly_ai_templates = FRIENDLY_AI_TEMPLATES
 
-# ----------------------------
-# Helpers (geometry/physics moved to geometry_utils)
-# ----------------------------
-# move_player_with_push is now imported from systems.collision_movement
-
-
-# _enemy_collides and move_enemy_with_push are now imported from systems.collision_movement
-
-
-def random_spawn_position(size: tuple[int, int], state: GameState, max_attempts: int = 25) -> pygame.Rect:
-    """Find a spawn position not overlapping player or blocks. Player spawn takes priority."""
-    w, h = size
-    lev = getattr(state, "level", None)
-    if state.player_rect is None:
-        player_center = pygame.Vector2(WIDTH // 2, HEIGHT // 2)
-        player_size = 28
-    else:
-        player_center = pygame.Vector2(state.player_rect.center)
-        player_size = max(state.player_rect.w, state.player_rect.h)
-    min_distance = player_size * 10
-    
-    for _ in range(max_attempts):
-        x = random.randint(0, WIDTH - w)
-        y = random.randint(0, HEIGHT - h)
-        candidate = pygame.Rect(x, y, w, h)
-        candidate_center = pygame.Vector2(candidate.center)
-        if candidate_center.distance_to(player_center) < min_distance:
-            continue
-        if state.player_rect is not None and candidate.colliderect(state.player_rect):
-            continue
-        if lev is not None:
-            if any(candidate.colliderect(b["rect"]) for b in lev.static_blocks):
-                continue
-            if any(candidate.colliderect(b["rect"]) for b in lev.moveable_blocks):
-                continue
-            if any(candidate.colliderect(b["rect"]) for b in lev.destructible_blocks):
-                continue
-            if any(candidate.colliderect(b["rect"]) for b in lev.giant_blocks):
-                continue
-            if any(candidate.colliderect(b["rect"]) for b in lev.super_giant_blocks):
-                continue
-            if any(candidate.colliderect(tb["bounding_rect"]) for tb in lev.trapezoid_blocks):
-                continue
-            if any(candidate.colliderect(tr["bounding_rect"]) for tr in lev.triangle_blocks):
-                continue
-            if lev.moving_health_zone and candidate.colliderect(lev.moving_health_zone["rect"]):
-                continue
-        if any(candidate.colliderect(p["rect"]) for p in state.pickups):
-            continue
-        if any(candidate.colliderect(pad["rect"]) for pad in state.teleporter_pads):
-            continue
-        return candidate
-    return pygame.Rect(max(0, WIDTH // 2 - w), max(0, HEIGHT // 2 - h), w, h)
-
-
-# Wave start and wave/boss/difficulty logic live in systems.spawn_system (start_wave, update)
-
-# High score functions are in game_utils.py:
-# - init_high_scores_db, get_high_scores, save_high_score, is_high_score
-from game_utils import init_high_scores_db, get_high_scores, save_high_score, is_high_score
-
-
-def spawn_pickup(pickup_type: str, state: GameState):
-    """Spawn a pickup at a non-overlapping position. Uses state.level for geometry when available."""
-    size = (64, 64)
-    max_attempts = 50
-    for _ in range(max_attempts):
-        r = random_spawn_position(size, state)
-        overlaps = False
-        for existing_pickup in state.pickups:
-            if r.colliderect(existing_pickup["rect"]):
-                overlaps = True
-                break
-        if state.level and state.level.moving_health_zone and r.colliderect(state.level.moving_health_zone["rect"]):
-            overlaps = True
-        
-        if not overlaps:
-            # All pickups look the same (mystery) - randomized color so player doesn't know what they're getting
-            mystery_colors = [
-                (180, 100, 255),  # purple
-                (100, 255, 180),  # green
-                (255, 180, 100),  # orange
-                (180, 255, 255),  # cyan
-                (255, 100, 180),  # pink
-                (255, 255, 100),  # yellow
-            ]
-            color = random.choice(mystery_colors)
-            run_time = getattr(state, "run_time", 0.0)
-            state.pickups.append({
-                "type": pickup_type,
-                "rect": r,
-                "color": color,
-                "timer": 15.0,
-                "age": 0.0,
-                "spawn_t": run_time,
-            })
-            return
-
-
-def spawn_weapon_in_center(weapon_type: str, state: GameState, width: int, height: int):
-    """Spawn a weapon pickup in the center of the screen (level completion reward). Only giant is dropped."""
-    if weapon_type not in ("giant", "giant_bullets"):
-        return
-    # Weapon colors are now imported from config_weapons.py
-    weapon_pickup_size = (80, 80)  # Bigger for level completion rewards (2x from 40x40)
-    weapon_pickup_rect = pygame.Rect(
-        width // 2 - weapon_pickup_size[0] // 2,
-        height // 2 - weapon_pickup_size[1] // 2,
-        weapon_pickup_size[0],
-        weapon_pickup_size[1]
-    )
-    run_time = getattr(state, "run_time", 0.0)
-    state.pickups.append({
-        "type": weapon_type,
-        "rect": weapon_pickup_rect,
-        "color": WEAPON_DISPLAY_COLORS.get(weapon_type, (180, 100, 255)),
-        "timer": 30.0,  # Level completion weapons last longer
-        "age": 0.0,
-        "spawn_t": run_time,
-        "is_weapon_drop": True,
-        "is_level_reward": True,  # Mark as level completion reward
-    })
-
-
-def spawn_weapon_drop(enemy: dict, state: GameState):
-    """Spawn a bonus-points drop from a killed enemy. 1/10th former rate; despawns after 7s."""
-    # 1.5% chance to drop (1/10th of former 15% rate)
-    if random.random() >= 0.015:
-        return
-    size = (56, 56)
-    r = pygame.Rect(
-        enemy["rect"].centerx - size[0] // 2,
-        enemy["rect"].centery - size[1] // 2,
-        size[0], size[1]
-    )
-    run_time = getattr(state, "run_time", 0.0)
-    state.pickups.append({
-        "type": "bonus",
-        "rect": r,
-        "color": (255, 215, 0),  # gold for bonus points
-        "spawn_t": run_time,
-        "age": 0.0,
-    })
-
-
-# Rendering helper functions are now imported from rendering.py
-
-
-def create_pickup_collection_effect(x: int, y: int, color: tuple[int, int, int], state: GameState):
-    """Create particle effect when pickup is collected."""
-    for _ in range(12):
-        angle = random.uniform(0, 2 * math.pi)
-        speed = random.uniform(50, 150)
-        state.collection_effects.append({
-            "x": float(x),
-            "y": float(y),
-            "vel_x": math.cos(angle) * speed,
-            "vel_y": math.sin(angle) * speed,
-            "color": color,
-            "life": 0.4,  # particle lifetime
-            "size": random.randint(3, 6),
-        })
-
-
-# Rendering helper functions are now imported from rendering.py
-# Projectile spawning functions moved to systems/projectile_spawning.py
-
-
-def calculate_kill_score(wave_num: int, run_time: float) -> int:
-    """Calculate score for killing an enemy."""
-    return SCORE_BASE_POINTS + (wave_num * SCORE_WAVE_MULTIPLIER) + int(run_time * SCORE_TIME_MULTIPLIER)
-
-
-def kill_enemy(enemy: dict, state: GameState, width: int, height: int, event_bus: object | None = None) -> None:
-    """Handle enemy death: drop weapon, update score, remove from list, and clean up projectiles."""
-    play_sfx("enemy_death")
-    is_boss = enemy.get("is_boss", False)
-    
-    # Spawner enemy: when killed, all spawned enemies die
-    if enemy.get("is_spawner"):
-        # Find and kill all enemies spawned by this spawner
-        for spawned_enemy in state.enemies[:]:
-            if spawned_enemy.get("spawned_by") is enemy:
-                # Recursively kill spawned enemy (but don't drop weapons for spawned enemies)
-                spawned_enemy_type = spawned_enemy.get("type", "enemy")
-                # Remove projectiles
-                for proj in state.enemy_projectiles[:]:
-                    if proj.get("enemy_type") == spawned_enemy_type:
-                        state.enemy_projectiles.remove(proj)
-                # Remove from list
-                try:
-                    state.enemies.remove(spawned_enemy)
-                except ValueError:
-                    pass
-                state.enemies_killed += 1
-                state.score += calculate_kill_score(state.wave_number, state.run_time)
-    
-    # Add defeat message
-    enemy_type = enemy.get("type", "enemy")
-    state.enemy_defeat_messages.append({
-        "enemy_type": enemy_type,
-        "timer": 3.0,  # Display for 3 seconds
-    })
-    
-    # Remove projectiles and damage numbers associated with this dead enemy
-    enemy_pos = pygame.Vector2(enemy["rect"].center)
-    cleanup_radius_sq = 2500  # 50 pixels squared - damage numbers within this range are removed
-    
-    # Remove ALL enemy projectiles from this dead enemy (by matching enemy_type)
-    # This ensures projectiles are removed regardless of distance when enemy dies
-    for proj in state.enemy_projectiles[:]:
-        # Remove if projectile matches this enemy's type
-        # This removes all projectiles from this enemy, even if they've traveled far
-        if proj.get("enemy_type") == enemy_type:
-            state.enemy_projectiles.remove(proj)
-    
-    # Remove damage numbers near the dead enemy's position
-    for dmg_num in state.damage_numbers[:]:
-        dmg_pos = pygame.Vector2(dmg_num["x"], dmg_num["y"])
-        if (dmg_pos - enemy_pos).length_squared() < cleanup_radius_sq:
-            state.damage_numbers.remove(dmg_num)
-    
-    # If boss is killed, spawn level completion weapon in center
-    if is_boss:
-        # Weapon unlock order is now imported from config_weapons.py
-        if state.current_level in WEAPON_UNLOCK_ORDER:
-            weapon_to_unlock = WEAPON_UNLOCK_ORDER[state.current_level]
-            if weapon_to_unlock not in state.unlocked_weapons:
-                spawn_weapon_in_center(weapon_to_unlock, state, width, height)
-    else:
-        # Regular enemies drop weapons randomly (except suicide enemies which despawn)
-        if not enemy.get("is_suicide"):
-            spawn_weapon_drop(enemy, state)
-    
-    try:
-        state.enemies.remove(enemy)
-    except ValueError:
-        pass  # Already removed
-    score_delta = calculate_kill_score(state.wave_number, state.run_time)
-    state.enemies_killed += 1
-    state.score += score_delta
-
-    if event_bus is not None and hasattr(event_bus, "publish"):
-        try:
-            event_bus.publish(GameEvent("enemy_killed", {
-                "enemy_type": enemy_type,
-                "is_boss": is_boss,
-                "wave_number": state.wave_number,
-                "score_delta": score_delta,
-            }))
-        except Exception:
-            import logging
-            logging.exception("Failed to publish enemy_killed")
-
-
-# apply_pickup_effect is now imported from pickups.py
-
-
-# render_hud_text is now imported from rendering.py
-
-
-def reset_after_death(state: GameState, width: int, height: int):
-    state.player_hp = state.player_max_hp
-    state.player_health_regen_rate = 0.0  # Reset health regeneration rate
-    state.random_damage_multiplier = 1.0  # Reset random damage multiplier
-    state.damage_numbers.clear()  # Clear damage numbers on death
-    state.weapon_pickup_messages.clear()  # Clear weapon pickup messages on death
-    state.grenade_explosions.clear()  # Clear grenade explosions on death
-    state.grenade_time_since_used = 999.0  # Reset grenade cooldown
-    state.missiles.clear()  # Clear missiles on death
-    state.missile_time_since_used = 999.0  # Reset missile cooldown
-    state.dropped_ally = None  # Clear dropped ally on death
-    state.ally_drop_timer = 0.0  # Reset ally drop timer on death
-    # Keep map as-is on respawn: do not reposition moving_health_zone or hazard_obstacles
-    state.overshield = 0  # Reset overshield
-    state.armor_drain_timer = 0.0
-    state.player_time_since_shot = 999.0
-    state.laser_time_since_shot = 999.0
-    state.wave_beam_time_since_shot = 999.0
-    state.wave_beam_pattern_index = 0
-    state.pos_timer = 0.0
-    # Keep wave/level and weapons on respawn so the map does not reset
-    state.previous_boost_state = False
-    state.previous_slow_state = False
-    state.player_current_zones = set()
-    state.jump_cooldown_timer = 0.0
-    state.jump_timer = 0.0
-    state.is_jumping = False
-    state.jump_velocity = pygame.Vector2(0, 0)
-    state.laser_beams.clear()
-    state.enemy_laser_beams.clear()
-    state.wave_beams.clear()
-    # Keep hazard obstacles as-is on respawn (map no longer resets)
-    # Reset shield
-    state.shield_active = False
-    state.shield_duration_remaining = 0.0
-    state.shield_cooldown_remaining = 0.0
-
-    # Respawn at death position: do not move player_rect (player stays where they died).
-    # Optionally keep on-screen if they died in a weird spot:
-    player = state.player_rect
-    if player is not None:
-        clamp_rect_to_screen(player, width, height)
-
-    state.player_bullets.clear()
-    state.enemy_projectiles.clear()
-    state.friendly_projectiles.clear()
-    # Do not clear friendly_ai or call start_wave: keep current wave and enemies.
-    # Respawn = player at death position (unchanged), projectiles/explosions cleared; enemies and wave continue.
+# -----------------------------------------------------------------------------
+# RE-EXPORTS (functions that other modules import from game.py)
+# -----------------------------------------------------------------------------
+from game_utils import init_high_scores_db, get_high_scores, save_high_score, is_high_score, calculate_kill_score
+from systems.spawn_helpers import random_spawn_position, spawn_pickup, spawn_weapon_in_center, spawn_weapon_drop, create_pickup_collection_effect
+from systems.enemy_death import kill_enemy, reset_after_death
 
 
 if __name__ == "__main__":
