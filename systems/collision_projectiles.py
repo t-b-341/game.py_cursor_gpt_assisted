@@ -36,7 +36,23 @@ def _build_enemy_grid(state, ctx: dict) -> SpatialGrid:
 
 
 def _build_block_grid(state, ctx: dict) -> SpatialGrid:
-    """Build spatial grid containing all collidable blocks. Uses frame caching."""
+    """Build spatial grid containing all collidable blocks. Uses frame caching.
+    
+    DEPRECATED: Use build_block_grid_cached() and ctx["_block_grid"] instead.
+    """
+    # Check if pre-built grid is available in context
+    cached = ctx.get("_block_grid")
+    if cached is not None:
+        return cached
+    
+    return build_block_grid_cached(state, ctx)
+
+
+def build_block_grid_cached(state, ctx: dict) -> SpatialGrid:
+    """Build spatial grid containing all collidable blocks.
+    
+    Called once per collision update frame. Results stored in ctx["_block_grid"].
+    """
     width = ctx.get("width", 1920)
     height = ctx.get("height", 1080)
     frame_id = ctx.get("frame_id", -1)

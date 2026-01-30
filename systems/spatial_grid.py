@@ -38,10 +38,22 @@ class SpatialGrid:
         self._obj_cells: dict[int, list[int]] = {}  # Track which cells each object is in
     
     def clear(self) -> None:
-        """Clear all objects from the grid."""
-        for cell in self.cells:
-            cell.clear()
-        self._obj_cells.clear()
+        """Clear all objects from the grid.
+        
+        Optimized: only clears cells that have objects (tracked via _obj_cells).
+        """
+        # Only clear cells that actually have objects (avoid O(n) iteration)
+        if self._obj_cells:
+            # Get unique cell indices that have objects
+            cells_to_clear = set()
+            for indices in self._obj_cells.values():
+                cells_to_clear.update(indices)
+            
+            for idx in cells_to_clear:
+                if idx < len(self.cells):
+                    self.cells[idx].clear()
+            
+            self._obj_cells.clear()
     
     def _get_cell_index(self, x: int, y: int) -> int:
         """Get cell index for a position."""

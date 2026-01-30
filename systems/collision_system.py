@@ -30,6 +30,11 @@ def update(state: "GameState", dt: float) -> None:
         frame_id = getattr(state, "_collision_frame_id", 0) + 1
         state._collision_frame_id = frame_id
         ctx["frame_id"] = frame_id
+        
+        # Pre-build block grid once for all collision checks this frame
+        # This avoids repeated _build_block_grid calls (was 3x per frame)
+        block_grid = collision_projectiles.build_block_grid_cached(state, ctx)
+        ctx["_block_grid"] = block_grid
 
         collision_projectiles.handle_hazard_enemy_collisions(state, dt, ctx)
         collision_projectiles.handle_laser_beam_collisions(state, dt, ctx)
