@@ -64,7 +64,10 @@ def handle_teleporter_player(state, ctx: dict) -> None:
 
 
 def handle_health_zone_player_dt(state, dt: float, ctx: dict) -> None:
-    """Moving health zone restores player HP while overlapping. Does not heal when dead (hp <= 0)."""
+    """Moving health zone restores player HP while overlapping. Does not heal when dead (hp <= 0).
+    
+    Heals 15% of max HP per 0.5 seconds (= 30% per second).
+    """
     player = state.player_rect
     lev = getattr(state, "level", None)
     zone = lev.moving_health_zone if lev else None
@@ -73,4 +76,6 @@ def handle_health_zone_player_dt(state, dt: float, ctx: dict) -> None:
     if state.player_hp <= 0:
         return  # Player is dead; do not revive
     if player.colliderect(zone["rect"]) and state.player_hp < state.player_max_hp:
-        state.player_hp = min(state.player_max_hp, state.player_hp + 50 * dt)
+        # Heal 15% of max HP per 0.5 seconds = 30% per second
+        heal_per_second = state.player_max_hp * 0.30
+        state.player_hp = min(state.player_max_hp, state.player_hp + heal_per_second * dt)

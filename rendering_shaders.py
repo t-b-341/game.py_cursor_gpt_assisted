@@ -253,6 +253,7 @@ def _render_gameplay_frame(render_ctx, game_state, ctx) -> None:
 
 def render_gameplay_frame_to_surface(surface, width, height, font, big_font, small_font, game_state, ctx) -> None:
     """Render the raw gameplay frame into the given surface. No shaders or effects. Used for pause backdrop."""
+    from systems.camera import get_camera
     temp_ctx = RenderContext(
         screen=surface,
         width=width,
@@ -260,6 +261,10 @@ def render_gameplay_frame_to_surface(surface, width, height, font, big_font, sma
         font=font,
         big_font=big_font,
         small_font=small_font,
+        # Pass through camera and display dimensions for correct HUD positioning
+        display_width=width,
+        display_height=height,
+        camera=get_camera(),
     )
     _render_gameplay_frame(temp_ctx, game_state, ctx)
 
@@ -306,18 +311,31 @@ def render_gameplay_with_optional_shaders(render_ctx, game_state, ctx) -> None:
     else:
         scale = 1.0  # Full resolution for GL path
     
-    offscreen_w = max(1, int(render_ctx.width * scale))
-    offscreen_h = max(1, int(render_ctx.height * scale))
+    # When camera is active, use display dimensions for the offscreen
+    # The camera handles viewport within the world; we render at display size
+    if render_ctx.camera and render_ctx.display_width and render_ctx.display_height:
+        base_w = render_ctx.display_width
+        base_h = render_ctx.display_height
+    else:
+        base_w = render_ctx.width
+        base_h = render_ctx.height
+    
+    offscreen_w = max(1, int(base_w * scale))
+    offscreen_h = max(1, int(base_h * scale))
     offscreen_size = (offscreen_w, offscreen_h)
 
     offscreen_surface = _get_offscreen_surface(render_ctx, offscreen_size)
     temp_ctx = RenderContext(
         screen=offscreen_surface,
-        width=offscreen_w,
-        height=offscreen_h,
+        width=render_ctx.width,  # Keep world dimensions for game logic
+        height=render_ctx.height,
         font=render_ctx.font,
         big_font=render_ctx.big_font,
         small_font=render_ctx.small_font,
+        # HUD uses offscreen/display dimensions for positioning
+        display_width=offscreen_w,
+        display_height=offscreen_h,
+        camera=render_ctx.camera,
     )
     offscreen_surface.fill((0, 0, 0, 255))
     _render_gameplay_frame(temp_ctx, game_state, ctx)
@@ -422,9 +440,15 @@ def render_gameplay_with_optional_shaders(render_ctx, game_state, ctx) -> None:
         overlay.fill((80, 0, 120, 60))  # RGBA: mild purple tint, low alpha
         offscreen_surface.blit(overlay, (0, 0))
 
-    # Scale up to screen size when we rendered at lower internal resolution (CPU path)
-    if scale < 1.0:
-        scaled = pygame.transform.smoothscale(offscreen_surface, (render_ctx.width, render_ctx.height))
+    # Scale to display size - needed when world dimensions differ from display (camera mode)
+    # or when we rendered at lower internal resolution (CPU path)
+    display_w = render_ctx.display_width or render_ctx.width
+    display_h = render_ctx.display_height or render_ctx.height
+    offscreen_size = offscreen_surface.get_size()
+    
+    if offscreen_size != (display_w, display_h):
+        # Scale offscreen to display dimensions
+        scaled = pygame.transform.smoothscale(offscreen_surface, (display_w, display_h))
         apply_gameplay_final_blit(scaled, render_ctx.screen, ctx, game_state)
     else:
         apply_gameplay_final_blit(offscreen_surface, render_ctx.screen, ctx, game_state)

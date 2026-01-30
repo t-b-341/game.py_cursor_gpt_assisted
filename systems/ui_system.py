@@ -82,7 +82,7 @@ def render_hud(state: "GameState", ctx: dict, render_ctx: RenderContext) -> None
 
 
 def render_overlays(state: "GameState", ctx: dict, render_ctx: RenderContext) -> None:
-    """Draw overlay layer: damage numbers, defeat/pickup messages, wave countdown, wave-reset debug, juice (screen flash, wave banner)."""
+    """Draw overlay layer: damage numbers, defeat/pickup messages, wave countdown, wave-reset debug, juice (screen flash, wave banner), low health warning."""
     if not ctx or not render_ctx:
         return
     screen = render_ctx.screen
@@ -107,6 +107,7 @@ def render_overlays(state: "GameState", ctx: dict, render_ctx: RenderContext) ->
         _draw_wave_reset_debug(screen, state, small_font, WIDTH, HEIGHT)
     _draw_screen_damage_flash(screen, state, ctx, WIDTH, HEIGHT)
     _draw_wave_banner(screen, state, ctx, big_font, WIDTH, HEIGHT)
+    _draw_low_health_warning(screen, state, big_font, WIDTH, HEIGHT)
 
 
 def _draw_screen_damage_flash(screen: pygame.Surface, state: "GameState", ctx: dict, WIDTH: int, HEIGHT: int) -> None:
@@ -135,6 +136,54 @@ def _draw_wave_banner(screen: pygame.Surface, state: "GameState", ctx: dict, big
         return
     text = getattr(state, "wave_banner_text", "") or "WAVE"
     draw_centered_text(screen, big_font, big_font, WIDTH, text, HEIGHT // 2 - 30, (255, 255, 200), use_big=True)
+
+
+# Low health warning threshold (percentage of max HP)
+LOW_HEALTH_THRESHOLD = 0.30  # 30% health
+
+
+def _draw_low_health_warning(screen: pygame.Surface, state: "GameState", big_font: Any, WIDTH: int, HEIGHT: int) -> None:
+    """Draw flashing 'HEALTH LOW!' warning when player health is critically low."""
+    if not big_font:
+        return
+    
+    player_hp = getattr(state, "player_hp", 0)
+    player_max_hp = getattr(state, "player_max_hp", 1)
+    
+    # Check if health is below threshold
+    if player_max_hp <= 0 or player_hp <= 0:
+        return
+    
+    hp_ratio = player_hp / player_max_hp
+    if hp_ratio > LOW_HEALTH_THRESHOLD:
+        return
+    
+    # Create pulsing effect using run_time
+    import math
+    run_time = getattr(state, "run_time", 0.0)
+    pulse = 0.5 + 0.5 * math.sin(run_time * 6.0)  # Pulse between 0 and 1 at ~1Hz
+    
+    # Red color that pulses in intensity
+    red_intensity = int(180 + 75 * pulse)  # Range: 180-255
+    color = (red_intensity, 50, 50)
+    
+    # Calculate alpha for slight transparency pulsing
+    alpha = int(200 + 55 * pulse)  # Range: 200-255
+    
+    # Create text with outline for visibility
+    text = "HEALTH LOW!"
+    text_surface = big_font.render(text, True, color)
+    outline_surface = big_font.render(text, True, (0, 0, 0))
+    
+    # Position in center of screen
+    text_rect = text_surface.get_rect(center=(WIDTH // 2, HEIGHT // 2))
+    
+    # Draw black outline
+    for dx, dy in [(-2, -2), (-2, 2), (2, -2), (2, 2), (-2, 0), (2, 0), (0, -2), (0, 2)]:
+        screen.blit(outline_surface, (text_rect.x + dx, text_rect.y + dy))
+    
+    # Draw main text
+    screen.blit(text_surface, text_rect)
 
 
 def render(state: "GameState", screen: pygame.Surface, ctx: dict) -> None:

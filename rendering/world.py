@@ -293,6 +293,19 @@ def _draw_terrain(screen: pygame.Surface, state: Any, ctx: dict, render_ctx: Ren
             else:
                 screen_zone_rect = pygame.Rect(zone_rect.x - cam_x, zone_rect.y - cam_y, zone_rect.w, zone_rect.h)
                 pygame.draw.rect(screen, border_color, screen_zone_rect, 3)
+            
+            # Draw "HEALTH RECHARGE" label centered on the zone
+            small_font = ctx.get("small_font")
+            if small_font:
+                label_text = "HEALTH RECHARGE"
+                label_surf = small_font.render(label_text, True, (255, 255, 255))
+                outline_surf = small_font.render(label_text, True, (0, 0, 0))
+                label_x = zone_rect.centerx - cam_x - label_surf.get_width() // 2
+                label_y = zone_rect.centery - cam_y - label_surf.get_height() // 2
+                # Draw outline for visibility
+                for dx, dy in [(-1, -1), (-1, 1), (1, -1), (1, 1)]:
+                    screen.blit(outline_surf, (label_x + dx, label_y + dy))
+                screen.blit(label_surf, (label_x, label_y))
 
     for pad in ctx.get("teleporter_pads", []):
         r = pad.get("rect")
