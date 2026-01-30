@@ -137,7 +137,8 @@ def _create_shader_render_pass(shader_name: str, uniforms: dict) -> Optional[Cal
                 # Upload surface to input texture
                 try:
                     tex_bytes = pygame.image.tostring(surface, "RGBA", False)
-                except Exception:
+                except Exception as e:
+                    logger.debug(f"tostring fallback: {e}")
                     tex_bytes = bytes(surface.get_view("0"))
                 in_tex.write(tex_bytes)
                 
@@ -294,14 +295,15 @@ def _gl_postprocess_offscreen_surface(offscreen_surface, render_ctx, ctx, game_s
             if _gl_fbo is not None:
                 try:
                     _gl_fbo.release()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug(f"FBO release error (ignored): {e}")
                 _gl_fbo = None
             try:
                 out_tex = gl_ctx.texture(size, 4)
                 _gl_fbo = gl_ctx.framebuffer(color_attachments=[out_tex])
                 _gl_size = size
-            except Exception:
+            except Exception as e:
+                logger.warning(f"Failed to create FBO: {e}")
                 _gl_size = None
                 return False
 
@@ -326,7 +328,8 @@ def _gl_postprocess_offscreen_surface(offscreen_surface, render_ctx, ctx, game_s
         # Optional damage wobble on final blit (when enable_damage_wobble and timer > 0)
         apply_gameplay_final_blit(out_surf, render_ctx.screen, ctx, game_state)
         return True
-    except Exception:
+    except Exception as e:
+        logger.debug(f"GPU shader pass failed (falling back to CPU): {e}")
         return False
 
 

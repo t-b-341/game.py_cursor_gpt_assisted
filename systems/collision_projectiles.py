@@ -9,11 +9,16 @@ Performance optimizations:
 from __future__ import annotations
 
 import math
+from typing import TYPE_CHECKING, Callable, Optional
+
 import pygame
 
 from .collision_common import apply_player_damage, set_enemy_damage_flash
 from .spatial_grid import get_projectile_grid, get_enemy_grid, get_block_grid, SpatialGrid
 from physics_loader import distance_squared as c_distance_squared
+
+if TYPE_CHECKING:
+    from state import GameState
 
 try:
     from gpu_physics import check_collisions_batch, CUDA_AVAILABLE
@@ -23,11 +28,19 @@ except Exception:
     check_collisions_batch = None
 
 
-def _build_enemy_grid(state, ctx: dict) -> SpatialGrid:
-    """Build spatial grid containing all enemies. Uses frame caching to avoid rebuilding."""
-    width = ctx.get("width", 1920)
-    height = ctx.get("height", 1080)
-    frame_id = ctx.get("frame_id", -1)
+def _build_enemy_grid(state: "GameState", ctx: dict) -> SpatialGrid:
+    """Build spatial grid containing all enemies. Uses frame caching to avoid rebuilding.
+    
+    Args:
+        state: Game state containing enemies list
+        ctx: Context dict with width, height, and frame_id
+        
+    Returns:
+        SpatialGrid populated with enemies
+    """
+    width: int = ctx.get("width", 1920)
+    height: int = ctx.get("height", 1080)
+    frame_id: int = ctx.get("frame_id", -1)
     grid = get_enemy_grid(width, height, frame_id=frame_id)
     # Only insert if grid was just cleared (not cached)
     if len(grid._obj_cells) == 0 and state.enemies:
@@ -35,7 +48,7 @@ def _build_enemy_grid(state, ctx: dict) -> SpatialGrid:
     return grid
 
 
-def _build_block_grid(state, ctx: dict) -> SpatialGrid:
+def _build_block_grid(state: "GameState", ctx: dict) -> SpatialGrid:
     """Build spatial grid containing all collidable blocks. Uses frame caching.
     
     DEPRECATED: Use build_block_grid_cached() and ctx["_block_grid"] instead.
@@ -589,7 +602,10 @@ def handle_friendly_projectile_offscreen_blocks_enemies(state, ctx: dict) -> Non
 
 
 def handle_grenade_explosion_damage(state, dt: float, ctx: dict) -> None:
-    """Handle grenade explosion damage with filter-based removal."""
+    """Handle grenade explosion damage with filter-based removal.
+    
+    Performance: Uses spatial grid queries to reduce O(explosions * enemies) to O(explosions * nearby_enemies).
+    """
     kill = ctx.get("kill_enemy")
     lev = getattr(state, "level", None)
     d_blocks = lev.destructible_blocks if lev else []
@@ -600,6 +616,9 @@ def handle_grenade_explosion_damage(state, dt: float, ctx: dict) -> None:
     friendlies_to_remove = set()
     d_blocks_to_remove = set()
     m_blocks_to_remove = set()
+    
+    # Build enemy grid once for all explosions (uses frame caching)
+    enemy_grid = _build_enemy_grid(state, ctx) if state.enemies else None
 
     for explosion in state.grenade_explosions:
         explosion["timer"] = explosion.get("timer", 0.3) - dt
@@ -612,8 +631,10 @@ def handle_grenade_explosion_damage(state, dt: float, ctx: dict) -> None:
         r_sq = r * r  # Use squared radius to avoid sqrt
         damage_val = explosion.get("damage", 500)
         source = explosion.get("source", "")
-        if source != "enemy_player_allies_only":
-            for enemy in state.enemies:
+        
+        # Use spatial grid to query only enemies near explosion radius
+        if source != "enemy_player_allies_only" and enemy_grid:
+            for enemy in enemy_grid.query_radius(px, py, r):
                 # Use C-accelerated distance_squared (avoids sqrt)
                 d_sq = c_distance_squared(enemy["rect"].centerx, enemy["rect"].centery, px, py)
                 if d_sq <= r_sq:
@@ -640,17 +661,40 @@ def handle_grenade_explosion_damage(state, dt: float, ctx: dict) -> None:
             if pd_sq <= r_sq and source not in ("player", "wall_impact", "ally_explosion"):
                 if not state.shield_active:
                     apply_player_damage(state, damage_val, ctx)
+        
+        # Use block grid for destructible blocks near explosion
         if source != "enemy_player_allies_only":
-            for block in list(d_blocks) + list(m_blocks):
-                if not block.get("is_destructible"):
-                    continue
-                d_sq = c_distance_squared(block["rect"].centerx, block["rect"].centery, px, py)
-                if d_sq <= r_sq:
-                    block["hp"] -= damage_val
-                    if block["hp"] <= 0:
-                        if block in d_blocks:
+            block_grid = ctx.get("_block_grid")
+            if block_grid:
+                # Query blocks near explosion using spatial grid
+                for block in block_grid.query_radius(px, py, r):
+                    if not block.get("is_destructible"):
+                        continue
+                    d_sq = c_distance_squared(block["rect"].centerx, block["rect"].centery, px, py)
+                    if d_sq <= r_sq:
+                        block["hp"] -= damage_val
+                        if block["hp"] <= 0:
+                            if block in d_blocks:
+                                d_blocks_to_remove.add(id(block))
+                            elif block in m_blocks:
+                                m_blocks_to_remove.add(id(block))
+            else:
+                # Fallback: iterate all blocks (slower)
+                for block in d_blocks:
+                    if not block.get("is_destructible"):
+                        continue
+                    d_sq = c_distance_squared(block["rect"].centerx, block["rect"].centery, px, py)
+                    if d_sq <= r_sq:
+                        block["hp"] -= damage_val
+                        if block["hp"] <= 0:
                             d_blocks_to_remove.add(id(block))
-                        elif block in m_blocks:
+                for block in m_blocks:
+                    if not block.get("is_destructible"):
+                        continue
+                    d_sq = c_distance_squared(block["rect"].centerx, block["rect"].centery, px, py)
+                    if d_sq <= r_sq:
+                        block["hp"] -= damage_val
+                        if block["hp"] <= 0:
                             m_blocks_to_remove.add(id(block))
     
     # Bulk removal
@@ -711,20 +755,22 @@ def handle_missile_collisions(state, ctx: dict) -> None:
             rad_sq = rad * rad  # Use squared radius to avoid sqrt
             dmg = missile.get("damage", md)
             
-            # Damage enemies in explosion radius using C-accelerated distance_squared
-            for enemy in state.enemies:
-                if c_distance_squared(enemy["rect"].centerx, enemy["rect"].centery, mx, my) <= rad_sq:
-                    enemy["hp"] -= dmg
-                    set_enemy_damage_flash(enemy, ctx)
-                    state.damage_numbers.append({
-                        "x": enemy["rect"].centerx,
-                        "y": enemy["rect"].y - 20,
-                        "damage": int(dmg),
-                        "timer": 2.0,
-                        "color": (255, 150, 50),
-                    })
-                    if enemy["hp"] <= 0 and kill:
-                        kill(enemy, state)
+            # Use spatial grid to query only enemies near explosion radius
+            enemy_grid = _build_enemy_grid(state, ctx) if state.enemies else None
+            if enemy_grid:
+                for enemy in enemy_grid.query_radius(mx, my, rad):
+                    if c_distance_squared(enemy["rect"].centerx, enemy["rect"].centery, mx, my) <= rad_sq:
+                        enemy["hp"] -= dmg
+                        set_enemy_damage_flash(enemy, ctx)
+                        state.damage_numbers.append({
+                            "x": enemy["rect"].centerx,
+                            "y": enemy["rect"].y - 20,
+                            "damage": int(dmg),
+                            "timer": 2.0,
+                            "color": (255, 150, 50),
+                        })
+                        if enemy["hp"] <= 0 and kill:
+                            kill(enemy, state)
             
             # Damage the ally that was directly hit
             if hit_ally:

@@ -120,6 +120,12 @@ weapon_selection_options = ["laser", "triple", "giant", "basic"]
 
 # Balance/tuning: re-export from config.balance (single source of truth)
 from config.balance import (
+    # Player base stats
+    PLAYER_BASE_SPEED,
+    PLAYER_BASE_MAX_HP,
+    MISSILE_BASE_SPEED,
+    MISSILE_EXPLOSION_RADIUS,
+    # Game config
     LIVES_START,
     SCORE_BASE_POINTS,
     SCORE_TIME_MULTIPLIER,

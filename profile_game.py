@@ -51,8 +51,8 @@ def timeout_handler(duration: float):
     try:
         import pygame
         pygame.event.post(pygame.event.Event(pygame.QUIT))
-    except:
-        pass
+    except Exception:
+        pass  # pygame may not be initialized or event system unavailable
 
 
 def run_profiling(duration: float = DEFAULT_DURATION):

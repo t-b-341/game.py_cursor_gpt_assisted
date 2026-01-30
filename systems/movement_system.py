@@ -346,8 +346,22 @@ def _update_friendly_projectiles(state, dt: float, ctx: dict) -> None:
         proj["rect"].y += int(proj["vel"].y * dt)
 
 
-def _missile_hits_wall(missile_rect: pygame.Rect, state: "GameState") -> bool:
-    """True if missile rect overlaps any solid block (walls block missiles). Uses LevelState instead of module-level globals."""
+def _missile_hits_wall(missile_rect: pygame.Rect, state: "GameState", ctx: dict = None) -> bool:
+    """True if missile rect overlaps any solid block (walls block missiles).
+    
+    Performance: Uses spatial grid from ctx["_block_grid"] if available, reducing O(blocks) to O(nearby_blocks).
+    """
+    # Try spatial grid first (much faster for many blocks)
+    if ctx:
+        block_grid = ctx.get("_block_grid")
+        if block_grid:
+            for block in block_grid.query_rect(missile_rect):
+                block_rect = block.get("rect") or block.get("bounding_rect")
+                if block_rect and missile_rect.colliderect(block_rect):
+                    return True
+            return False
+    
+    # Fallback: iterate all block types (slower but works without grid)
     lev = getattr(state, "level", None)
     if lev is None:
         return False
@@ -439,7 +453,7 @@ def _update_missiles(state, dt: float, ctx: dict) -> None:
         missile["rect"].x += int(missile["vel"].x * dt)
         missile["rect"].y += int(missile["vel"].y * dt)
 
-        if _missile_hits_wall(missile["rect"], state):
+        if _missile_hits_wall(missile["rect"], state, ctx):
             state.grenade_explosions.append({
                 "x": missile["rect"].centerx,
                 "y": missile["rect"].centery,

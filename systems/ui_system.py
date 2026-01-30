@@ -561,24 +561,35 @@ def _draw_metrics_and_bars(
         controls_text = "WASD: Move | Arrow Keys: Aim & Shoot | E: Bomb | R: Missile | Q: Ally Drop | TAB: Overshield | LALT: Shield | SPACE: Dash"
     else:
         controls_text = "WASD: Move | Mouse + Click: Aim & Shoot | E: Bomb | R: Missile | Q: Ally Drop | TAB: Overshield | LALT: Shield | SPACE: Dash"
-    controls_surf = small_font.render(controls_text, True, (150, 150, 150))
+    # Use cached text for controls (rarely changes)
+    controls_surf = _get_cached_text(small_font, controls_text, (150, 150, 150))
     controls_rect = controls_surf.get_rect(center=(WIDTH // 2, controls_y))
     screen.blit(controls_surf, controls_rect)
 
 
 def _draw_damage_numbers(screen: pygame.Surface, state, font, small_font, camera=None) -> None:
-    """Draw floating damage numbers. Uses camera offset if provided."""
+    """Draw floating damage numbers. Uses camera offset if provided.
+    
+    Performance: Uses text cache to avoid re-rendering the same damage values.
+    """
     # Get camera offset for positioning
     cam_x, cam_y = (int(camera.x), int(camera.y)) if camera else (0, 0)
     
     for dmg_num in getattr(state, "damage_numbers", []):
         if dmg_num.get("timer", 0) > 0:
             alpha = int(255 * (dmg_num["timer"] / 2.0))
-            color = (*dmg_num["color"][:3], alpha) if len(dmg_num.get("color", (0, 0, 0))) > 3 else dmg_num.get("color", (255, 255, 255))
+            base_color = dmg_num.get("color", (255, 255, 255))[:3]
+            
+            # Use cached text for the base surface (avoid re-rendering same text)
             if "value" in dmg_num:
-                text_surf = font.render(dmg_num["value"], True, color[:3])
+                text_surf = _get_cached_text(font, dmg_num["value"], base_color)
             else:
-                text_surf = small_font.render(str(int(dmg_num.get("damage", 0))), True, color[:3])
+                text_surf = _get_cached_text(small_font, str(int(dmg_num.get("damage", 0))), base_color)
+            
+            # Apply alpha by setting surface alpha (works on cached surface copy)
+            text_surf = text_surf.copy()
+            text_surf.set_alpha(alpha)
+            
             # Apply camera offset
             screen_x = dmg_num["x"] - cam_x
             screen_y = dmg_num["y"] - cam_y
@@ -586,13 +597,15 @@ def _draw_damage_numbers(screen: pygame.Surface, state, font, small_font, camera
 
 
 def _draw_defeat_messages(screen: pygame.Surface, state, small_font, WIDTH: int, HEIGHT: int) -> None:
+    """Draw enemy defeat messages. Uses text cache for repeated messages."""
     defeat_y_start = HEIGHT - 100
     messages = getattr(state, "enemy_defeat_messages", [])[-5:]
     for i, msg in enumerate(messages):
         if msg.get("timer", 0) > 0:
             enemy_type = msg.get("enemy_type", "enemy")
             text = f"{enemy_type.upper()} DEFEATED!"
-            text_surf = small_font.render(text, True, (255, 200, 100))
+            # Use cached text surface
+            text_surf = _get_cached_text(small_font, text, (255, 200, 100))
             text_rect = text_surf.get_rect()
             x_pos = WIDTH - text_rect.width - 20
             y_pos = defeat_y_start - (i * 25)

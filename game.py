@@ -1227,36 +1227,12 @@ def main():
     GameApp().run()
 
 
-# Controls will be initialized in _create_app() after pygame.init()
-# Using a placeholder dict to avoid calling pygame.key.key_code() before pygame.init()
-controls = {}
-
-# Telemetry and run_started_at are stored in AppContext (built in main()).
-
-# Game state constants are now imported from constants.py
-# UI state is now in GameState.ui (UiState) - see ui_state.py
-# Character profile stats are now in GameState.custom_profile_stats
-
-# Side quests and goal tracking are now in GameState.side_quests and GameState.wave_damage_taken
-# Beam selection for testing (harder to access - requires testing mode)
-# testing_mode and invulnerability_mode are now in AppContext.config
-# beam_selection_selected is now in GameState.ui.beam_selection_selected
-# beam_selection_pattern is now in GameState.beam_selection_pattern
-
-# Level system - 3 levels, each with 3 waves (boss on wave 3)
-# current_level, max_level, wave_in_level are now in GameState
-# level_themes is now imported from constants.py
-
-# Difficulty / aiming / class: applied values live in AppContext (ctx)
-# Menu selection indices are now in GameState.ui (difficulty_selected, aiming_mode_selected, player_class_selected)
-
-# Mod settings are now in GameConfig (mod_enemy_spawn_multiplier, mod_custom_waves_enabled, custom_waves)
-# UI customization settings are now in GameState.ui (UiState)
-# Alternative aiming mechanics are now in GameConfig.aiming_mechanic
-
-# difficulty_multipliers and pause_options are now imported from constants.py
-# pause_selected, continue_blink_t, controls_selected are now in GameState.ui
-# controls_rebinding is now in GameState.controls_rebinding
+# -----------------------------------------------------------------------------
+# LEGACY MODULE-LEVEL STATE
+# Most game state has been migrated to GameState. The variables below are kept
+# for compatibility with tests and edge cases. New code should use state.xxx
+# -----------------------------------------------------------------------------
+controls = {}  # Initialized in _create_app() after pygame.init()
 
 # ----------------------------
 # Player (initialized in main() after WIDTH/HEIGHT are set)

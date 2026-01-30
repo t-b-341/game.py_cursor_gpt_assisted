@@ -56,8 +56,8 @@ def _create_test_texture(width: int, height: int) -> pygame.Surface:
         font = pygame.font.Font(None, 36)
         text = font.render("SHADER TEST", True, (255, 255, 255))
         surf.blit(text, (width // 2 - text.get_width() // 2, 50))
-    except:
-        pass
+    except Exception:
+        pass  # Font may not be available in headless mode
     
     return surf
 

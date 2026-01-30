@@ -3,6 +3,14 @@ Gameplay balance and tuning constants. Single source of truth for values
 that are gameplay configuration; constants.py re-exports these for backward compatibility.
 """
 
+# Player base stats
+PLAYER_BASE_SPEED = 450  # px/s (base speed, modified by class)
+PLAYER_BASE_MAX_HP = 7500  # base HP (modified by class)
+
+# Missile/rocket base stats
+MISSILE_BASE_SPEED = 200  # Missile movement speed
+MISSILE_EXPLOSION_RADIUS = 100  # Default explosion radius
+
 # Weapon / player projectiles
 player_bullet_shapes = ["circle", "square", "diamond"]
 player_bullets_color = (10, 200, 200)

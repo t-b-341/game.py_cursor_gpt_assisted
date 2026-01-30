@@ -3,6 +3,7 @@ Used by ShaderTestScene and rendering_shaders for post-process.
 """
 from __future__ import annotations
 
+import logging
 import struct
 from pathlib import Path
 from typing import Optional, Tuple, Dict, List
@@ -13,6 +14,8 @@ try:
 except ImportError:
     moderngl = None  # type: ignore[assignment]
     HAS_MODERNGL = False
+
+logger = logging.getLogger(__name__)
 
 # Export HAS_MODERNGL as public constant
 __all__ = ["HAS_MODERNGL", "get_gl_context", "get_fullscreen_quad", "gpu_upscale_surface",
@@ -100,12 +103,13 @@ def get_gl_context() -> Optional["moderngl.Context"]:
         # Try to attach to existing OpenGL context first
         try:
             _gl_ctx = moderngl.create_context()
-        except Exception:
+        except Exception as e:
+            logger.debug(f"No existing GL context, creating standalone: {e}")
             # No existing context - create standalone for offscreen rendering
             try:
                 _gl_ctx = moderngl.create_standalone_context()
-            except Exception as e:
-                print(f"[GPU] Failed to create standalone context: {e}")
+            except Exception as e2:
+                logger.warning(f"Failed to create standalone GL context: {e2}")
                 _gl_ctx = None
     return _gl_ctx
 
@@ -132,8 +136,8 @@ class FullscreenQuad:
             return
         try:
             self.texture.release()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Texture release error (ignored): {e}")
         self.size = size
         self.texture = self.ctx.texture(size, 4)
 
@@ -167,22 +171,25 @@ def gpu_upscale_surface(surface: "object", target_size: Tuple[int, int]) -> Opti
         if _upscale_fbo is not None:
             try:
                 _upscale_fbo.release()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"FBO release error (ignored): {e}")
             _upscale_fbo = None
         try:
             out_tex = ctx.texture(target_size, 4)
             _upscale_fbo = ctx.framebuffer(color_attachments=[out_tex])
             _upscale_fbo_size = target_size
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Failed to create upscale FBO: {e}")
             _upscale_fbo_size = None
             return None
     try:
         tex_bytes = pygame.image.tostring(surface, "RGBA", False)
-    except Exception:
+    except Exception as e:
+        logger.debug(f"tostring fallback: {e}")
         try:
             tex_bytes = bytes(surface.get_view("0"))
-        except Exception:
+        except Exception as e2:
+            logger.debug(f"Surface view fallback failed: {e2}")
             return None
     quad.texture.write(tex_bytes)
     quad.program["u_effect"] = 2
