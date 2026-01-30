@@ -1509,70 +1509,9 @@ def random_spawn_position(size: tuple[int, int], state: GameState, max_attempts:
 
 # Wave start and wave/boss/difficulty logic live in systems.spawn_system (start_wave, update)
 
-
-def init_high_scores_db():
-    """Initialize the high scores database."""
-    conn = sqlite3.connect(HIGH_SCORES_DB)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS high_scores (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            player_name TEXT NOT NULL,
-            score INTEGER NOT NULL,
-            waves_survived INTEGER NOT NULL,
-            time_survived REAL NOT NULL,
-            enemies_killed INTEGER NOT NULL,
-            difficulty TEXT NOT NULL,
-            date_achieved TEXT NOT NULL
-        );
-    """)
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_score ON high_scores(score DESC);")
-    conn.commit()
-    conn.close()
-
-
-def get_high_scores(limit: int = 10) -> list[dict]:
-    """Get top high scores from database."""
-    conn = sqlite3.connect(HIGH_SCORES_DB)
-    cursor = conn.execute("""
-        SELECT player_name, score, waves_survived, time_survived, enemies_killed, difficulty, date_achieved
-        FROM high_scores
-        ORDER BY score DESC
-        LIMIT ?
-    """, (limit,))
-    scores = []
-    for row in cursor.fetchall():
-        scores.append({
-            "name": row[0],
-            "score": row[1],
-            "waves": row[2],
-            "time": row[3],
-            "kills": row[4],
-            "difficulty": row[5],
-            "date": row[6]
-        })
-    conn.close()
-    return scores
-
-
-def save_high_score(name: str, score: int, waves: int, time_survived: float, enemies_killed: int, difficulty: str):
-    """Save a high score to the database."""
-    if not name or not name.strip():
-        name = "Anonymous"
-    conn = sqlite3.connect(HIGH_SCORES_DB)
-    conn.execute("""
-        INSERT INTO high_scores (player_name, score, waves_survived, time_survived, enemies_killed, difficulty, date_achieved)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, (name.strip()[:20], score, waves, time_survived, enemies_killed, difficulty, datetime.now(timezone.utc).isoformat()))
-    conn.commit()
-    conn.close()
-
-
-def is_high_score(score: int) -> bool:
-    """Check if a score qualifies for the high score board (top 10)."""
-    scores = get_high_scores(10)
-    if len(scores) < 10:
-        return True
-    return score > scores[-1]["score"]
+# High score functions are in game_utils.py:
+# - init_high_scores_db, get_high_scores, save_high_score, is_high_score
+from game_utils import init_high_scores_db, get_high_scores, save_high_score, is_high_score
 
 
 def spawn_pickup(pickup_type: str, state: GameState):

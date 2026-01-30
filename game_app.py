@@ -25,6 +25,7 @@ class GameApp:
         
         # Create reusable screen_ctx once (only update mutable values per frame)
         # Use display dimensions for menus, not world dimensions
+        from game_utils import get_high_scores, save_high_score
         display_w = getattr(self.ctx, 'display_width', self.ctx.width)
         display_h = getattr(self.ctx, 'display_height', self.ctx.height)
         self.screen_ctx = {
@@ -33,8 +34,8 @@ class GameApp:
             "font": self.ctx.font,
             "big_font": self.ctx.big_font,
             "small_font": self.ctx.small_font,
-            "get_high_scores": game_module.get_high_scores,
-            "save_high_score": game_module.save_high_score,
+            "get_high_scores": get_high_scores,
+            "save_high_score": save_high_score,
             "difficulty": self.ctx.config.difficulty,
             "app_ctx": self.ctx,
         }
