@@ -1547,7 +1547,7 @@ friendly_ai: list[dict] = []
 
 # Dropped ally system (distracts enemies)
 dropped_ally: dict | None = None  # Single dropped ally that distracts enemies
-ally_drop_cooldown = 3.0  # Cooldown between ally drops (seconds)
+# NOTE: ally_drop_cooldown is imported from constants (set in config/balance.py)
 ally_drop_timer = 0.0  # Time since last ally drop
 friendly_projectiles: list[dict] = []
 
