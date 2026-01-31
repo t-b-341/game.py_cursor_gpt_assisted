@@ -14,6 +14,25 @@ from typing import Any
 import pygame
 
 # -----------------------------------------------------------------------------
+# Surface caching for performance (avoid per-frame allocations)
+# -----------------------------------------------------------------------------
+
+_surface_cache: dict[tuple, pygame.Surface] = {}
+_CACHE_MAX_SIZE = 32  # Limit cache size to avoid memory bloat
+
+
+def _get_cached_surface(key: tuple, w: int, h: int, alpha: bool = True) -> pygame.Surface:
+    """Get or create a cached surface. Clears if cache too large."""
+    global _surface_cache
+    if len(_surface_cache) > _CACHE_MAX_SIZE:
+        _surface_cache.clear()
+    if key not in _surface_cache:
+        flags = pygame.SRCALPHA if alpha else 0
+        _surface_cache[key] = pygame.Surface((w, h), flags=flags)
+    return _surface_cache[key]
+
+
+# -----------------------------------------------------------------------------
 # Reusable effect primitives (surface in, mutate or return)
 # -----------------------------------------------------------------------------
 
@@ -26,10 +45,15 @@ def apply_scanlines(surface: pygame.Surface, strength: float = 0.06) -> None:
         return
     w, h = surface.get_size()
     line_height = max(1, min(4, h // 270))
-    overlay = pygame.Surface((w, h), flags=pygame.SRCALPHA)
     alpha = int(min(255, 255 * strength))
-    for y in range(0, h, line_height * 2):
-        overlay.fill((0, 0, 0, alpha), (0, y, w, line_height))
+    # Cache key: (effect_type, dimensions, line_height, alpha)
+    cache_key = ("scanlines", w, h, line_height, alpha)
+    overlay = _get_cached_surface(cache_key, w, h, alpha=True)
+    # Only regenerate if not already built (check a pixel)
+    if overlay.get_at((0, 0))[3] != alpha:
+        overlay.fill((0, 0, 0, 0))  # Clear
+        for y in range(0, h, line_height * 2):
+            overlay.fill((0, 0, 0, alpha), (0, y, w, line_height))
     surface.blit(overlay, (0, 0))
 
 
@@ -40,7 +64,16 @@ def apply_vignette(surface: pygame.Surface, strength: float = 0.35, radius: floa
     if strength <= 0:
         return
     w, h = surface.get_size()
-    # Use a small mask then scale up for performance
+    # Cache key includes strength and radius (rounded for reasonable bucketing)
+    strength_key = int(strength * 100)
+    radius_key = int(radius * 100)
+    cache_key = ("vignette", w, h, strength_key, radius_key)
+    
+    if cache_key in _surface_cache:
+        surface.blit(_surface_cache[cache_key], (0, 0))
+        return
+    
+    # Build vignette mask (expensive - only done once per size/params combo)
     m = 64
     mask = pygame.Surface((m, m), flags=pygame.SRCALPHA)
     cx, cy = (m - 1) / 2.0, (m - 1) / 2.0
@@ -54,6 +87,11 @@ def apply_vignette(surface: pygame.Surface, strength: float = 0.35, radius: floa
             a = int(255 * strength * (1.0 - (1.0 - t) * (1.0 - t)))
             mask.set_at((i, j), (0, 0, 0, a))
     scaled = pygame.transform.smoothscale(mask, (w, h))
+    
+    # Cache the scaled vignette
+    if len(_surface_cache) > _CACHE_MAX_SIZE:
+        _surface_cache.clear()
+    _surface_cache[cache_key] = scaled
     surface.blit(scaled, (0, 0))
 
 
@@ -61,8 +99,20 @@ def apply_color_tint(surface: pygame.Surface, r: int, g: int, b: int, alpha: int
     """Add a flat color tint overlay. Modifies surface in place."""
     if alpha <= 0:
         return
-    overlay = pygame.Surface(surface.get_size(), flags=pygame.SRCALPHA)
-    overlay.fill((r, g, b, min(255, alpha)))
+    w, h = surface.get_size()
+    alpha = min(255, alpha)
+    cache_key = ("tint", w, h, r, g, b, alpha)
+    
+    if cache_key in _surface_cache:
+        surface.blit(_surface_cache[cache_key], (0, 0))
+        return
+    
+    overlay = pygame.Surface((w, h), flags=pygame.SRCALPHA)
+    overlay.fill((r, g, b, alpha))
+    
+    if len(_surface_cache) > _CACHE_MAX_SIZE:
+        _surface_cache.clear()
+    _surface_cache[cache_key] = overlay
     surface.blit(overlay, (0, 0))
 
 

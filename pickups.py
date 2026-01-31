@@ -143,7 +143,7 @@ def _apply_triple_shot_pickup(game_state: "GameState", ctx: "AppContext", pickup
     """Apply triple shot weapon pickup effect."""
     game_state.unlocked_weapons.add("triple")
     _switch_weapon(game_state, ctx, "triple")
-    # Weapon names and colors are now imported from config_weapons.py
+    # Weapon names and colors from config.projectile_defs
     game_state.weapon_pickup_messages.append({
         "weapon_name": WEAPON_NAMES.get("triple", "TRIPLE SHOT"),
         "timer": 3.0,
@@ -155,7 +155,7 @@ def _apply_laser_pickup(game_state: "GameState", ctx: "AppContext", pickup_type:
     """Apply laser weapon pickup effect."""
     game_state.unlocked_weapons.add("laser")
     _switch_weapon(game_state, ctx, "laser")
-    # Weapon names and colors are now imported from config_weapons.py
+    # Weapon names and colors from config.projectile_defs
     game_state.weapon_pickup_messages.append({
         "weapon_name": WEAPON_NAMES.get("laser", "LASER BEAM"),
         "timer": 3.0,
@@ -167,7 +167,7 @@ def _apply_basic_weapon_pickup(game_state: "GameState", ctx: "AppContext", picku
     """Apply basic weapon pickup effect."""
     game_state.unlocked_weapons.add("basic")  # Should already be unlocked, but ensure it
     _switch_weapon(game_state, ctx, "basic")
-    # Weapon names and colors are now imported from config_weapons.py
+    # Weapon names and colors from config.projectile_defs
     game_state.weapon_pickup_messages.append({
         "weapon_name": WEAPON_NAMES.get("basic", "BASIC FIRE"),
         "timer": 3.0,

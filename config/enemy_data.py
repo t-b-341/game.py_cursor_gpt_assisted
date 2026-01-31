@@ -1,6 +1,6 @@
 """
 Canonical enemy data: templates, spawn/scaling constants, friendly AI.
-Used by config.enemy_defs; config_enemies.py is a compatibility shim that re-exports from enemy_defs.
+Used by config.enemy_defs. Import from config.enemy_defs for enemy definitions.
 """
 
 import pygame

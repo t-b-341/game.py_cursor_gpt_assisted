@@ -118,9 +118,18 @@ class SpatialGrid:
     
     def query_radius(self, cx: int, cy: int, radius: int) -> Iterator[Any]:
         """Yield all objects that might be within radius of a point."""
-        # Create a bounding rect for the circle
-        rect = pygame.Rect(cx - radius, cy - radius, radius * 2, radius * 2)
-        yield from self.query_rect(rect)
+        # Compute cell indices directly (avoid creating pygame.Rect)
+        left = cx - radius
+        top = cy - radius
+        size = radius * 2
+        indices = c_get_cell_indices_for_rect(left, top, size, size, self.cell_size, self.cols, self.rows)
+        seen = set()
+        for idx in indices:
+            for obj in self.cells[idx]:
+                obj_id = id(obj)
+                if obj_id not in seen:
+                    seen.add(obj_id)
+                    yield obj
 
 
 # Module-level grid instances for reuse (avoid allocation each frame)

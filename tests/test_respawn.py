@@ -1,6 +1,7 @@
 """Tests that respawn does not restart the wave (no spawn_system_start_wave on death)."""
 import os
-import unittest
+import pytest
+
 
 # Source check avoids importing game (which may init display). We only need the contract.
 # reset_after_death was moved from game.py to systems/enemy_death.py
@@ -25,29 +26,21 @@ def _get_reset_after_death_source() -> str:
     return text[start:end]
 
 
-class TestRespawnDoesNotRestartWave(unittest.TestCase):
+class TestRespawnDoesNotRestartWave:
     """Ensure respawn keeps current wave and enemies (no map reset)."""
 
     def test_reset_after_death_does_not_call_spawn_system_start_wave(self):
         """Regression: respawn must not call start_wave or clear enemies/friendly_ai."""
         src = _get_reset_after_death_source()
-        self.assertNotIn(
-            "spawn_system_start_wave",
-            src,
-            "reset_after_death must not call spawn_system_start_wave; respawn should keep wave and enemies.",
+        assert "spawn_system_start_wave" not in src, (
+            "reset_after_death must not call spawn_system_start_wave; respawn should keep wave and enemies."
         )
-        self.assertNotIn(
-            "state.enemies.clear()",
-            src,
-            "reset_after_death must not clear enemies on respawn.",
+        assert "state.enemies.clear()" not in src, (
+            "reset_after_death must not clear enemies on respawn."
         )
-        self.assertNotIn(
-            "state.friendly_ai.clear()",
-            src,
-            "reset_after_death must not clear friendly_ai on respawn.",
+        assert "state.friendly_ai.clear()" not in src, (
+            "reset_after_death must not clear friendly_ai on respawn."
         )
-        self.assertIn(
-            "Do not clear friendly_ai or call start_wave",
-            src,
-            "Expected comment documenting no-wave-restart behavior.",
+        assert "Do not clear friendly_ai or call start_wave" in src, (
+            "Expected comment documenting no-wave-restart behavior."
         )

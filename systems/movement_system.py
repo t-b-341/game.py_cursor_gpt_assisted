@@ -437,21 +437,25 @@ def _update_missiles(state, dt: float, ctx: dict) -> None:
                 missile["vel"] = direction * missile["speed"]
         elif missile.get("target_enemy"):
             if missile["target_enemy"] not in state.enemies:
+                # Find nearest enemy using C-accelerated distance
                 target_enemy = None
                 min_dist = float("inf")
+                mx, my = missile["rect"].centerx, missile["rect"].centery
                 for e in state.enemies:
-                    d = (pygame.Vector2(e["rect"].center) - pygame.Vector2(missile["rect"].center)).length_squared()
+                    d = c_distance_squared(e["rect"].centerx, e["rect"].centery, mx, my)
                     if d < min_dist:
                         min_dist = d
                         target_enemy = e
                 missile["target_enemy"] = target_enemy
             if missile["target_enemy"]:
-                target_pos = pygame.Vector2(missile["target_enemy"]["rect"].center)
-                missile_pos = pygame.Vector2(missile["rect"].center)
-                d = (target_pos - missile_pos)
-                if d.length_squared() > 0:
-                    direction = d.normalize()
-                    missile["vel"] = direction * missile["speed"]
+                tx, ty = missile["target_enemy"]["rect"].centerx, missile["target_enemy"]["rect"].centery
+                mx, my = missile["rect"].centerx, missile["rect"].centery
+                dx, dy = tx - mx, ty - my
+                dist_sq = dx * dx + dy * dy
+                if dist_sq > 0:
+                    dist = math.sqrt(dist_sq)
+                    speed = missile["speed"]
+                    missile["vel"] = pygame.Vector2(dx / dist * speed, dy / dist * speed)
 
         missile["rect"].x += int(missile["vel"].x * dt)
         missile["rect"].y += int(missile["vel"].y * dt)

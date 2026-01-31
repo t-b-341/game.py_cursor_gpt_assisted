@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Any, Optional
 
 # ----------------------------
-# Weapon config (canonical; config_weapons.py is a compatibility shim)
+# Weapon config (canonical source for projectile/weapon definitions)
 # ----------------------------
 WEAPON_CONFIGS: dict[str, dict[str, Any]] = {
     "basic": {

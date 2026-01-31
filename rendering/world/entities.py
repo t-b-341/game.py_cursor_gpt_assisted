@@ -13,6 +13,7 @@ from typing import Any
 import pygame
 
 from ..context import RenderContext, get_camera_offset
+from ..text_cache import get_text_surface
 
 
 def draw_pickups(screen: pygame.Surface, state: Any, ctx: dict, render_ctx: RenderContext = None) -> None:
@@ -34,9 +35,10 @@ def draw_pickups(screen: pygame.Surface, state: Any, ctx: dict, render_ctx: Rend
                 pickup_name = weapon_names.get(pickup.get("type", ""), pickup.get("type", "").upper())
             else:
                 pickup_name = pickup.get("type", "").upper().replace("_", " ")
-            name_surf = small_font.render(pickup_name, True, (255, 255, 255))
+            # Use cached text surfaces for performance
+            name_surf = get_text_surface(small_font, pickup_name, (255, 255, 255))
             name_rect = name_surf.get_rect(center=(rect.centerx - cam_x, rect.y - 20 - cam_y))
-            outline_surf = small_font.render(pickup_name, True, (0, 0, 0))
+            outline_surf = get_text_surface(small_font, pickup_name, (0, 0, 0))
             for dx, dy in [(-1, -1), (-1, 1), (1, -1), (1, 1)]:
                 screen.blit(outline_surf, (name_rect.x + dx, name_rect.y + dy))
             screen.blit(name_surf, name_rect)

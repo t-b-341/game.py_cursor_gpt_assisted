@@ -8,8 +8,8 @@ live in config.balance; constants.py re-exports them for backward compatibility.
 
 Tuning guide (which values to tweak for feel):
 - More floaty vs tight movement: player_base_speed, movement_smoothing (0=instant, 1=full smoothing).
-- Faster vs slower weapons: player_base_shoot_cooldown, per-weapon cooldown_multiplier in config_weapons.
-- Easier vs harder early waves: base_enemies_per_wave, enemy_spawn_multiplier, difficulty multiplers in constants.
+- Faster vs slower weapons: player_base_shoot_cooldown, per-weapon cooldown_multiplier in config.projectile_defs.
+- Easier vs harder early waves: base_enemies_per_wave, enemy_spawn_multiplier, difficulty multipliers in constants.
 - Feel profiles: use FEEL_PROFILE_CASUAL / FEEL_PROFILE_ARCADE to apply preset overrides (see apply_feel_profile).
 - On-screen debug info (wave, enemy count, player HP): set debug_draw_overlay=True to enable the debug HUD in gameplay.
 - GPU physics: set use_gpu_physics=True (requires CUDA_AVAILABLE from gpu_physics).
@@ -139,7 +139,7 @@ class GameConfig:
     movement_dead_zone: float = 0.0   # 0–1; for future analog stick support; digital keys ignore
     movement_smoothing: float = 0.0   # 0 = instant (current); >0 = optional smoothing (hook only)
 
-    # --- Feel: difficulty / pacing (spawn_system uses these if set; else uses config_enemies/constants) ---
+    # --- Feel: difficulty / pacing (spawn_system uses these if set; else uses config.enemy_defs) ---
     base_enemies_per_wave: int = 12
     enemy_spawn_multiplier: float = 3.5
 

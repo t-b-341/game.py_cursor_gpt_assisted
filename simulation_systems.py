@@ -42,14 +42,15 @@ def _sim_player_and_ability_timers(gs: GameState, sim_dt: float, app_ctx: AppCon
 
 
 def _sim_damage_and_weapon_message_cleanup(gs: GameState, sim_dt: float, app_ctx: AppContext) -> None:
-    for dmg_num in gs.damage_numbers[:]:
-        dmg_num["timer"] -= sim_dt
-        if dmg_num["timer"] <= 0:
-            gs.damage_numbers.remove(dmg_num)
-    for msg in gs.weapon_pickup_messages[:]:
-        msg["timer"] -= sim_dt
-        if msg["timer"] <= 0:
-            gs.weapon_pickup_messages.remove(msg)
+    # O(n) filter-based removal instead of O(n²) .remove() in loop
+    if gs.damage_numbers:
+        for dmg_num in gs.damage_numbers:
+            dmg_num["timer"] -= sim_dt
+        gs.damage_numbers[:] = [d for d in gs.damage_numbers if d["timer"] > 0]
+    if gs.weapon_pickup_messages:
+        for msg in gs.weapon_pickup_messages:
+            msg["timer"] -= sim_dt
+        gs.weapon_pickup_messages[:] = [m for m in gs.weapon_pickup_messages if m["timer"] > 0]
 
 
 def _sim_shield_and_jump_state(gs: GameState, sim_dt: float, app_ctx: AppContext) -> None:
@@ -79,10 +80,11 @@ def _sim_entity_updates(gs: GameState, sim_dt: float, app_ctx: AppContext) -> No
 
 
 def _sim_defeat_messages_cleanup(gs: GameState, sim_dt: float, app_ctx: AppContext) -> None:
-    for msg in gs.enemy_defeat_messages[:]:
-        msg["timer"] -= sim_dt
-        if msg["timer"] <= 0:
-            gs.enemy_defeat_messages.remove(msg)
+    # O(n) filter-based removal instead of O(n²) .remove() in loop
+    if gs.enemy_defeat_messages:
+        for msg in gs.enemy_defeat_messages:
+            msg["timer"] -= sim_dt
+        gs.enemy_defeat_messages[:] = [m for m in gs.enemy_defeat_messages if m["timer"] > 0]
 
 
 def _sim_pickup_effects(gs: GameState, sim_dt: float, app_ctx: AppContext) -> None:
