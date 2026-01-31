@@ -7,7 +7,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import pygame
-from constants import STATE_PLAYING, STATE_ENDURANCE, STATE_MENU, STATE_SAVE_GAME, STATE_TELEMETRY_VIEWER, pause_options, fps_cap_options
+from constants import STATE_PLAYING, STATE_ENDURANCE, STATE_MENU, STATE_SAVE_GAME, STATE_TELEMETRY_VIEWER, STATE_MAP_TEST, pause_options, fps_cap_options
 from rendering import RenderContext, draw_centered_text
 from systems.audio_system import (
     get_sfx_volume, get_music_volume, set_sfx_volume, set_music_volume,
@@ -177,6 +177,9 @@ def _handle_menu_selection(game_state: "GameState", cfg, out: dict) -> dict | No
     elif choice == "Restart (Wave 1)":
         out["restart_to_wave1"] = True
         out["screen"] = STATE_PLAYING
+        return out
+    elif choice == "Test Map":
+        out["screen"] = STATE_MAP_TEST
         return out
     elif choice == "Audio options":
         game_state.ui.pause_submenu = "audio"

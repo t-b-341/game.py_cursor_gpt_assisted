@@ -12,14 +12,13 @@ Future enhancements for the map editor, organized by priority and complexity.
 - Text input overlay with cursor
 - Enter to confirm, ESC to cancel
 
-### 2. Map Resize Tool
-**Current**: Map size is fixed at creation.
-**Enhancement**: Allow resizing with `Ctrl+R`, prompting for new dimensions.
-
-Options:
-- Expand/shrink from edges
-- Center content in new size
-- Warn if tiles will be lost
+### 2. ✅ Map Resize Tool (IMPLEMENTED)
+**Status**: Complete
+- `Ctrl+R` opens resize dialog
+- Input fields for width (1-200) and height (1-200)
+- Anchor options: top_left, center, top_right, bottom_left, bottom_right
+- TAB to switch between fields, arrows to change anchor
+- Preserves existing tiles where possible
 
 ### 3. Copy/Paste Selection
 **Current**: No way to duplicate patterns.
@@ -32,6 +31,16 @@ Options:
 **Status**: Complete
 - `Alt+Click` or Middle-click to pick tile under cursor
 - Visual indicator (cyan border) when Alt is held
+
+### 5. ✅ Spawn Point System (IMPLEMENTED)
+**Status**: Complete
+- Press `M` to toggle spawn mode
+- Left-click to place/edit spawn points
+- Right-click to remove spawn points
+- Press `P` to set player spawn location
+- Click spawn point to edit enemy pool
+- Spawn pools support multiple enemy types
+- Test maps via "Test Map" option in pause menu
 
 ---
 

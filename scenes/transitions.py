@@ -67,6 +67,7 @@ STATE_SAVE_GAME = "SAVE_GAME"
 STATE_LOAD_GAME = "LOAD_GAME"
 STATE_TELEMETRY_VIEWER = "TELEMETRY_VIEWER"
 STATE_QUICK_LAUNCH = "QUICK_LAUNCH"
+STATE_MAP_TEST = "MAP_TEST"
 
 
 def create_scene_for_state(scene_name: str) -> "Scene | None":
@@ -89,6 +90,7 @@ def create_scene_for_state(scene_name: str) -> "Scene | None":
     from .telemetry_viewer import TelemetryViewerScene
     from .shader_test import ShaderTestScene
     from .shader_settings import ShaderSettingsScreen
+    from .map_test import MapTestScene
 
     scene_map = {
         STATE_PAUSED: lambda: PauseScene(),
@@ -104,6 +106,7 @@ def create_scene_for_state(scene_name: str) -> "Scene | None":
         STATE_TELEMETRY_VIEWER: lambda: TelemetryViewerScene(),
         STATE_PLAYING: lambda: GameplayScene(STATE_PLAYING),
         STATE_ENDURANCE: lambda: GameplayScene(STATE_ENDURANCE),
+        STATE_MAP_TEST: lambda: MapTestScene(),
         "SHADER_TEST": lambda: ShaderTestScene(),
         "SHADER_SETTINGS": lambda: ShaderSettingsScreen(),
     }
@@ -138,6 +141,9 @@ def apply_scene_transition(
         scene = create_scene_for_state(transition.scene_name)
         if scene:
             scene_stack.push(scene)
+            # Call on_enter if the scene has it
+            if hasattr(scene, 'on_enter'):
+                scene.on_enter(game_state, {})
         if transition.scene_name:
             game_state.current_screen = transition.scene_name
         return False
@@ -147,6 +153,9 @@ def apply_scene_transition(
         scene = create_scene_for_state(transition.scene_name)
         if scene:
             scene_stack.push(scene)
+            # Call on_enter if the scene has it
+            if hasattr(scene, 'on_enter'):
+                scene.on_enter(game_state, {})
         if transition.scene_name:
             game_state.current_screen = transition.scene_name
         return False

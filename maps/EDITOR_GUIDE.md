@@ -75,6 +75,7 @@ python run_editor.py my_map_name
 |--------|---------|
 | Save map | `S` |
 | Rename map | `N` |
+| Resize map | `Ctrl+R` |
 | Quit | `ESC` |
 
 ### Display Options
@@ -83,6 +84,15 @@ python run_editor.py my_map_name
 | Toggle grid | `G` |
 | Toggle help overlay | `H` |
 | Cycle theme | `T` |
+
+### Spawn Mode (Press M to toggle)
+| Action | Control |
+|--------|---------|
+| Toggle spawn mode | `M` |
+| Place/edit spawn point | Left-click |
+| Remove spawn point | Right-click |
+| Set player spawn | `P` |
+| Exit spawn mode | `ESC` or `M` |
 
 ---
 
@@ -159,6 +169,9 @@ New maps are created with:
 7. **Flood fill** (`F`) - fill connected areas instantly
 8. **Larger brush** (`]`) - paint faster with bigger brush sizes
 9. **Rename maps** (`N`) - give your maps meaningful names before saving
+10. **Resize maps** (`Ctrl+R`) - expand or shrink with anchor control to preserve content
+11. **Spawn mode** (`M`) - place enemy spawn points and configure spawn pools
+12. **Test in-game** - use "Test Map" from pause menu to play your maps
 
 ---
 

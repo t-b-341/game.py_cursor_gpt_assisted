@@ -30,6 +30,7 @@ from .map_saver import save_map
 from .map_loader import load_map
 from .map_manager import MapManager
 from .collision import world_to_tile, is_tile_blocking, resolve_entity_map_collision
+from .spawn_point import SpawnPoint, ENEMY_POOLS, get_available_enemy_types
 
 __all__ = [
     "Tile",
@@ -45,6 +46,9 @@ __all__ = [
     "world_to_tile",
     "is_tile_blocking",
     "resolve_entity_map_collision",
+    "SpawnPoint",
+    "ENEMY_POOLS",
+    "get_available_enemy_types",
 ]
 
 # Default tile size (64x64 pixels)

@@ -219,6 +219,107 @@ class TestMapManager:
         manager.render(surface)  # Should not crash
 
 
+class TestSpawnPoint:
+    """Tests for SpawnPoint dataclass."""
+    
+    def test_spawn_point_creation(self):
+        """SpawnPoint can be created with defaults."""
+        from maps.spawn_point import SpawnPoint
+        sp = SpawnPoint(x=5, y=10)
+        assert sp.x == 5
+        assert sp.y == 10
+        assert sp.enemy_pool == ["grunt"]
+        assert sp.wave_min == 1
+        assert sp.wave_max is None
+    
+    def test_spawn_point_can_spawn_on_wave(self):
+        """can_spawn_on_wave respects wave limits."""
+        from maps.spawn_point import SpawnPoint
+        sp = SpawnPoint(x=0, y=0, wave_min=2, wave_max=5)
+        assert sp.can_spawn_on_wave(1) is False
+        assert sp.can_spawn_on_wave(2) is True
+        assert sp.can_spawn_on_wave(5) is True
+        assert sp.can_spawn_on_wave(6) is False
+    
+    def test_spawn_point_max_spawns(self):
+        """max_spawns limits spawn count."""
+        from maps.spawn_point import SpawnPoint
+        sp = SpawnPoint(x=0, y=0, max_spawns=2)
+        assert sp.can_spawn_on_wave(1) is True
+        sp.times_spawned = 2
+        assert sp.can_spawn_on_wave(1) is False
+    
+    def test_spawn_point_serialization(self):
+        """SpawnPoint serializes to/from dict."""
+        from maps.spawn_point import SpawnPoint
+        sp = SpawnPoint(x=3, y=7, enemy_pool=["grunt", "fast"], wave_min=2)
+        
+        data = sp.to_dict()
+        sp2 = SpawnPoint.from_dict(data)
+        
+        assert sp2.x == 3
+        assert sp2.y == 7
+        assert sp2.enemy_pool == ["grunt", "fast"]
+        assert sp2.wave_min == 2
+
+
+class TestMapGridSpawnPoints:
+    """Tests for MapGrid spawn point management."""
+    
+    def test_add_spawn_point(self):
+        """MapGrid can add spawn points."""
+        from maps.map_grid import MapGrid
+        from maps.spawn_point import SpawnPoint
+        
+        grid = MapGrid(name="test", width=10, height=10)
+        sp = SpawnPoint(x=5, y=5)
+        grid.add_spawn_point(sp)
+        
+        assert len(grid.spawn_points) == 1
+        assert grid.spawn_points[0] is sp
+    
+    def test_get_spawn_point_at(self):
+        """get_spawn_point_at returns spawn at position."""
+        from maps.map_grid import MapGrid
+        from maps.spawn_point import SpawnPoint
+        
+        grid = MapGrid(name="test", width=10, height=10)
+        sp = SpawnPoint(x=5, y=5)
+        grid.add_spawn_point(sp)
+        
+        assert grid.get_spawn_point_at(5, 5) is sp
+        assert grid.get_spawn_point_at(0, 0) is None
+    
+    def test_remove_spawn_point_at(self):
+        """remove_spawn_point_at removes spawn."""
+        from maps.map_grid import MapGrid
+        from maps.spawn_point import SpawnPoint
+        
+        grid = MapGrid(name="test", width=10, height=10)
+        grid.add_spawn_point(SpawnPoint(x=5, y=5))
+        
+        assert grid.remove_spawn_point_at(5, 5) is True
+        assert len(grid.spawn_points) == 0
+        assert grid.remove_spawn_point_at(5, 5) is False
+    
+    def test_spawn_points_serialization(self):
+        """Spawn points are included in serialization."""
+        from maps.map_grid import MapGrid
+        from maps.spawn_point import SpawnPoint
+        
+        grid = MapGrid(name="test", width=10, height=10)
+        grid.add_spawn_point(SpawnPoint(x=2, y=3, enemy_pool=["tank"]))
+        grid.player_spawn = (5, 5)
+        
+        data = grid.to_dict()
+        grid2 = MapGrid.from_dict(data)
+        
+        assert len(grid2.spawn_points) == 1
+        assert grid2.spawn_points[0].x == 2
+        assert grid2.spawn_points[0].enemy_pool == ["tank"]
+        assert grid2.player_spawn == (5, 5)
+
+
 class TestEditorEyedropper:
     """Tests for eyedropper tool."""
     
@@ -347,6 +448,120 @@ class TestEditorFloodFill:
         
         # All should be floor again
         assert editor.map_grid.get_tile_id(0, 0) == "floor"
+
+
+class TestMapGridResize:
+    """Tests for MapGrid resize functionality."""
+    
+    def test_resize_expand_preserves_tiles(self):
+        """Expanding map preserves existing tiles."""
+        from maps.map_grid import MapGrid
+        grid = MapGrid(name="test", width=5, height=5)
+        
+        # Place some tiles
+        grid.set_tile_id(0, 0, "wall")
+        grid.set_tile_id(4, 4, "wall")
+        
+        # Expand to 10x10
+        grid.resize(10, 10, anchor="top_left")
+        
+        assert grid.width == 10
+        assert grid.height == 10
+        assert grid.get_tile_id(0, 0) == "wall"
+        assert grid.get_tile_id(4, 4) == "wall"
+        # New area should be floor
+        assert grid.get_tile_id(9, 9) == "floor"
+    
+    def test_resize_shrink_clips_tiles(self):
+        """Shrinking map clips tiles outside new bounds."""
+        from maps.map_grid import MapGrid
+        grid = MapGrid(name="test", width=10, height=10)
+        
+        # Place tiles at corners
+        grid.set_tile_id(0, 0, "wall")
+        grid.set_tile_id(9, 9, "wall")
+        
+        # Shrink to 5x5
+        grid.resize(5, 5, anchor="top_left")
+        
+        assert grid.width == 5
+        assert grid.height == 5
+        assert grid.get_tile_id(0, 0) == "wall"
+        # Corner tile is now out of bounds
+        assert grid.get_tile_id(9, 9) is None
+    
+    def test_resize_center_anchor(self):
+        """Center anchor places content in middle."""
+        from maps.map_grid import MapGrid
+        grid = MapGrid(name="test", width=3, height=3)
+        
+        # Fill with walls
+        grid.fill("wall")
+        
+        # Expand to 5x5 with center anchor
+        grid.resize(5, 5, anchor="center")
+        
+        # Original 3x3 should be centered (at offset 1,1)
+        assert grid.get_tile_id(1, 1) == "wall"
+        assert grid.get_tile_id(3, 3) == "wall"
+        # Edges should be floor (default)
+        assert grid.get_tile_id(0, 0) == "floor"
+        assert grid.get_tile_id(4, 4) == "floor"
+    
+    def test_resize_bottom_right_anchor(self):
+        """Bottom-right anchor places content at bottom-right."""
+        from maps.map_grid import MapGrid
+        grid = MapGrid(name="test", width=3, height=3)
+        grid.fill("wall")
+        
+        # Expand to 5x5 with bottom_right anchor
+        grid.resize(5, 5, anchor="bottom_right")
+        
+        # Original content at bottom-right
+        assert grid.get_tile_id(4, 4) == "wall"
+        assert grid.get_tile_id(2, 2) == "wall"
+        # Top-left should be floor
+        assert grid.get_tile_id(0, 0) == "floor"
+
+
+class TestEditorResize:
+    """Tests for editor resize mode."""
+    
+    def test_start_resize_mode(self):
+        """Ctrl+R enters resize mode."""
+        from maps.editor import MapEditor
+        editor = MapEditor(map_width=10, map_height=10)
+        
+        editor._start_resize_mode()
+        assert editor._resize_mode is True
+        assert editor._resize_width == "10"
+        assert editor._resize_height == "10"
+    
+    def test_apply_resize(self):
+        """Resize applies new dimensions."""
+        from maps.editor import MapEditor
+        editor = MapEditor(map_width=10, map_height=10)
+        
+        editor._start_resize_mode()
+        editor._resize_width = "20"
+        editor._resize_height = "15"
+        editor._apply_resize()
+        
+        assert editor._resize_mode is False
+        assert editor.map_grid.width == 20
+        assert editor.map_grid.height == 15
+    
+    def test_resize_validates_bounds(self):
+        """Resize rejects invalid dimensions."""
+        from maps.editor import MapEditor
+        editor = MapEditor(map_width=10, map_height=10)
+        
+        editor._start_resize_mode()
+        editor._resize_width = "999"  # Too large
+        editor._apply_resize()
+        
+        # Should remain at original size
+        assert editor.map_grid.width == 10
 
 
 class TestEditorBrushSize:

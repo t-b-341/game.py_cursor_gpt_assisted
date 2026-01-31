@@ -13,6 +13,7 @@ from .victory import VictoryScene
 from .save_game import SaveGameScene
 from .load_game import LoadGameScene
 from .quick_launch import QuickLaunchScene
+from .map_test import MapTestScene
 from .transitions import SceneTransition
 
 __all__ = [
@@ -32,4 +33,5 @@ __all__ = [
     "SaveGameScene",
     "LoadGameScene",
     "QuickLaunchScene",
+    "MapTestScene",
 ]

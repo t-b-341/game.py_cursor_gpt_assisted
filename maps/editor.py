@@ -9,6 +9,7 @@ import pygame
 from .map_grid import MapGrid
 from .map_saver import save_map
 from .registry import get_tile, list_tiles, list_themes, get_theme_tiles
+from .spawn_point import SpawnPoint, ENEMY_POOLS
 
 
 # Editor constants
@@ -96,8 +97,29 @@ class MapEditor:
         self._naming_mode: bool = False
         self._name_input: str = ""
         
+        # Resize mode
+        self._resize_mode: bool = False
+        self._resize_field: int = 0  # 0 = width, 1 = height, 2 = anchor
+        self._resize_width: str = ""
+        self._resize_height: str = ""
+        self._resize_anchor_idx: int = 0
+        self._resize_anchors = ["top_left", "center", "top_right", "bottom_left", "bottom_right"]
+        
+        # Spawn editing mode
+        self._spawn_mode: bool = False  # Toggle with M key
+        self._spawn_edit_mode: bool = False  # Editing a spawn point's pool
+        self._selected_spawn: "SpawnPoint | None" = None
+        self._spawn_pool_input: str = ""
+        self._available_enemies: list[str] = []
+        self._load_enemy_types()
+        
         # Get available tiles for current theme
         self._update_palette()
+    
+    def _load_enemy_types(self) -> None:
+        """Load available enemy types for spawn pools."""
+        from .spawn_point import get_available_enemy_types
+        self._available_enemies = get_available_enemy_types()
     
     def _update_palette(self) -> None:
         """Update the tile palette based on current theme."""
@@ -140,8 +162,21 @@ class MapEditor:
         if self._naming_mode:
             return self._handle_naming_input(event)
         
-        # Quit
+        # Handle resize mode separately
+        if self._resize_mode:
+            return self._handle_resize_input(event)
+        
+        # Handle spawn edit mode separately
+        if self._spawn_edit_mode:
+            return self._handle_spawn_edit_input(event)
+        
+        # Quit (or exit spawn mode)
         if key == pygame.K_ESCAPE:
+            if self._spawn_mode:
+                self._spawn_mode = False
+                self._selected_spawn = None
+                self._set_status("Spawn mode OFF")
+                return False
             return True
         
         # Save
@@ -165,7 +200,18 @@ class MapEditor:
         if key == pygame.K_n:
             self._start_naming_mode()
         
-        # Number keys for palette selection
+        # Toggle spawn mode (M key)
+        if key == pygame.K_m:
+            self._spawn_mode = not self._spawn_mode
+            self._selected_spawn = None
+            mode_str = "ON (click to place, right-click to remove)" if self._spawn_mode else "OFF"
+            self._set_status(f"Spawn mode: {mode_str}")
+        
+        # Set player spawn (P key in spawn mode)
+        if key == pygame.K_p and self._spawn_mode:
+            self._place_player_spawn_at_cursor()
+        
+        # Number keys for palette selection (only when not in spawn mode)
         if pygame.K_1 <= key <= pygame.K_9:
             idx = key - pygame.K_1
             if idx < len(self.palette_tiles):
@@ -212,6 +258,10 @@ class MapEditor:
         if key == pygame.K_y and pygame.key.get_mods() & pygame.KMOD_CTRL:
             self._redo()
         
+        # Resize map (Ctrl+R)
+        if key == pygame.K_r and pygame.key.get_mods() & pygame.KMOD_CTRL:
+            self._start_resize_mode()
+        
         return False
     
     def _fill_map_with_undo(self, tile_id: str) -> None:
@@ -241,6 +291,14 @@ class MapEditor:
         mods = pygame.key.get_mods()
         if mods & pygame.KMOD_ALT or event.button == 2:
             self._eyedropper(tx, ty)
+            return
+        
+        # Handle spawn mode clicks
+        if self._spawn_mode:
+            if event.button == 1:  # Left click - place/select spawn
+                self._place_spawn_point(tx, ty)
+            elif event.button == 3:  # Right click - remove spawn
+                self._remove_spawn_point(tx, ty)
             return
         
         # Begin brush stroke
@@ -426,6 +484,103 @@ class MapEditor:
         return False
     
     # =========================================================================
+    # MAP RESIZE
+    # =========================================================================
+    
+    def _start_resize_mode(self) -> None:
+        """Enter resize input mode."""
+        self._resize_mode = True
+        self._resize_field = 0  # Start at width field
+        self._resize_width = str(self.map_grid.width)
+        self._resize_height = str(self.map_grid.height)
+        self._resize_anchor_idx = 0
+        self._set_status("Enter new size (TAB to switch fields, ENTER to confirm)")
+    
+    def _handle_resize_input(self, event: pygame.event.Event) -> bool:
+        """Handle keyboard input during resize mode."""
+        key = event.key
+        
+        if key == pygame.K_ESCAPE:
+            # Cancel resize
+            self._resize_mode = False
+            self._set_status("Resize cancelled")
+            return False
+        
+        if key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+            # Confirm resize
+            self._apply_resize()
+            return False
+        
+        if key == pygame.K_TAB:
+            # Cycle through fields (width -> height -> anchor -> width)
+            self._resize_field = (self._resize_field + 1) % 3
+            return False
+        
+        if key == pygame.K_BACKSPACE:
+            if self._resize_field == 0:
+                self._resize_width = self._resize_width[:-1]
+            elif self._resize_field == 1:
+                self._resize_height = self._resize_height[:-1]
+            return False
+        
+        # Handle anchor selection with arrow keys
+        if self._resize_field == 2:
+            if key in (pygame.K_LEFT, pygame.K_UP):
+                self._resize_anchor_idx = (self._resize_anchor_idx - 1) % len(self._resize_anchors)
+            elif key in (pygame.K_RIGHT, pygame.K_DOWN):
+                self._resize_anchor_idx = (self._resize_anchor_idx + 1) % len(self._resize_anchors)
+            return False
+        
+        # Add digit characters to width/height
+        if event.unicode and event.unicode.isdigit():
+            if self._resize_field == 0 and len(self._resize_width) < 4:
+                self._resize_width += event.unicode
+            elif self._resize_field == 1 and len(self._resize_height) < 4:
+                self._resize_height += event.unicode
+        
+        return False
+    
+    def _apply_resize(self) -> None:
+        """Apply the resize operation."""
+        try:
+            new_width = int(self._resize_width) if self._resize_width else self.map_grid.width
+            new_height = int(self._resize_height) if self._resize_height else self.map_grid.height
+        except ValueError:
+            self._set_status("Invalid size values")
+            self._resize_mode = False
+            return
+        
+        # Validate bounds
+        if new_width < 1 or new_width > 200:
+            self._set_status("Width must be 1-200")
+            self._resize_mode = False
+            return
+        if new_height < 1 or new_height > 200:
+            self._set_status("Height must be 1-200")
+            self._resize_mode = False
+            return
+        
+        # Check if size actually changed
+        if new_width == self.map_grid.width and new_height == self.map_grid.height:
+            self._set_status("Size unchanged")
+            self._resize_mode = False
+            return
+        
+        # Store old state for info message
+        old_size = f"{self.map_grid.width}x{self.map_grid.height}"
+        anchor = self._resize_anchors[self._resize_anchor_idx]
+        
+        # Apply resize
+        self.map_grid.resize(new_width, new_height, anchor=anchor, default_tile="floor")
+        
+        # Clear undo/redo (resize is not undoable for simplicity)
+        self._undo_stack.clear()
+        self._redo_stack.clear()
+        
+        self._resize_mode = False
+        self._set_status(f"Resized {old_size} -> {new_width}x{new_height} (anchor: {anchor})")
+    
+    # =========================================================================
     # FLOOD FILL
     # =========================================================================
     
@@ -521,14 +676,121 @@ class MapEditor:
                 ty = center_ty + dy
                 self._place_tile_with_undo(tx, ty, tile_id)
     
+    # =========================================================================
+    # SPAWN POINT EDITING
+    # =========================================================================
+    
+    def _place_spawn_point(self, tx: int, ty: int) -> None:
+        """Place or select a spawn point at the given tile."""
+        existing = self.map_grid.get_spawn_point_at(tx, ty)
+        if existing:
+            # Select existing spawn point for editing
+            self._selected_spawn = existing
+            self._start_spawn_edit()
+        else:
+            # Create new spawn point
+            spawn = SpawnPoint(x=tx, y=ty, enemy_pool=["grunt"])
+            self.map_grid.add_spawn_point(spawn)
+            self._selected_spawn = spawn
+            self._set_status(f"Spawn point added at ({tx}, {ty}) - click to edit pool")
+    
+    def _remove_spawn_point(self, tx: int, ty: int) -> None:
+        """Remove spawn point at the given tile."""
+        if self.map_grid.remove_spawn_point_at(tx, ty):
+            self._set_status(f"Spawn point removed at ({tx}, {ty})")
+            if self._selected_spawn and self._selected_spawn.x == tx and self._selected_spawn.y == ty:
+                self._selected_spawn = None
+        else:
+            self._set_status("No spawn point here")
+    
+    def _place_player_spawn_at_cursor(self) -> None:
+        """Set player spawn at cursor position."""
+        mx, my = pygame.mouse.get_pos()
+        if mx >= self.screen_width - PALETTE_WIDTH:
+            self._set_status("Move cursor to map area")
+            return
+        
+        world_x = mx + self.camera_x
+        world_y = my + self.camera_y
+        tx = int(world_x // TILE_SIZE)
+        ty = int(world_y // TILE_SIZE)
+        
+        self.map_grid.player_spawn = (tx, ty)
+        self._set_status(f"Player spawn set at ({tx}, {ty})")
+    
+    def _start_spawn_edit(self) -> None:
+        """Start editing the selected spawn point's enemy pool."""
+        if not self._selected_spawn:
+            return
+        self._spawn_edit_mode = True
+        self._spawn_pool_input = ",".join(self._selected_spawn.enemy_pool)
+        self._set_status("Edit pool: type enemy names separated by commas")
+    
+    def _handle_spawn_edit_input(self, event: pygame.event.Event) -> bool:
+        """Handle keyboard input during spawn pool editing."""
+        key = event.key
+        
+        if key == pygame.K_ESCAPE:
+            self._spawn_edit_mode = False
+            self._set_status("Spawn edit cancelled")
+            return False
+        
+        if key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+            self._apply_spawn_pool_edit()
+            return False
+        
+        if key == pygame.K_BACKSPACE:
+            self._spawn_pool_input = self._spawn_pool_input[:-1]
+            return False
+        
+        # Add printable characters
+        if event.unicode and event.unicode.isprintable() and len(self._spawn_pool_input) < 100:
+            self._spawn_pool_input += event.unicode
+        
+        return False
+    
+    def _apply_spawn_pool_edit(self) -> None:
+        """Apply the edited enemy pool to the selected spawn point."""
+        if not self._selected_spawn:
+            self._spawn_edit_mode = False
+            return
+        
+        # Parse comma-separated enemy types
+        pool = [t.strip() for t in self._spawn_pool_input.split(",") if t.strip()]
+        
+        # Validate enemy types
+        valid_pool = []
+        invalid = []
+        for enemy_type in pool:
+            if enemy_type in self._available_enemies:
+                valid_pool.append(enemy_type)
+            elif enemy_type in ENEMY_POOLS:
+                # Expand pool preset
+                valid_pool.extend(ENEMY_POOLS[enemy_type])
+            else:
+                invalid.append(enemy_type)
+        
+        if not valid_pool:
+            self._set_status(f"No valid enemies. Available: {', '.join(self._available_enemies[:5])}...")
+            self._spawn_edit_mode = False
+            return
+        
+        self._selected_spawn.enemy_pool = list(set(valid_pool))  # Remove duplicates
+        self._spawn_edit_mode = False
+        
+        if invalid:
+            self._set_status(f"Pool set (unknown: {', '.join(invalid)})")
+        else:
+            self._set_status(f"Pool set: {', '.join(self._selected_spawn.enemy_pool)}")
+    
     def update(self, dt: float) -> None:
         """Update editor state.
         
         Args:
             dt: Delta time in seconds
         """
-        # Don't paint during naming mode
-        if self._naming_mode:
+        # Don't paint during special modes
+        if self._naming_mode or self._resize_mode or self._spawn_edit_mode or self._spawn_mode:
             if self.status_timer > 0:
                 self.status_timer -= dt
             return
@@ -578,6 +840,9 @@ class MapEditor:
         # Render map
         self._render_map(screen)
         
+        # Render spawn points (always, but highlighted in spawn mode)
+        self._render_spawn_points(screen)
+        
         # Render grid overlay
         if self.show_grid:
             self._render_grid(screen)
@@ -585,8 +850,11 @@ class MapEditor:
         # Render brush preview
         self._render_brush_preview(screen)
         
-        # Render palette
-        self._render_palette(screen)
+        # Render palette (or spawn palette in spawn mode)
+        if self._spawn_mode:
+            self._render_spawn_palette(screen)
+        else:
+            self._render_palette(screen)
         
         # Render status bar
         self._render_status(screen)
@@ -598,6 +866,14 @@ class MapEditor:
         # Render naming overlay
         if self._naming_mode:
             self._render_naming_overlay(screen)
+        
+        # Render resize overlay
+        if self._resize_mode:
+            self._render_resize_overlay(screen)
+        
+        # Render spawn edit overlay
+        if self._spawn_edit_mode:
+            self._render_spawn_edit_overlay(screen)
     
     def _render_map(self, screen: pygame.Surface) -> None:
         """Render the map tiles."""
@@ -765,30 +1041,258 @@ class MapEditor:
         hint_rect = hint.get_rect(center=(self.screen_width // 2, self.screen_height // 2 + 50))
         screen.blit(hint, hint_rect)
     
+    def _render_resize_overlay(self, screen: pygame.Surface) -> None:
+        """Render the map resize input overlay."""
+        # Semi-transparent background
+        overlay = pygame.Surface((self.screen_width, self.screen_height))
+        overlay.set_alpha(180)
+        overlay.fill((0, 0, 0))
+        screen.blit(overlay, (0, 0))
+        
+        font_large = pygame.font.Font(None, 36)
+        font = pygame.font.Font(None, 28)
+        
+        center_x = self.screen_width // 2
+        center_y = self.screen_height // 2
+        
+        # Title
+        title = font_large.render("Resize Map", True, (255, 255, 255))
+        title_rect = title.get_rect(center=(center_x, center_y - 100))
+        screen.blit(title, title_rect)
+        
+        # Current size info
+        current = font.render(f"Current: {self.map_grid.width} x {self.map_grid.height}", True, (150, 150, 150))
+        current_rect = current.get_rect(center=(center_x, center_y - 65))
+        screen.blit(current, current_rect)
+        
+        # Blinking cursor
+        cursor = "_" if (pygame.time.get_ticks() // 500) % 2 == 0 else " "
+        
+        # Width field
+        width_color = (255, 255, 100) if self._resize_field == 0 else (180, 180, 180)
+        width_cursor = cursor if self._resize_field == 0 else ""
+        width_text = font.render(f"Width:  [ {self._resize_width}{width_cursor} ]", True, width_color)
+        width_rect = width_text.get_rect(center=(center_x, center_y - 20))
+        screen.blit(width_text, width_rect)
+        
+        # Height field
+        height_color = (255, 255, 100) if self._resize_field == 1 else (180, 180, 180)
+        height_cursor = cursor if self._resize_field == 1 else ""
+        height_text = font.render(f"Height: [ {self._resize_height}{height_cursor} ]", True, height_color)
+        height_rect = height_text.get_rect(center=(center_x, center_y + 20))
+        screen.blit(height_text, height_rect)
+        
+        # Anchor selection
+        anchor_color = (255, 255, 100) if self._resize_field == 2 else (180, 180, 180)
+        anchor_name = self._resize_anchors[self._resize_anchor_idx].replace("_", " ").title()
+        anchor_text = font.render(f"Anchor: < {anchor_name} >", True, anchor_color)
+        anchor_rect = anchor_text.get_rect(center=(center_x, center_y + 60))
+        screen.blit(anchor_text, anchor_rect)
+        
+        # Instructions
+        hint = font.render("TAB: Switch field | Arrows: Change anchor | ENTER: Confirm | ESC: Cancel", True, (120, 120, 120))
+        hint_rect = hint.get_rect(center=(center_x, center_y + 110))
+        screen.blit(hint, hint_rect)
+    
     def _render_help(self, screen: pygame.Surface) -> None:
         """Render the help overlay."""
         font = pygame.font.Font(None, 20)
-        help_lines = [
-            "H: Toggle help",
-            "1-9: Select tile",
-            "T: Cycle theme",
-            "G: Toggle grid",
-            "S: Save map",
-            "N: Rename map",
-            "F: Flood fill",
-            "[/]: Brush size",
-            "Alt+Click: Eyedropper",
-            "Ctrl+Z: Undo",
-            "Ctrl+Y: Redo",
-            "Arrows: Pan camera",
-            "Ctrl+F: Fill all",
-            "Left click: Paint",
-            "Right click: Erase",
-            "ESC: Quit",
-        ]
+        
+        if self._spawn_mode:
+            help_lines = [
+                "=== SPAWN MODE ===",
+                "M: Exit spawn mode",
+                "Left click: Add/edit spawn",
+                "Right click: Remove spawn",
+                "P: Set player spawn",
+                "Arrows: Pan camera",
+                "S: Save map",
+                "ESC: Exit spawn mode",
+            ]
+        else:
+            help_lines = [
+                "H: Toggle help",
+                "1-9: Select tile",
+                "T: Cycle theme",
+                "G: Toggle grid",
+                "S: Save map",
+                "N: Rename map",
+                "M: Spawn mode",
+                "Ctrl+R: Resize map",
+                "F: Flood fill",
+                "[/]: Brush size",
+                "Alt+Click: Eyedropper",
+                "Ctrl+Z: Undo",
+                "Ctrl+Y: Redo",
+                "Arrows: Pan camera",
+                "Ctrl+F: Fill all",
+                "Left click: Paint",
+                "Right click: Erase",
+                "ESC: Quit",
+            ]
         
         y = 50
         for line in help_lines:
             text = font.render(line, True, (120, 120, 120))
             screen.blit(text, (10, y))
             y += 18
+    
+    def _render_spawn_points(self, screen: pygame.Surface) -> None:
+        """Render spawn point markers on the map."""
+        map_area_width = self.screen_width - PALETTE_WIDTH
+        font = pygame.font.Font(None, 16)
+        
+        for spawn in self.map_grid.spawn_points:
+            screen_x = int(spawn.x * TILE_SIZE - self.camera_x)
+            screen_y = int(spawn.y * TILE_SIZE - self.camera_y)
+            
+            # Skip if off screen
+            if screen_x + TILE_SIZE < 0 or screen_x > map_area_width:
+                continue
+            if screen_y + TILE_SIZE < 0 or screen_y > self.screen_height:
+                continue
+            
+            # Draw spawn marker
+            rect = pygame.Rect(screen_x + 4, screen_y + 4, TILE_SIZE - 8, TILE_SIZE - 8)
+            
+            # Color based on type
+            if spawn.is_boss_spawn:
+                color = (255, 50, 50)  # Red for boss
+            else:
+                color = (255, 165, 0)  # Orange for regular
+            
+            # Highlight selected spawn
+            if spawn is self._selected_spawn:
+                pygame.draw.rect(screen, (255, 255, 0), rect.inflate(4, 4), 3)
+            
+            # Draw X marker
+            pygame.draw.line(screen, color, rect.topleft, rect.bottomright, 3)
+            pygame.draw.line(screen, color, rect.topright, rect.bottomleft, 3)
+            
+            # Draw pool count
+            if len(spawn.enemy_pool) > 0:
+                count_text = font.render(str(len(spawn.enemy_pool)), True, (255, 255, 255))
+                screen.blit(count_text, (screen_x + TILE_SIZE - 12, screen_y + 2))
+        
+        # Draw player spawn
+        if self.map_grid.player_spawn:
+            px, py = self.map_grid.player_spawn
+            screen_x = int(px * TILE_SIZE - self.camera_x)
+            screen_y = int(py * TILE_SIZE - self.camera_y)
+            
+            if 0 <= screen_x < map_area_width and 0 <= screen_y < self.screen_height:
+                # Draw green circle for player spawn
+                center = (screen_x + TILE_SIZE // 2, screen_y + TILE_SIZE // 2)
+                pygame.draw.circle(screen, (0, 255, 100), center, TILE_SIZE // 3, 3)
+                pygame.draw.circle(screen, (0, 255, 100), center, 5)
+    
+    def _render_spawn_palette(self, screen: pygame.Surface) -> None:
+        """Render the spawn mode palette panel."""
+        palette_x = self.screen_width - PALETTE_WIDTH
+        
+        # Background
+        pygame.draw.rect(
+            screen,
+            (50, 40, 40),  # Darker red tint for spawn mode
+            (palette_x, 0, PALETTE_WIDTH, self.screen_height),
+        )
+        
+        font_large = pygame.font.Font(None, 24)
+        font = pygame.font.Font(None, 20)
+        
+        # Title
+        title = font_large.render("SPAWN MODE", True, (255, 150, 100))
+        screen.blit(title, (palette_x + 10, 10))
+        
+        y = 40
+        
+        # Instructions
+        instructions = [
+            "Click map to place spawn",
+            "Right-click to remove",
+            "Click spawn to edit pool",
+            "P: Set player spawn",
+            "",
+            f"Spawns: {len(self.map_grid.spawn_points)}",
+        ]
+        for line in instructions:
+            text = font.render(line, True, (180, 180, 180))
+            screen.blit(text, (palette_x + 10, y))
+            y += 20
+        
+        # Selected spawn info
+        if self._selected_spawn:
+            y += 10
+            pygame.draw.line(screen, (100, 100, 100), (palette_x + 10, y), (palette_x + PALETTE_WIDTH - 10, y))
+            y += 10
+            
+            header = font_large.render("Selected Spawn", True, (255, 200, 100))
+            screen.blit(header, (palette_x + 10, y))
+            y += 25
+            
+            pos_text = font.render(f"Position: ({self._selected_spawn.x}, {self._selected_spawn.y})", True, (200, 200, 200))
+            screen.blit(pos_text, (palette_x + 10, y))
+            y += 20
+            
+            pool_text = font.render("Pool:", True, (200, 200, 200))
+            screen.blit(pool_text, (palette_x + 10, y))
+            y += 18
+            
+            for enemy_type in self._selected_spawn.enemy_pool[:6]:  # Show max 6
+                e_text = font.render(f"  - {enemy_type}", True, (180, 180, 180))
+                screen.blit(e_text, (palette_x + 10, y))
+                y += 16
+            
+            if len(self._selected_spawn.enemy_pool) > 6:
+                more_text = font.render(f"  ...+{len(self._selected_spawn.enemy_pool) - 6} more", True, (150, 150, 150))
+                screen.blit(more_text, (palette_x + 10, y))
+                y += 16
+            
+            y += 10
+            click_text = font.render("Click to edit pool", True, (255, 255, 100))
+            screen.blit(click_text, (palette_x + 10, y))
+    
+    def _render_spawn_edit_overlay(self, screen: pygame.Surface) -> None:
+        """Render the spawn pool edit overlay."""
+        # Semi-transparent background
+        overlay = pygame.Surface((self.screen_width, self.screen_height))
+        overlay.set_alpha(180)
+        overlay.fill((0, 0, 0))
+        screen.blit(overlay, (0, 0))
+        
+        font_large = pygame.font.Font(None, 36)
+        font = pygame.font.Font(None, 24)
+        font_small = pygame.font.Font(None, 20)
+        
+        center_x = self.screen_width // 2
+        center_y = self.screen_height // 2
+        
+        # Title
+        title = font_large.render("Edit Spawn Pool", True, (255, 255, 255))
+        title_rect = title.get_rect(center=(center_x, center_y - 120))
+        screen.blit(title, title_rect)
+        
+        # Available enemies hint
+        hint = font_small.render(f"Available: {', '.join(self._available_enemies[:8])}...", True, (150, 150, 150))
+        hint_rect = hint.get_rect(center=(center_x, center_y - 85))
+        screen.blit(hint, hint_rect)
+        
+        # Presets hint
+        presets = font_small.render("Presets: basic, mixed, heavy, suicide, spawners, all", True, (150, 150, 150))
+        presets_rect = presets.get_rect(center=(center_x, center_y - 65))
+        screen.blit(presets, presets_rect)
+        
+        # Input field
+        cursor = "_" if (pygame.time.get_ticks() // 500) % 2 == 0 else " "
+        input_text = font.render(f"[ {self._spawn_pool_input}{cursor} ]", True, (255, 255, 100))
+        input_rect = input_text.get_rect(center=(center_x, center_y))
+        screen.blit(input_text, input_rect)
+        
+        # Instructions
+        inst = font.render("Enter enemy types separated by commas", True, (180, 180, 180))
+        inst_rect = inst.get_rect(center=(center_x, center_y + 40))
+        screen.blit(inst, inst_rect)
+        
+        inst2 = font.render("ENTER: Confirm | ESC: Cancel", True, (120, 120, 120))
+        inst2_rect = inst2.get_rect(center=(center_x, center_y + 70))
+        screen.blit(inst2, inst2_rect)

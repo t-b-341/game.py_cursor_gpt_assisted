@@ -6,6 +6,9 @@ from typing import Optional
 from .map_grid import MapGrid
 from .map_saver import get_maps_data_dir
 
+# Re-export for convenience
+__all__ = ["load_map", "map_exists", "get_maps_data_dir"]
+
 
 def load_map(filename: str) -> Optional[MapGrid]:
     """Load a map from JSON file.
