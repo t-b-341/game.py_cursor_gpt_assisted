@@ -119,7 +119,7 @@ def reset_after_death(state: "GameState", width: int, height: int) -> None:
         width: World width (for clamping player position)
         height: World height (for clamping player position)
     """
-    from enemies import clamp_rect_to_screen
+    from geometry_utils import clamp_rect_to_screen
     
     state.player_hp = state.player_max_hp
     state.player_health_regen_rate = 0.0
