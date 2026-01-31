@@ -15,7 +15,11 @@ Performance optimizations:
 
 Modules:
 - helpers: Common helper functions (damage numbers, bulk remove, grid builders)
-- projectiles: Main collision handling (re-exports from collision_projectiles)
+- hazards: Hazard and laser beam collisions
+- player_bullets: Player bullet collisions
+- enemy_projectiles: Enemy projectile collisions
+- friendly_projectiles: Friendly AI projectile collisions
+- explosions: Grenades and missiles
 """
 
 # Re-export helpers for direct access
@@ -26,22 +30,36 @@ from .helpers import (
     build_block_grid,
 )
 
-# Re-export all collision functions from the main module
-from ..collision_projectiles import (
+# Re-export from split modules
+from .hazards import (
     handle_hazard_enemy_collisions,
     handle_laser_beam_collisions,
+)
+
+from .player_bullets import (
     handle_dead_enemies,
     handle_player_bullet_offscreen,
     handle_player_bullet_enemy_collisions,
     handle_player_bullet_block_collisions,
+)
+
+from .enemy_projectiles import (
     handle_enemy_projectile_lifetime_offscreen,
     handle_enemy_projectile_block_collisions,
     handle_enemy_projectile_friendly_collisions,
+)
+
+from .friendly_projectiles import (
     handle_friendly_projectile_offscreen_blocks_enemies,
+)
+
+from .explosions import (
     handle_grenade_explosion_damage,
     handle_missile_collisions,
-    build_block_grid_cached,
 )
+
+# Re-export build_block_grid_cached from original module for backward compatibility
+from ..collision_projectiles import build_block_grid_cached
 
 __all__ = [
     # Helpers
@@ -49,18 +67,23 @@ __all__ = [
     "bulk_remove",
     "build_enemy_grid",
     "build_block_grid",
-    # Collision handlers
+    # Hazards
     "handle_hazard_enemy_collisions",
     "handle_laser_beam_collisions",
+    # Player bullets
     "handle_dead_enemies",
     "handle_player_bullet_offscreen",
     "handle_player_bullet_enemy_collisions",
     "handle_player_bullet_block_collisions",
+    # Enemy projectiles
     "handle_enemy_projectile_lifetime_offscreen",
     "handle_enemy_projectile_block_collisions",
     "handle_enemy_projectile_friendly_collisions",
+    # Friendly projectiles
     "handle_friendly_projectile_offscreen_blocks_enemies",
+    # Explosions
     "handle_grenade_explosion_damage",
     "handle_missile_collisions",
+    # Backward compatibility
     "build_block_grid_cached",
 ]

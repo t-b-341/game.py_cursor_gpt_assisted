@@ -334,16 +334,6 @@ def _handle_exit(ctx: AppContext, game_state: GameState) -> None:
     pygame.quit()
 
 
-def _run_loop(app):
-    """
-    DEPRECATED: This function is now a thin wrapper around GameApp.run().
-    The main loop logic has been moved into GameApp methods (process_events, update, render, run).
-    This wrapper is kept for backward compatibility but will be removed in the future.
-    """
-    # GameApp.run() now contains the full loop logic
-    app.run()
-
-
 def main():
     """Thin entrypoint: create GameApp and run the main loop."""
     from game_app import GameApp
