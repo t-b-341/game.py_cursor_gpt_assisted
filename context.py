@@ -2,15 +2,130 @@
 
 Holds resources and config that are shared for the lifetime of the window.
 Does NOT hold dynamic game state (entities, score, wave, etc.); that lives in GameState.
+
+Also provides CtxHelper for typed access to the ctx dict passed through systems.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any, Optional, TYPE_CHECKING
 
 import pygame
 
 from config.game_config import GameConfig
+
+if TYPE_CHECKING:
+    from state import GameState
+
+
+# Default screen dimensions
+DEFAULT_WIDTH = 1920
+DEFAULT_HEIGHT = 1080
+
+
+class CtxHelper:
+    """Typed accessor for the ctx dictionary passed through systems and scenes.
+    
+    Eliminates repeated ctx.get("key", default) calls with typed properties.
+    
+    Usage:
+        ctx_h = CtxHelper(ctx)
+        width = ctx_h.width  # Instead of ctx.get("width", 1920)
+        app = ctx_h.app_ctx  # Instead of ctx.get("app_ctx")
+    """
+    
+    __slots__ = ("_ctx",)
+    
+    def __init__(self, ctx: dict) -> None:
+        self._ctx = ctx
+    
+    # Display dimensions
+    @property
+    def width(self) -> int:
+        return self._ctx.get("width", DEFAULT_WIDTH)
+    
+    @property
+    def height(self) -> int:
+        return self._ctx.get("height", DEFAULT_HEIGHT)
+    
+    @property
+    def screen_rect(self) -> tuple[int, int, int, int]:
+        """Get (0, 0, width, height) tuple."""
+        return (0, 0, self.width, self.height)
+    
+    # Context objects
+    @property
+    def app_ctx(self) -> Optional["AppContext"]:
+        return self._ctx.get("app_ctx")
+    
+    @property
+    def gameplay_ctx(self) -> Optional[dict]:
+        return self._ctx.get("gameplay_ctx")
+    
+    @property
+    def render_ctx(self) -> Optional[Any]:
+        return self._ctx.get("render_ctx")
+    
+    # Config shortcuts
+    @property
+    def config(self) -> Optional[GameConfig]:
+        app = self.app_ctx
+        return getattr(app, "config", None) if app else None
+    
+    @property
+    def telemetry(self) -> Optional[Any]:
+        app = self.app_ctx
+        return getattr(app, "telemetry_client", None) if app else None
+    
+    @property
+    def event_bus(self) -> Optional[Any]:
+        app = self.app_ctx
+        return getattr(app, "event_bus", None) if app else None
+    
+    @property
+    def map_manager(self) -> Optional[Any]:
+        app = self.app_ctx
+        return getattr(app, "map_manager", None) if app else None
+    
+    # Gameplay state shortcuts
+    @property
+    def player(self) -> Optional[Any]:
+        """Get player from gameplay_ctx."""
+        gctx = self.gameplay_ctx
+        return gctx.get("player") if gctx else None
+    
+    @property
+    def enemies(self) -> list:
+        """Get enemies list from gameplay_ctx."""
+        gctx = self.gameplay_ctx
+        return gctx.get("enemies", []) if gctx else []
+    
+    @property
+    def projectiles(self) -> list:
+        """Get projectiles list from gameplay_ctx."""
+        gctx = self.gameplay_ctx
+        return gctx.get("projectiles", []) if gctx else []
+    
+    # Camera
+    @property
+    def camera_offset(self) -> tuple[float, float]:
+        """Get camera offset (default 0, 0)."""
+        gctx = self.gameplay_ctx
+        if gctx:
+            return (gctx.get("camera_offset_x", 0.0), gctx.get("camera_offset_y", 0.0))
+        return (0.0, 0.0)
+    
+    def get(self, key: str, default: Any = None) -> Any:
+        """Fallback for custom keys."""
+        return self._ctx.get(key, default)
+    
+    def __getitem__(self, key: str) -> Any:
+        """Dict-like access for compatibility."""
+        return self._ctx[key]
+    
+    def __contains__(self, key: str) -> bool:
+        """Support 'in' operator."""
+        return key in self._ctx
 
 
 @dataclass

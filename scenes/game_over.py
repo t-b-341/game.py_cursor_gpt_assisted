@@ -6,6 +6,7 @@ import pygame
 from constants import STATE_GAME_OVER, STATE_SAVE_GAME, STATE_TITLE, STATE_PLAYING
 from rendering import RenderContext, draw_centered_text
 from rendering.menu_helpers import render_menu_options, handle_menu_navigation
+from scenes.base import BaseScene
 from scenes.transitions import SceneTransition
 
 
@@ -13,10 +14,11 @@ from scenes.transitions import SceneTransition
 _BASE_OPTIONS = ["Try Again (Wave {wave})", "Save Progress", "Quit to Title"]
 
 
-class GameOverScene:
+class GameOverScene(BaseScene):
     """Game over screen. Shows options to retry current wave, save, or quit."""
 
     def __init__(self):
+        super().__init__()
         self._option_rects: list[pygame.Rect] = []
 
     def state_id(self) -> str:
@@ -70,32 +72,6 @@ class GameOverScene:
         
         return out
 
-    def update(self, dt: float, game_state, ctx: dict) -> None:
-        pass
-
-    def handle_input_transition(self, events, game_state, ctx: dict) -> SceneTransition:
-        """Handle input and return transition if needed."""
-        result = self.handle_input(events, game_state, ctx)
-        # Store result for retrieval by game.py (avoids calling handle_input twice)
-        self._last_input_result = result
-        
-        if result.get("screen") is not None:
-            screen = result["screen"]
-            if screen == STATE_PLAYING and result.get("try_again"):
-                # Try again - handled by game.py to restart at game_over_wave
-                return SceneTransition.none()  # Let game.py handle the restart
-            elif screen == STATE_SAVE_GAME:
-                return SceneTransition.push(STATE_SAVE_GAME)
-            elif screen == STATE_TITLE:
-                return SceneTransition.replace(STATE_TITLE)
-        
-        return SceneTransition.none()
-
-    def update_transition(self, dt: float, game_state, ctx: dict) -> SceneTransition:
-        """Stub: call existing logic; return NONE."""
-        self.update(dt, game_state, ctx)
-        return SceneTransition.none()
-
     def render(self, render_ctx: RenderContext, game_state, ctx: dict) -> None:
         screen = render_ctx.screen
         w, h = render_ctx.width, render_ctx.height
@@ -131,8 +107,12 @@ class GameOverScene:
         draw_centered_text(screen, font, big_font, w, "UP/DOWN: Select | ENTER: Confirm | ESC: Quit", h - 60, (150, 150, 150))
 
     def on_enter(self, game_state, ctx: dict) -> None:
-        # Reset selection when entering
         game_state.ui.game_over_selected = 0
-
-    def on_exit(self, game_state, ctx: dict) -> None:
-        pass
+    
+    def _get_screen_transition(self, screen: str, result: dict) -> SceneTransition:
+        if screen == STATE_PLAYING and result.get("try_again"):
+            # Try again - handled by game.py to restart at game_over_wave
+            return SceneTransition.none()
+        elif screen == STATE_SAVE_GAME:
+            return SceneTransition.push(STATE_SAVE_GAME)
+        return SceneTransition.replace(screen)

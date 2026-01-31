@@ -1,5 +1,5 @@
 """Scenes: gameplay, pause, high scores, name input, shader test, title, options, game over, victory, save/load, quick launch. Driven by SceneStack in the game loop."""
-from .base import Scene, SceneStack
+from .base import Scene, SceneStack, BaseScene, BaseMenuScene
 from .gameplay import GameplayScene
 from .high_scores import HighScoreScene
 from .name_input import NameInputScene
@@ -20,6 +20,8 @@ __all__ = [
     "Scene",
     "SceneStack",
     "SceneTransition",
+    "BaseScene",
+    "BaseMenuScene",
     "GameplayScene",
     "PauseScene",
     "HighScoreScene",

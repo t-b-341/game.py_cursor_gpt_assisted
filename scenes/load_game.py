@@ -6,14 +6,16 @@ import pygame
 from constants import STATE_LOAD_GAME, STATE_MENU, STATE_PLAYING
 from rendering import RenderContext, draw_centered_text
 from rendering.menu_helpers import handle_menu_navigation
+from scenes.base import BaseScene
 from scenes.transitions import SceneTransition
 from save_system import load_saves, get_save_display_text, delete_save, MAX_SAVE_SLOTS
 
 
-class LoadGameScene:
+class LoadGameScene(BaseScene):
     """Load game screen. Select a save slot to load or delete."""
 
     def __init__(self):
+        super().__init__()
         self._option_rects: list[pygame.Rect] = []
 
     def state_id(self) -> str:
@@ -62,26 +64,6 @@ class LoadGameScene:
                 return out
         
         return out
-
-    def update(self, dt: float, game_state, ctx: dict) -> None:
-        pass
-
-    def handle_input_transition(self, events, game_state, ctx: dict) -> SceneTransition:
-        """Handle input and return transition if needed."""
-        result = self.handle_input(events, game_state, ctx)
-        # Store result for retrieval by game.py (avoids calling handle_input twice)
-        self._last_input_result = result
-        
-        if result.get("pop"):
-            return SceneTransition.pop()
-        
-        # Load game is handled by game.py via the result dict
-        return SceneTransition.none()
-
-    def update_transition(self, dt: float, game_state, ctx: dict) -> SceneTransition:
-        """Stub: call existing logic; return NONE."""
-        self.update(dt, game_state, ctx)
-        return SceneTransition.none()
 
     def render(self, render_ctx: RenderContext, game_state, ctx: dict) -> None:
         screen = render_ctx.screen
@@ -137,8 +119,15 @@ class LoadGameScene:
             draw_centered_text(screen, font, big_font, w, "No saves found. Press ESC to go back.", h - 60, (150, 150, 150))
 
     def on_enter(self, game_state, ctx: dict) -> None:
-        # Reset selection when entering
         game_state.ui.load_slot_selected = 0
-
-    def on_exit(self, game_state, ctx: dict) -> None:
-        pass
+    
+    def handle_input_transition(self, events, game_state, ctx: dict) -> SceneTransition:
+        """Override to handle load_game result which game.py needs to process."""
+        result = self.handle_input(events, game_state, ctx)
+        self._last_input_result = result
+        
+        if result.get("pop"):
+            return SceneTransition.pop()
+        
+        # Load game is handled by game.py via the result dict
+        return SceneTransition.none()

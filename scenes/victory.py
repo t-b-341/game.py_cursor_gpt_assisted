@@ -6,16 +6,18 @@ import pygame
 from constants import STATE_VICTORY, STATE_NAME_INPUT, STATE_TITLE, STATE_PLAYING
 from rendering import RenderContext, draw_centered_text
 from rendering.menu_helpers import render_menu_options, handle_menu_navigation
+from scenes.base import BaseScene
 from scenes.transitions import SceneTransition
 
 
 VICTORY_OPTIONS = ["Enter High Score", "Play Again", "Quit to Title"]
 
 
-class VictoryScene:
+class VictoryScene(BaseScene):
     """Victory screen. Shows when the player beats all levels."""
 
     def __init__(self):
+        super().__init__()
         self._option_rects: list[pygame.Rect] = []
 
     def state_id(self) -> str:
@@ -59,31 +61,6 @@ class VictoryScene:
         
         return out
 
-    def update(self, dt: float, game_state, ctx: dict) -> None:
-        pass
-
-    def handle_input_transition(self, events, game_state, ctx: dict) -> SceneTransition:
-        """Handle input and return transition if needed."""
-        result = self.handle_input(events, game_state, ctx)
-        self._last_input_result = result
-        
-        if result.get("screen") is not None:
-            screen = result["screen"]
-            if screen == STATE_NAME_INPUT:
-                return SceneTransition.push(STATE_NAME_INPUT)
-            elif screen == STATE_TITLE:
-                return SceneTransition.replace(STATE_TITLE)
-            elif screen == STATE_PLAYING and result.get("replay"):
-                # Let game.py handle the replay logic
-                return SceneTransition.none()
-        
-        return SceneTransition.none()
-
-    def update_transition(self, dt: float, game_state, ctx: dict) -> SceneTransition:
-        """Stub: call existing logic; return NONE."""
-        self.update(dt, game_state, ctx)
-        return SceneTransition.none()
-
     def render(self, render_ctx: RenderContext, game_state, ctx: dict) -> None:
         screen = render_ctx.screen
         w, h = render_ctx.width, render_ctx.height
@@ -122,8 +99,12 @@ class VictoryScene:
         draw_centered_text(screen, font, big_font, w, "UP/DOWN: Select | ENTER: Confirm | ESC: Quit", h - 60, (150, 150, 150))
 
     def on_enter(self, game_state, ctx: dict) -> None:
-        # Reset selection when entering
         game_state.ui.victory_selected = 0
-
-    def on_exit(self, game_state, ctx: dict) -> None:
-        pass
+    
+    def _get_screen_transition(self, screen: str, result: dict) -> SceneTransition:
+        if screen == STATE_NAME_INPUT:
+            return SceneTransition.push(STATE_NAME_INPUT)
+        elif screen == STATE_PLAYING and result.get("replay"):
+            # Let game.py handle the replay logic
+            return SceneTransition.none()
+        return SceneTransition.replace(screen)

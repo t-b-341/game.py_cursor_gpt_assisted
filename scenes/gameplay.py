@@ -6,13 +6,15 @@ import pygame
 from constants import STATE_PLAYING, STATE_PAUSED
 from rendering import render_debug_overlay
 from screens import gameplay as gameplay_screen
+from scenes.base import BaseScene
 from scenes.transitions import SceneTransition
 
 
-class GameplayScene:
+class GameplayScene(BaseScene):
     """Scene for STATE_PLAYING / STATE_ENDURANCE. update runs GAMEPLAY_SYSTEMS; render uses screens.gameplay."""
 
     def __init__(self, state_id: str = STATE_PLAYING) -> None:
+        super().__init__()
         self._state_id = state_id
 
     def state_id(self) -> str:
@@ -45,11 +47,6 @@ class GameplayScene:
         
         return SceneTransition.none()
 
-    def update_transition(self, dt: float, game_state, ctx: dict) -> SceneTransition:
-        """Stub: call existing logic; return NONE. Used by future scene-driven loop."""
-        self.update(dt, game_state, ctx)
-        return SceneTransition.none()
-
     def render(self, render_ctx, game_state, ctx: dict) -> None:
         app_ctx = ctx.get("app_ctx")
         gameplay_ctx = ctx.get("gameplay_ctx")
@@ -68,9 +65,3 @@ class GameplayScene:
             use_gpu_physics = bool(getattr(config, "use_gpu_physics", False))
             extra_lines.append(f"gpu_physics: {'ON' if use_gpu_physics else 'OFF'}")
             render_debug_overlay(render_ctx, game_state, extra_lines=extra_lines)
-
-    def on_enter(self, game_state, ctx: dict) -> None:
-        pass
-
-    def on_exit(self, game_state, ctx: dict) -> None:
-        pass

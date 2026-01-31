@@ -6,14 +6,16 @@ import pygame
 from constants import STATE_SAVE_GAME, STATE_GAME_OVER, STATE_TITLE
 from rendering import RenderContext, draw_centered_text
 from rendering.menu_helpers import handle_menu_navigation
+from scenes.base import BaseScene
 from scenes.transitions import SceneTransition
 from save_system import load_saves, save_game, get_save_display_text, MAX_SAVE_SLOTS
 
 
-class SaveGameScene:
+class SaveGameScene(BaseScene):
     """Save game screen. Select a slot, enter a name, and save."""
 
     def __init__(self):
+        super().__init__()
         self._option_rects: list[pygame.Rect] = []
 
     def state_id(self) -> str:
@@ -110,28 +112,6 @@ class SaveGameScene:
         
         return out
 
-    def update(self, dt: float, game_state, ctx: dict) -> None:
-        pass
-
-    def handle_input_transition(self, events, game_state, ctx: dict) -> SceneTransition:
-        """Handle input and return transition if needed."""
-        result = self.handle_input(events, game_state, ctx)
-        # Store result for retrieval by game.py (avoids calling handle_input twice)
-        self._last_input_result = result
-        
-        if result.get("screen") == STATE_TITLE:
-            return SceneTransition.replace(STATE_TITLE)
-        
-        if result.get("pop"):
-            return SceneTransition.pop()
-        
-        return SceneTransition.none()
-
-    def update_transition(self, dt: float, game_state, ctx: dict) -> SceneTransition:
-        """Stub: call existing logic; return NONE."""
-        self.update(dt, game_state, ctx)
-        return SceneTransition.none()
-
     def render(self, render_ctx: RenderContext, game_state, ctx: dict) -> None:
         screen = render_ctx.screen
         w, h = render_ctx.width, render_ctx.height
@@ -200,7 +180,6 @@ class SaveGameScene:
             draw_centered_text(screen, font, big_font, w, "UP/DOWN: Select Slot | ENTER: Save to Slot | ESC: Back", h - 60, (150, 150, 150))
 
     def on_enter(self, game_state, ctx: dict) -> None:
-        # Reset state when entering
         game_state.ui.save_slot_selected = 0
         game_state.ui.save_name_active = False
         game_state.ui.save_name_input = ""
@@ -208,5 +187,9 @@ class SaveGameScene:
     def on_exit(self, game_state, ctx: dict) -> None:
         game_state.ui.save_name_active = False
         game_state.ui.save_name_input = ""
-        # Reset save_and_quit flag if user cancelled without saving
         game_state.ui.save_and_quit = False
+    
+    def _get_screen_transition(self, screen: str, result: dict) -> SceneTransition:
+        if screen == STATE_TITLE:
+            return SceneTransition.replace(STATE_TITLE)
+        return SceneTransition.none()
