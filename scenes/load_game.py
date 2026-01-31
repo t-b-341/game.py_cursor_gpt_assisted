@@ -5,12 +5,16 @@ import pygame
 
 from constants import STATE_LOAD_GAME, STATE_MENU, STATE_PLAYING
 from rendering import RenderContext, draw_centered_text
+from rendering.menu_helpers import handle_menu_navigation
 from scenes.transitions import SceneTransition
 from save_system import load_saves, get_save_display_text, delete_save, MAX_SAVE_SLOTS
 
 
 class LoadGameScene:
     """Load game screen. Select a save slot to load or delete."""
+
+    def __init__(self):
+        self._option_rects: list[pygame.Rect] = []
 
     def state_id(self) -> str:
         return STATE_LOAD_GAME
@@ -25,31 +29,35 @@ class LoadGameScene:
             "load_slot": None,
         }
         
+        # Use shared navigation handler
+        new_idx, confirmed, clicked_idx = handle_menu_navigation(
+            events, MAX_SAVE_SLOTS,
+            game_state.ui.load_slot_selected,
+            self._option_rects
+        )
+        game_state.ui.load_slot_selected = new_idx
+        
+        # Handle confirmation (Enter or click)
+        if confirmed or clicked_idx >= 0:
+            selected_idx = clicked_idx if clicked_idx >= 0 else game_state.ui.load_slot_selected
+            saves = load_saves()
+            slot = saves.get(selected_idx)
+            if slot is not None:
+                out["load_game"] = True
+                out["load_slot"] = slot
+                out["screen"] = STATE_PLAYING
+                return out
+        
+        # Handle special keys (delete, escape)
         for event in events:
             if event.type != pygame.KEYDOWN:
                 continue
-            
-            if event.key in (pygame.K_UP, pygame.K_w):
-                game_state.ui.load_slot_selected = (game_state.ui.load_slot_selected - 1) % MAX_SAVE_SLOTS
-            elif event.key in (pygame.K_DOWN, pygame.K_s):
-                game_state.ui.load_slot_selected = (game_state.ui.load_slot_selected + 1) % MAX_SAVE_SLOTS
-            elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
-                # Load selected save
-                saves = load_saves()
-                slot = saves.get(game_state.ui.load_slot_selected)
-                if slot is not None:
-                    out["load_game"] = True
-                    out["load_slot"] = slot
-                    out["screen"] = STATE_PLAYING
-                    return out
-            elif event.key == pygame.K_DELETE or event.key == pygame.K_BACKSPACE:
-                # Delete selected save
+            if event.key == pygame.K_DELETE or event.key == pygame.K_BACKSPACE:
                 saves = load_saves()
                 slot = saves.get(game_state.ui.load_slot_selected)
                 if slot is not None:
                     delete_save(game_state.ui.load_slot_selected)
             elif event.key == pygame.K_ESCAPE:
-                # Go back to menu
                 out["pop"] = True
                 return out
         
@@ -96,8 +104,12 @@ class LoadGameScene:
         # Check if any saves exist
         has_saves = any(saves.get(i) is not None for i in range(MAX_SAVE_SLOTS))
         
-        # Render slots
+        # Render slots and calculate clickable rects
         y_start = h // 2 - 40
+        line_height = 50
+        option_width = 600
+        self._option_rects = []
+        
         for i in range(MAX_SAVE_SLOTS):
             slot = saves.get(i)
             display_text = get_save_display_text(slot)
@@ -110,8 +122,13 @@ class LoadGameScene:
                 prefix = "   "
             
             # Show slot number
+            y = y_start + i * line_height
             slot_label = f"Slot {i + 1}: "
-            draw_centered_text(screen, font, big_font, w, f"{prefix}{slot_label}{display_text}", y_start + i * 50, color)
+            draw_centered_text(screen, font, big_font, w, f"{prefix}{slot_label}{display_text}", y, color)
+            
+            # Store clickable rect
+            click_rect = pygame.Rect((w - option_width) // 2, y - line_height // 2, option_width, line_height)
+            self._option_rects.append(click_rect)
         
         # Instructions
         if has_saves:

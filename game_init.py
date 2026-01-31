@@ -39,7 +39,6 @@ from scenes import SceneStack, TitleScene
 from simulation_systems import SIMULATION_SYSTEMS
 from state import GameState
 from systems.audio_system import init_mixer, sync_from_config, play_music
-from telemetry import Telemetry, NoOpTelemetry
 from telemetry.event_bus_handlers import register_telemetry_event_handlers
 
 

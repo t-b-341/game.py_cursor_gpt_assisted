@@ -2,7 +2,8 @@
 import unittest
 import pygame
 
-from enemies import clamp_rect_to_screen, find_nearest_threat, make_enemy_from_template
+from enemies import find_nearest_threat, make_enemy_from_template
+from geometry_utils import clamp_rect_to_screen
 from config_enemies import ENEMY_TEMPLATES
 
 

@@ -5,12 +5,16 @@ import pygame
 
 from constants import STATE_SAVE_GAME, STATE_GAME_OVER, STATE_TITLE
 from rendering import RenderContext, draw_centered_text
+from rendering.menu_helpers import handle_menu_navigation
 from scenes.transitions import SceneTransition
 from save_system import load_saves, save_game, get_save_display_text, MAX_SAVE_SLOTS
 
 
 class SaveGameScene:
     """Save game screen. Select a slot, enter a name, and save."""
+
+    def __init__(self):
+        self._option_rects: list[pygame.Rect] = []
 
     def state_id(self) -> str:
         return STATE_SAVE_GAME
@@ -85,17 +89,22 @@ class SaveGameScene:
                         game_state.ui.save_name_input += event.unicode
                 continue
             
-            # Normal navigation
-            if event.key in (pygame.K_UP, pygame.K_w):
-                game_state.ui.save_slot_selected = (game_state.ui.save_slot_selected - 1) % MAX_SAVE_SLOTS
-            elif event.key in (pygame.K_DOWN, pygame.K_s):
-                game_state.ui.save_slot_selected = (game_state.ui.save_slot_selected + 1) % MAX_SAVE_SLOTS
-            elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
-                # Activate name input for selected slot
-                game_state.ui.save_name_active = True
-                game_state.ui.save_name_input = ""
-            elif event.key == pygame.K_ESCAPE:
-                # Go back to game over
+        # Normal navigation (when not in name input mode)
+        new_idx, confirmed, clicked_idx = handle_menu_navigation(
+            events, MAX_SAVE_SLOTS,
+            game_state.ui.save_slot_selected,
+            self._option_rects
+        )
+        game_state.ui.save_slot_selected = new_idx
+        
+        # Handle confirmation - activate name input
+        if confirmed or clicked_idx >= 0:
+            game_state.ui.save_name_active = True
+            game_state.ui.save_name_input = ""
+        
+        # Handle escape
+        for event in events:
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                 out["pop"] = True
                 return out
         
@@ -148,8 +157,12 @@ class SaveGameScene:
         saves = load_saves()
         selected = game_state.ui.save_slot_selected
         
-        # Render slots
+        # Render slots and calculate clickable rects
         y_start = h // 2 - 60
+        line_height = 50
+        option_width = 600
+        self._option_rects = []
+        
         for i in range(MAX_SAVE_SLOTS):
             slot = saves.get(i)
             display_text = get_save_display_text(slot)
@@ -162,8 +175,13 @@ class SaveGameScene:
                 prefix = "   "
             
             # Show slot number
+            y = y_start + i * line_height
             slot_label = f"Slot {i + 1}: "
-            draw_centered_text(screen, font, big_font, w, f"{prefix}{slot_label}{display_text}", y_start + i * 50, color)
+            draw_centered_text(screen, font, big_font, w, f"{prefix}{slot_label}{display_text}", y, color)
+            
+            # Store clickable rect
+            click_rect = pygame.Rect((w - option_width) // 2, y - line_height // 2, option_width, line_height)
+            self._option_rects.append(click_rect)
         
         # Name input overlay
         if game_state.ui.save_name_active:
