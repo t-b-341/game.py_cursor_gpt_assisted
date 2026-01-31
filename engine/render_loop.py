@@ -88,6 +88,8 @@ def _render_gameplay(
     current_state: str,
 ) -> None:
     """Render the main gameplay scene."""
+    from systems.perf_timing import perf_timer
+    
     # Build gameplay context (cached on game_state for performance)
     gameplay_ctx = getattr(game_state, "_cached_gameplay_ctx", None)
     if gameplay_ctx is None:
@@ -116,17 +118,14 @@ def _render_gameplay(
         gameplay_ctx["teleporter_pads"] = game_state.teleporter_pads
     
     render_ctx = RenderContext.from_app_ctx(ctx)
-    render_gameplay_with_optional_shaders(
-        render_ctx, game_state, {"app_ctx": ctx, "gameplay_ctx": gameplay_ctx}
-    )
+    with perf_timer("render_gameplay"):
+        render_gameplay_with_optional_shaders(
+            render_ctx, game_state, {"app_ctx": ctx, "gameplay_ctx": gameplay_ctx}
+        )
     
-    # Clean up expired UI tokens (state updates; timers decremented in update loop)
-    for dmg_num in game_state.damage_numbers[:]:
-        if dmg_num["timer"] <= 0:
-            game_state.damage_numbers.remove(dmg_num)
-    for msg in game_state.weapon_pickup_messages[:]:
-        if msg["timer"] <= 0:
-            game_state.weapon_pickup_messages.remove(msg)
+    # Clean up expired UI tokens using O(n) filter instead of O(n²) .remove()
+    game_state.damage_numbers[:] = [d for d in game_state.damage_numbers if d["timer"] > 0]
+    game_state.weapon_pickup_messages[:] = [m for m in game_state.weapon_pickup_messages if m["timer"] > 0]
 
 
 def _render_menu_or_overlay(

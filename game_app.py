@@ -226,16 +226,18 @@ class GameApp:
         """Render the current scene."""
         import game as game_module
         from constants import STATE_PLAYING, STATE_ENDURANCE
+        from systems.perf_timing import perf_timer
         
         # Determine if we're in gameplay (needs world surface scaling)
         current_state = game_module._get_current_state(self.scene_stack) or self.game_state.current_screen
         is_gameplay = current_state in (STATE_PLAYING, STATE_ENDURANCE)
         
         # Render the current scene
-        game_module._render_current_scene(
-            self.ctx, self.game_state, self.scene_stack, self.screen_ctx,
-            self.pause_shaders_enabled, self.menu_shaders_enabled
-        )
+        with perf_timer("scene_render"):
+            game_module._render_current_scene(
+                self.ctx, self.game_state, self.scene_stack, self.screen_ctx,
+                self.pause_shaders_enabled, self.menu_shaders_enabled
+            )
         
         # Scale world surface to display only for gameplay (world_scale > 1.0)
         # Skip scaling when camera is active (camera renders directly to display)
@@ -252,13 +254,15 @@ class GameApp:
             # Scale down the world surface to fit the display
             # Use scale() instead of smoothscale() for better performance
             # The visual difference at 1.33x is minimal
-            pygame.transform.scale(
-                self.ctx.world_surface,
-                (self.ctx.display_width, self.ctx.display_height),
-                self.ctx.screen  # Render directly to screen (avoids creating new surface)
-            )
+            with perf_timer("scale"):
+                pygame.transform.scale(
+                    self.ctx.world_surface,
+                    (self.ctx.display_width, self.ctx.display_height),
+                    self.ctx.screen  # Render directly to screen (avoids creating new surface)
+                )
         
-        pygame.display.flip()
+        with perf_timer("flip"):
+            pygame.display.flip()
         
         # Write flow state back to GameState after this iteration
         # Update current_screen from scene stack if it changed
@@ -276,19 +280,27 @@ class GameApp:
         """Run the main loop (event handling, update, render)."""
         import game as game_module
         from systems.fps_tracker import record_frame as fps_record_frame
+        from systems.perf_timing import perf_timer, clear_frame_timings
+        import time
         
         running = True
         
         try:
             while running:
+                # Clear per-frame timing at start
+                clear_frame_timings()
+                
                 # Use config's target_fps (allows dynamic changes via pause menu)
                 # 0 = uncapped (max FPS)
                 target_fps = getattr(self.ctx.config, 'target_fps', 0)
-                if target_fps > 0:
-                    dt = self.ctx.clock.tick(target_fps) / 1000.0
-                else:
-                    # Uncapped: use tick_busy_loop for more accurate timing at high FPS
-                    dt = self.ctx.clock.tick_busy_loop() / 1000.0
+                
+                with perf_timer("frame_tick"):
+                    if target_fps > 0:
+                        dt = self.ctx.clock.tick(target_fps) / 1000.0
+                    else:
+                        # Uncapped: use tick_busy_loop for more accurate timing at high FPS
+                        dt = self.ctx.clock.tick_busy_loop() / 1000.0
+                
                 game_module._perf_record_frame(dt)  # no-op unless GAME_DEBUG_PERF=1
                 
                 # Record frame time for FPS graph (always active, uses real dt)
@@ -301,17 +313,20 @@ class GameApp:
                 scaled_dt = dt * timescale
                 
                 # Process events
-                running = self.process_events()
+                with perf_timer("events"):
+                    running = self.process_events()
                 if not running:
                     break
                 
                 # Update simulation with scaled dt for game speed control
-                running = self.update(scaled_dt)
+                with perf_timer("update"):
+                    running = self.update(scaled_dt)
                 if not running:
                     break
                 
                 # Render
-                self.render()
+                with perf_timer("render"):
+                    self.render()
                 
                 # Store simulation accumulator back to app
                 # (This is needed because _step_simulation modifies it)

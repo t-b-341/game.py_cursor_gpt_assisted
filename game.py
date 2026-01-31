@@ -285,6 +285,8 @@ def _step_simulation(
     screen_ctx: dict,
 ) -> tuple[float, bool]:
     """Run fixed-step simulation updates. Returns (new_accumulator, should_quit)."""
+    from systems.perf_timing import perf_timer
+    
     simulation_accumulator += dt
     steps = 0
     should_quit = False
@@ -293,7 +295,8 @@ def _step_simulation(
         current_scene = _get_current_scene(scene_stack)
         if current_scene is not None:
             try:
-                transition = current_scene.update_transition(FIXED_DT, game_state, screen_ctx)
+                with perf_timer("scene_update"):
+                    transition = current_scene.update_transition(FIXED_DT, game_state, screen_ctx)
                 if transition.kind != KIND_NONE:
                     should_quit = apply_scene_transition(transition, scene_stack, game_state)
                     if should_quit:
@@ -303,7 +306,8 @@ def _step_simulation(
                 pass
         
         # Run simulation update (for gameplay scenes)
-        _update_simulation(FIXED_DT, game_state, ctx)
+        with perf_timer("simulation"):
+            _update_simulation(FIXED_DT, game_state, ctx)
         simulation_accumulator -= FIXED_DT
         steps += 1
     return simulation_accumulator, should_quit

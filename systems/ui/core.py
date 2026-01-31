@@ -393,11 +393,13 @@ def _draw_fps_graph(screen: pygame.Surface, small_font: Any, WIDTH: int, HEIGHT:
 
 
 def _draw_perf_overlay(screen: pygame.Surface, state, small_font, WIDTH: int, HEIGHT: int) -> None:
-    """Draw performance overlay with entity counts and camera stats for debugging frame drops."""
+    """Draw performance overlay with entity counts, frame timings, and camera stats."""
     from systems.camera import get_camera
+    from systems.perf_timing import get_frame_timings, is_enabled as perf_enabled
+    from systems.fps_tracker import get_stats
     
     # Position in top-right corner
-    x = WIDTH - 200
+    x = WIDTH - 220
     y = 10
     line_height = 18
     
@@ -419,13 +421,19 @@ def _draw_perf_overlay(screen: pygame.Surface, state, small_font, WIDTH: int, HE
     camera = get_camera()
     camera_stats = camera.get_culling_stats() if camera else None
     
-    # Calculate total
+    # Get frame timings if perf timing is enabled
+    frame_timings = get_frame_timings() if perf_enabled() else {}
+    fps_stats = get_stats()
+    
+    # Calculate total entities
     total = sum(c[1] for c in counts)
     
-    # Calculate background height (include camera stats if available)
+    # Calculate background height
     extra_lines = 3 if camera_stats else 0
-    bg_height = (len(counts) + 2 + extra_lines) * line_height + 10
-    bg_surf = pygame.Surface((190, bg_height), pygame.SRCALPHA)
+    timing_lines = len(frame_timings) + 2 if frame_timings else 0
+    fps_lines = 4  # FPS stats section
+    bg_height = (len(counts) + 2 + extra_lines + timing_lines + fps_lines) * line_height + 20
+    bg_surf = pygame.Surface((210, bg_height), pygame.SRCALPHA)
     bg_surf.fill((20, 20, 20, 200))
     screen.blit(bg_surf, (x - 5, y - 5))
     
@@ -434,7 +442,64 @@ def _draw_perf_overlay(screen: pygame.Surface, state, small_font, WIDTH: int, HE
     screen.blit(header, (x, y))
     y += line_height + 5
     
+    # Draw FPS stats section
+    avg_fps = fps_stats.get("avg_fps", 0)
+    min_fps = fps_stats.get("min_fps", 0)
+    max_fps = fps_stats.get("max_fps", 0)
+    frame_time_ms = 1000.0 / avg_fps if avg_fps > 0 else 0
+    
+    fps_color = (100, 255, 100) if avg_fps >= 60 else (255, 255, 100) if avg_fps >= 30 else (255, 100, 100)
+    fps_text = _get_cached_text(small_font, f"FPS: {avg_fps:.0f} (avg)", fps_color)
+    screen.blit(fps_text, (x, y))
+    y += line_height
+    
+    range_text = _get_cached_text(small_font, f"  min:{min_fps:.0f} max:{max_fps:.0f}", (150, 150, 150))
+    screen.blit(range_text, (x, y))
+    y += line_height
+    
+    frame_ms_text = _get_cached_text(small_font, f"Frame: {frame_time_ms:.2f}ms", (200, 200, 200))
+    screen.blit(frame_ms_text, (x, y))
+    y += line_height + 5
+    
+    # Draw frame timing breakdown if available
+    if frame_timings:
+        timing_header = _get_cached_text(small_font, "-- FRAME TIMING --", (200, 150, 255))
+        screen.blit(timing_header, (x, y))
+        y += line_height
+        
+        # Sort by time (slowest first)
+        sorted_timings = sorted(frame_timings.items(), key=lambda x: x[1], reverse=True)
+        total_time = sum(t for _, t in sorted_timings)
+        
+        for name, time_ms in sorted_timings:
+            # Color based on percentage of frame budget (assuming 16.67ms for 60fps)
+            pct = (time_ms / 16.67) * 100 if time_ms > 0 else 0
+            if pct < 20:
+                color = (100, 255, 100)
+            elif pct < 50:
+                color = (255, 255, 100)
+            else:
+                color = (255, 100, 100)
+            
+            timing_text = _get_cached_text(small_font, f"{name}: {time_ms:.2f}ms", color)
+            screen.blit(timing_text, (x, y))
+            y += line_height
+        
+        # Total frame work time
+        total_text = _get_cached_text(small_font, f"Total work: {total_time:.2f}ms", (255, 200, 50))
+        screen.blit(total_text, (x, y))
+        y += line_height + 5
+    else:
+        # Show hint to enable perf timing
+        hint = _get_cached_text(small_font, "GAME_PERF_TIMING=1", (100, 100, 100))
+        screen.blit(hint, (x, y))
+        y += line_height
+    
     # Draw entity counts with color coding
+    entity_header = _get_cached_text(small_font, "-- ENTITIES --", (200, 150, 255))
+    screen.blit(entity_header, (x, y))
+    y += line_height
+    
     for name, count in counts:
         # Color code: green (low), yellow (medium), red (high)
         if count < 50:
