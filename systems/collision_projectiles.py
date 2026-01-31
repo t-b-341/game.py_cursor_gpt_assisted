@@ -6,11 +6,8 @@ Performance optimizations:
 - Bulk processing where possible
 - C-accelerated distance calculations where available
 
-Refactored helpers:
-- _create_damage_number(): Creates floating damage number dict
-- _bulk_remove(): Efficient O(n) list filtering by id set
-- _handle_shield_hit(): Shield reflection logic
-- _handle_reflective_shield_hit(): Reflective shield logic
+Note: Common helpers have been extracted to systems/collision/helpers.py
+This module is re-exported through systems/collision/__init__.py
 """
 from __future__ import annotations
 
@@ -28,95 +25,45 @@ if TYPE_CHECKING:
 
 try:
     from gpu_physics import check_collisions_batch, CUDA_AVAILABLE
-    _USE_GPU_COLLISION = CUDA_AVAILABLE  # Single capability flag: True only when GPU path is usable
+    _USE_GPU_COLLISION = CUDA_AVAILABLE
 except Exception:
     _USE_GPU_COLLISION = False
     check_collisions_batch = None
 
 
-# -----------------------------------------------------------------------------
-# Common Helpers
-# -----------------------------------------------------------------------------
-
-def _create_damage_number(
-    x: int | float,
-    y: int | float,
-    damage: int | float,
-    color: tuple[int, int, int] = (255, 255, 100),
-    timer: float = 2.0,
-) -> dict:
-    """Create a damage number dict for display.
-    
-    Args:
-        x: X position (usually entity centerx)
-        y: Y position (usually entity top - 20)
-        damage: Damage amount to display
-        color: RGB color tuple (default yellow)
-        timer: Display duration in seconds
-        
-    Returns:
-        Dict ready to append to state.damage_numbers
-    """
-    return {
-        "x": x,
-        "y": y,
-        "damage": int(damage),
-        "timer": timer,
-        "color": color,
-    }
+# Import helpers from collision package (avoids circular import by using late import)
+def _create_damage_number(x, y, damage, color=(255, 255, 100), timer=2.0):
+    """Create a damage number dict for display."""
+    return {"x": x, "y": y, "damage": int(damage), "timer": timer, "color": color}
 
 
 def _bulk_remove(items: list, ids_to_remove: set) -> None:
-    """Remove items from list by id set (O(n) instead of O(n²) with .remove()).
-    
-    Modifies list in-place using slice assignment.
-    
-    Args:
-        items: List to filter
-        ids_to_remove: Set of id(item) values to remove
-    """
+    """Remove items from list by id set (O(n) filtering)."""
     if ids_to_remove:
         items[:] = [item for item in items if id(item) not in ids_to_remove]
 
 
 def _build_enemy_grid(state: "GameState", ctx: dict) -> SpatialGrid:
-    """Build spatial grid containing all enemies. Uses frame caching to avoid rebuilding.
-    
-    Args:
-        state: Game state containing enemies list
-        ctx: Context dict with width, height, and frame_id
-        
-    Returns:
-        SpatialGrid populated with enemies
-    """
+    """Build spatial grid containing all enemies."""
     width: int = ctx.get("width", 1920)
     height: int = ctx.get("height", 1080)
     frame_id: int = ctx.get("frame_id", -1)
     grid = get_enemy_grid(width, height, frame_id=frame_id)
-    # Only insert if grid was just cleared (not cached)
     if len(grid._obj_cells) == 0 and state.enemies:
         grid.insert_all(state.enemies)
     return grid
 
 
 def _build_block_grid(state: "GameState", ctx: dict) -> SpatialGrid:
-    """Build spatial grid containing all collidable blocks. Uses frame caching.
-    
-    DEPRECATED: Use build_block_grid_cached() and ctx["_block_grid"] instead.
-    """
-    # Check if pre-built grid is available in context
+    """Build spatial grid containing all collidable blocks."""
     cached = ctx.get("_block_grid")
     if cached is not None:
         return cached
-    
     return build_block_grid_cached(state, ctx)
 
 
 def build_block_grid_cached(state, ctx: dict) -> SpatialGrid:
-    """Build spatial grid containing all collidable blocks.
-    
-    Called once per collision update frame. Results stored in ctx["_block_grid"].
-    """
+    """Build spatial grid containing all collidable blocks."""
     width = ctx.get("width", 1920)
     height = ctx.get("height", 1080)
     frame_id = ctx.get("frame_id", -1)
@@ -127,11 +74,9 @@ def build_block_grid_cached(state, ctx: dict) -> SpatialGrid:
     
     grid = get_block_grid(width, height, frame_id=frame_id)
     
-    # Only insert if grid was just cleared (not cached this frame)
     if len(grid._obj_cells) > 0:
         return grid
     
-    # Insert all block types
     for block in lev.destructible_blocks:
         if block.get("rect"):
             grid.insert(block, block["rect"])
