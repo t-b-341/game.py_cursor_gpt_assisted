@@ -139,7 +139,7 @@ class GameApp:
                 laser_dmg = int(laser_damage * UNLOCKED_WEAPON_DAMAGE_MULT) if "laser" in self.game_state.unlocked_weapons else laser_damage
                 self.game_state.laser_beams.append({
                     "start": pygame.Vector2(pl.center), "end": end_pos,
-                    "color": (255, 50, 50), "width": 5, "damage": laser_dmg, "timer": 0.1,
+                    "color": (50, 150, 255), "width": 5, "damage": laser_dmg, "timer": 0.1,
                 })
                 self.game_state.laser_time_since_shot = 0.0
                 # Play laser sound

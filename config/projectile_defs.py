@@ -56,7 +56,7 @@ WEAPON_CONFIGS: dict[str, dict[str, Any]] = {
         "cooldown_multiplier": 1.0,
         "spread_angle_deg": 0.0,
         "num_projectiles": 0,
-        "color": (255, 50, 50),
+        "color": (50, 150, 255),
         "explosion_radius": 0.0,
         "max_bounces": 0,
         "is_rocket": False,
@@ -73,7 +73,7 @@ WEAPON_NAMES: dict[str, str] = {
 WEAPON_DISPLAY_COLORS: dict[str, tuple[int, int, int]] = {
     "giant": (255, 200, 0),
     "triple": (255, 105, 180),
-    "laser": (255, 50, 50),
+    "laser": (50, 150, 255),
     "basic": (200, 200, 200),
 }
 

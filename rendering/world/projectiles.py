@@ -155,7 +155,7 @@ def draw_beams(screen: pygame.Surface, state: Any, render_ctx: RenderContext = N
             # Apply camera offset
             s = (start.x - cam_x, start.y - cam_y) if hasattr(start, 'x') else (start[0] - cam_x, start[1] - cam_y)
             e = (end.x - cam_x, end.y - cam_y) if hasattr(end, 'x') else (end[0] - cam_x, end[1] - cam_y)
-            pygame.draw.line(screen, beam.get("color", (255, 50, 50)), s, e, beam.get("width", 5))
+            pygame.draw.line(screen, beam.get("color", (50, 150, 255)), s, e, beam.get("width", 5))
             
     for beam in getattr(state, "enemy_laser_beams", []):
         if "start" in beam and "end" in beam:
