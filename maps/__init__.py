@@ -39,6 +39,7 @@ from .pathfinding import (
     clear_path_cache,
     PathResult,
 )
+from .level_converter import map_to_level_state, get_player_spawn_position
 
 __all__ = [
     "Tile",
@@ -64,6 +65,9 @@ __all__ = [
     "find_paths_batch",
     "clear_path_cache",
     "PathResult",
+    # Level conversion
+    "map_to_level_state",
+    "get_player_spawn_position",
 ]
 
 # Default tile size (64x64 pixels)

@@ -209,6 +209,19 @@ def _draw_terrain(screen: pygame.Surface, state: Any, ctx: dict, render_ctx: Ren
             surf, offset = _triangle_surface_cache[block_id]
             screen.blit(surf, (offset[0] - cam_x, offset[1] - cam_y))
 
+    # Static blocks from custom maps (walls, rocks, etc.)
+    for block in ctx.get("static_blocks", []):
+        rect = block.get("rect")
+        if render_ctx and rect and not render_ctx.is_visible(rect):
+            continue
+        screen_rect = pygame.Rect(rect.x - cam_x, rect.y - cam_y, rect.w, rect.h) if rect else None
+        if screen_rect:
+            color = block.get("color", (40, 40, 45))
+            pygame.draw.rect(screen, color, screen_rect)
+            # Draw a subtle border for visibility
+            border_color = tuple(min(255, c + 30) for c in color)
+            pygame.draw.rect(screen, border_color, screen_rect, 2)
+    
     for block in ctx.get("destructible_blocks", []):
         rect = block.get("rect")
         if render_ctx and rect and not render_ctx.is_visible(rect):

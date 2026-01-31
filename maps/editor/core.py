@@ -75,6 +75,7 @@ class MapEditor(InputMixin, ToolsMixin, ModesMixin, RenderingMixin):
         # Name input mode
         self._naming_mode: bool = False
         self._name_input: str = ""
+        self._save_after_naming: bool = False  # True when in "Save As" mode
         
         # Autosave state
         self._autosave_timer: float = AUTOSAVE_INTERVAL

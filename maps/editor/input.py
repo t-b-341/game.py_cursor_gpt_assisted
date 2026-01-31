@@ -50,9 +50,14 @@ class InputMixin:
                 return False
             return True
         
-        # Save
-        if key == pygame.K_s and not (pygame.key.get_mods() & pygame.KMOD_CTRL):
-            self._save_map()
+        # Save (S = quick save, Ctrl+S = save as with name prompt)
+        if key == pygame.K_s:
+            if pygame.key.get_mods() & pygame.KMOD_CTRL:
+                # Save As - prompt for new name
+                self._start_save_as_mode()
+            else:
+                # Quick save
+                self._save_map()
         
         # Toggle grid
         if key == pygame.K_g:

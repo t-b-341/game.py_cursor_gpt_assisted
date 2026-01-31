@@ -104,6 +104,7 @@ def _render_gameplay(
         # Update level references if level changed
         lv = game_state.level
         if lv:
+            gameplay_ctx["static_blocks"] = lv.static_blocks
             gameplay_ctx["trapezoid_blocks"] = lv.trapezoid_blocks
             gameplay_ctx["triangle_blocks"] = lv.triangle_blocks
             gameplay_ctx["destructible_blocks"] = lv.destructible_blocks

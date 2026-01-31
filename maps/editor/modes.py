@@ -19,11 +19,23 @@ class ModesMixin:
     # MAP NAMING
     # =========================================================================
     
-    def _start_naming_mode(self: "MapEditor") -> None:
-        """Enter name input mode."""
+    def _start_naming_mode(self: "MapEditor", save_after: bool = False) -> None:
+        """Enter name input mode.
+        
+        Args:
+            save_after: If True, save the map after confirming the name (Save As mode)
+        """
         self._naming_mode = True
         self._name_input = self.map_grid.name
-        self._set_status("Enter map name (ENTER to confirm, ESC to cancel)")
+        self._save_after_naming = save_after
+        if save_after:
+            self._set_status("Enter new file name (ENTER to save, ESC to cancel)")
+        else:
+            self._set_status("Enter map name (ENTER to confirm, ESC to cancel)")
+    
+    def _start_save_as_mode(self: "MapEditor") -> None:
+        """Enter Save As mode - prompt for name then save."""
+        self._start_naming_mode(save_after=True)
     
     def _handle_naming_input(self: "MapEditor", event: pygame.event.Event) -> bool:
         """Handle keyboard input during naming mode."""
@@ -32,18 +44,23 @@ class ModesMixin:
         if key == pygame.K_ESCAPE:
             self._naming_mode = False
             self._name_input = ""
-            self._set_status("Rename cancelled")
+            self._save_after_naming = False
+            self._set_status("Cancelled")
             return False
         
         if key in (pygame.K_RETURN, pygame.K_KP_ENTER):
             new_name = self._name_input.strip()
             if new_name:
                 self.map_grid.name = new_name
-                self._set_status(f"Map renamed to: {new_name}")
+                if self._save_after_naming:
+                    self._save_map()
+                else:
+                    self._set_status(f"Map renamed to: {new_name}")
             else:
                 self._set_status("Name cannot be empty")
             self._naming_mode = False
             self._name_input = ""
+            self._save_after_naming = False
             return False
         
         if key == pygame.K_BACKSPACE:

@@ -205,9 +205,23 @@ class MapTestScene:
             return SceneTransition.pop()
         
         if result.get("screen") == STATE_PLAYING and result.get("selected_map"):
-            # Store selected map in game state for gameplay to load
-            game_state.test_map_name = result["selected_map"]
-            return SceneTransition.replace(STATE_PLAYING)
+            # Start a new run with the custom map
+            selected_map = result["selected_map"]
+            app_ctx = ctx.get("app_ctx")
+            scene_stack = ctx.get("scene_stack")
+            
+            if app_ctx and scene_stack:
+                from engine.run_manager import start_new_run
+                start_new_run(
+                    app_ctx, game_state, scene_stack,
+                    custom_map_name=selected_map
+                )
+                # The start_new_run pushes the gameplay scene, so return none
+                return SceneTransition.none()
+            else:
+                # Fallback: just store the name and try to transition
+                game_state.test_map_name = result["selected_map"]
+                return SceneTransition.replace(STATE_PLAYING)
         
         return SceneTransition.none()
 

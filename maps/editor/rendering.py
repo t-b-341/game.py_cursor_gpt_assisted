@@ -282,7 +282,8 @@ class RenderingMixin:
                 "Right click: Remove spawn",
                 "P: Set player spawn",
                 "Arrows: Pan camera",
-                "S: Save map",
+                "S: Quick save",
+                "Ctrl+S: Save As...",
                 "ESC: Exit spawn mode",
             ]
         else:
@@ -291,7 +292,8 @@ class RenderingMixin:
                 "1-9: Select tile",
                 "T: Cycle theme",
                 "G: Toggle grid",
-                "S: Save map",
+                "S: Quick save",
+                "Ctrl+S: Save As...",
                 "N: Rename map",
                 "M: Spawn mode",
                 "Ctrl+R: Resize map",

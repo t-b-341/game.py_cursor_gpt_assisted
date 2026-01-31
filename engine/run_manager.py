@@ -33,6 +33,7 @@ class RunManager:
         *,
         endurance_mode: bool = False,
         initial_wave: int = 1,
+        custom_map_name: Optional[str] = None,
     ) -> None:
         """
         Start a new run from the menu.
@@ -45,16 +46,50 @@ class RunManager:
             scene_stack: Scene stack to update
             endurance_mode: Whether to start in endurance mode
             initial_wave: Starting wave number (default 1)
+            custom_map_name: Optional name of custom map to load
         """
         from constants import STATE_PLAYING, STATE_ENDURANCE, player_class_stats
         from systems.audio_system import stop_music, play_music
-        from systems.spawn_system import start_wave as spawn_system_start_wave
+        from systems.spawn_system import start_wave as spawn_system_start_wave, start_wave_from_map
         from scenes import GameplayScene
         from telemetry import Telemetry, NoOpTelemetry
         
         # Stop menu music, start gameplay music
         stop_music()
         play_music("in-game", loop=True)
+        
+        # Load custom map if specified
+        custom_map = None
+        if custom_map_name:
+            try:
+                from maps import load_map, map_to_level_state, get_player_spawn_position
+                custom_map = load_map(custom_map_name)
+                if custom_map:
+                    game_state.custom_map = custom_map
+                    game_state.custom_map_name = custom_map_name
+                    
+                    # Convert map to level geometry (walls, blocks)
+                    game_state.level = map_to_level_state(custom_map)
+                    
+                    # Set player spawn position from map
+                    spawn_x, spawn_y = get_player_spawn_position(
+                        custom_map,
+                        default_x=ctx.width // 2,
+                        default_y=ctx.height // 2
+                    )
+                    game_state.player_rect.center = (spawn_x, spawn_y)
+                    
+                    print(f"[RunManager] Loaded custom map: {custom_map_name}")
+                    print(f"[RunManager] Player spawn: ({spawn_x}, {spawn_y})")
+                else:
+                    print(f"[RunManager] Failed to load custom map: {custom_map_name}")
+            except Exception as e:
+                import traceback
+                print(f"[RunManager] Error loading custom map {custom_map_name}: {e}")
+                traceback.print_exc()
+        else:
+            game_state.custom_map = None
+            game_state.custom_map_name = None
         
         # Set up telemetry
         if ctx.config.enable_telemetry:
@@ -87,6 +122,12 @@ class RunManager:
             scene_stack.clear()
             scene_stack.push(GameplayScene(STATE_PLAYING))
         
+        # Rebuild level context if we loaded a custom map (level geometry changed)
+        if custom_map is not None:
+            from level_utils import make_level_context
+            game_state.level_context = make_level_context(ctx, game_state)
+            print(f"[RunManager] Rebuilt level_context for custom map")
+        
         # Update level context with telemetry and config
         if game_state.level_context:
             game_state.level_context["telemetry"] = ctx.telemetry_client
@@ -112,7 +153,12 @@ class RunManager:
         
         # Set wave number and start wave
         game_state.wave_number = initial_wave
-        spawn_system_start_wave(initial_wave, game_state)
+        
+        # Use custom map spawning if available
+        if custom_map and game_state.level_context:
+            start_wave_from_map(initial_wave, game_state, custom_map, game_state.level_context)
+        else:
+            spawn_system_start_wave(initial_wave, game_state)
     
     def restart_current_wave(
         self,
@@ -243,12 +289,14 @@ def start_new_run(
     *,
     endurance_mode: bool = False,
     initial_wave: int = 1,
+    custom_map_name: Optional[str] = None,
 ) -> None:
     """Convenience function to start a new run."""
     get_run_manager().start_new_run(
         ctx, game_state, scene_stack,
         endurance_mode=endurance_mode,
         initial_wave=initial_wave,
+        custom_map_name=custom_map_name,
     )
 
 

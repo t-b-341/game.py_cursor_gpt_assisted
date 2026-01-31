@@ -206,6 +206,7 @@ def build_gameplay_ctx(
     
     return {
         "level_themes": level_themes,
+        "static_blocks": lv.static_blocks if lv else [],
         "trapezoid_blocks": lv.trapezoid_blocks if lv else [],
         "triangle_blocks": lv.triangle_blocks if lv else [],
         "destructible_blocks": lv.destructible_blocks if lv else [],

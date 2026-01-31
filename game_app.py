@@ -38,6 +38,7 @@ class GameApp:
             "save_high_score": save_high_score,
             "difficulty": self.ctx.config.difficulty,
             "app_ctx": self.ctx,
+            "scene_stack": self.scene_stack,
         }
         
         # Pre-check telemetry/shader flags to avoid repeated attribute lookups
