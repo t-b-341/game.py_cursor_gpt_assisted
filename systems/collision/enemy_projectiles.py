@@ -10,11 +10,56 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ..spatial_grid import invalidate_block_grid
+from ..spatial_grid import SpatialGrid, invalidate_block_grid
 from .helpers import build_block_grid
 
 if TYPE_CHECKING:
     from state import GameState
+
+
+# Reusable grids for friendlies and decoys
+_friendly_grid: SpatialGrid | None = None
+_decoy_grid: SpatialGrid | None = None
+
+
+def _build_friendly_grid(state: "GameState", ctx: dict) -> SpatialGrid:
+    """Build spatial grid for friendly AI entities."""
+    global _friendly_grid
+    width = ctx.get("world_width", ctx.get("width", 1920))
+    height = ctx.get("world_height", ctx.get("height", 1080))
+    
+    if _friendly_grid is None:
+        _friendly_grid = SpatialGrid(width, height, cell_size=128)
+    else:
+        _friendly_grid.clear()
+    
+    for friendly in state.friendly_ai:
+        if friendly.get("hp", 1) > 0:
+            _friendly_grid.insert(friendly, friendly["rect"])
+    
+    return _friendly_grid
+
+
+def _build_decoy_grid(state: "GameState", ctx: dict) -> SpatialGrid:
+    """Build spatial grid for decoys."""
+    global _decoy_grid
+    width = ctx.get("world_width", ctx.get("width", 1920))
+    height = ctx.get("world_height", ctx.get("height", 1080))
+    
+    decoys = getattr(state, "decoys", None)
+    if not decoys:
+        return None
+    
+    if _decoy_grid is None:
+        _decoy_grid = SpatialGrid(width, height, cell_size=128)
+    else:
+        _decoy_grid.clear()
+    
+    for decoy in decoys:
+        if decoy.get("hp", 1) > 0:
+            _decoy_grid.insert(decoy, decoy["rect"])
+    
+    return _decoy_grid
 
 
 def handle_enemy_projectile_lifetime_offscreen(state: "GameState", ctx: dict) -> None:
@@ -82,9 +127,12 @@ def handle_enemy_projectile_block_collisions(state: "GameState", ctx: dict) -> N
 
 
 def handle_enemy_projectile_friendly_collisions(state: "GameState", ctx: dict) -> None:
-    """Apply enemy projectile damage to friendlies; uses filter-based removal."""
+    """Apply enemy projectile damage to friendlies; uses spatial grid for O(n) instead of O(n*m)."""
     if not state.enemy_projectiles or not state.friendly_ai:
         return
+    
+    # Build spatial grid for friendlies
+    friendly_grid = _build_friendly_grid(state, ctx)
     
     projs_to_remove = set()
     friendlies_to_remove = set()
@@ -93,7 +141,8 @@ def handle_enemy_projectile_friendly_collisions(state: "GameState", ctx: dict) -
         if id(proj) in projs_to_remove:
             continue
         
-        for friendly in state.friendly_ai:
+        # Query only nearby friendlies using spatial grid
+        for friendly in friendly_grid.query_rect(proj["rect"]):
             if friendly.get("hp", 1) <= 0:
                 continue
             if not proj["rect"].colliderect(friendly["rect"]):
@@ -115,12 +164,17 @@ def handle_enemy_projectile_friendly_collisions(state: "GameState", ctx: dict) -
 
 
 def handle_enemy_projectile_decoy_collisions(state: "GameState", ctx: dict) -> None:
-    """Apply enemy projectile damage to decoys; decoys absorb projectiles.
+    """Apply enemy projectile damage to decoys; uses spatial grid for O(n) instead of O(n*m).
     
     This is the core mechanic - decoys draw fire and get destroyed, protecting the player.
     """
     decoys = getattr(state, "decoys", None)
     if not state.enemy_projectiles or not decoys:
+        return
+    
+    # Build spatial grid for decoys
+    decoy_grid = _build_decoy_grid(state, ctx)
+    if decoy_grid is None:
         return
     
     projs_to_remove = set()
@@ -130,7 +184,8 @@ def handle_enemy_projectile_decoy_collisions(state: "GameState", ctx: dict) -> N
         if id(proj) in projs_to_remove:
             continue
         
-        for decoy in decoys:
+        # Query only nearby decoys using spatial grid
+        for decoy in decoy_grid.query_rect(proj["rect"]):
             if decoy.get("hp", 1) <= 0:
                 continue
             if not proj["rect"].colliderect(decoy["rect"]):

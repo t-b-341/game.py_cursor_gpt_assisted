@@ -16,12 +16,12 @@ player_bullet_shapes = ["circle", "square", "diamond"]
 player_bullets_color = (10, 200, 200)
 player_bullet_size = (8, 8)
 player_bullet_speed = 450  # Reduced by 0.5x
-player_bullet_damage = 150
+player_bullet_damage = 300  # Doubled from 150
 player_shoot_cooldown = 0.12
 
 # Laser
 laser_length = 800
-laser_damage = 50
+laser_damage = 300  # 3x increase (was 100)
 laser_cooldown = 0.3
 
 UNLOCKED_WEAPON_DAMAGE_MULT = 1.75
@@ -58,8 +58,8 @@ grenade_cooldown = 2.0
 grenade_damage = 1500
 
 # Missile / Rocket (same thing: player seeking missiles)
-missile_cooldown = 0.1335  # 2x rate of fire (0.267 / 2)
-missile_damage = 800
+missile_cooldown = 1.0  # 1 shot per second
+missile_damage = 400  # Halved from 800
 rocket_cooldown = missile_cooldown  # alias: missile = rocket
 rocket_damage = missile_damage
 
@@ -98,4 +98,4 @@ ENEMY_COLOR = (200, 50, 50)
 ENEMY_PROJECTILE_SIZE = (10, 10)
 ENEMY_PROJECTILE_DAMAGE = 11
 ENEMY_PROJECTILES_COLOR = (200, 200, 200)
-ENEMY_PROJECTILE_SPEED_MULT = 0.7  # Global multiplier for enemy projectile speeds (1.0 = normal, 0.5 = half speed)
+ENEMY_PROJECTILE_SPEED_MULT = 0.93  # Global multiplier for enemy projectile speeds (increased 33% from 0.7)

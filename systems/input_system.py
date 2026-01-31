@@ -333,12 +333,23 @@ def handle_gameplay_input(events, game_state, ctx) -> None:
     game_state.move_input_x = move_x
     game_state.move_input_y = move_y
 
-    # Fire and laser: set flag and call callbacks; callbacks (from game.py) perform cooldown check and spawn
+    # Fire: left click or arrow keys fires current weapon; right click fires laser as secondary
     mouse = pygame.mouse.get_pressed()
     shoot_input = mouse[0] or (aiming_mode == AIM_ARROWS and (
         keys[pygame.K_LEFT] or keys[pygame.K_RIGHT] or keys[pygame.K_UP] or keys[pygame.K_DOWN]))
     game_state.fire_pressed = shoot_input
-    if ctx.get("spawn_player_bullet"):
-        ctx["spawn_player_bullet"]()
-    if ctx.get("spawn_laser_beam"):
+    
+    # Weapon mode determines what left-click fires
+    weapon_mode = getattr(game_state, "current_weapon_mode", "normal")
+    if weapon_mode == "laser":
+        # Laser weapon mode: left-click fires laser beam
+        if shoot_input and ctx.get("spawn_laser_beam"):
+            ctx["spawn_laser_beam"]()
+    else:
+        # Other weapon modes: left-click fires bullets
+        if ctx.get("spawn_player_bullet"):
+            ctx["spawn_player_bullet"]()
+    
+    # Right-click always fires laser as secondary ability (if unlocked)
+    if mouse[2] and ctx.get("spawn_laser_beam"):
         ctx["spawn_laser_beam"]()

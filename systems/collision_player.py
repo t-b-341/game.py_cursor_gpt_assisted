@@ -11,38 +11,53 @@ def handle_enemy_laser_beam_collisions(state, dt: float, ctx: dict) -> None:
     player = state.player_rect
     if not line_rect or player is None:
         return
-    for beam in list(getattr(state, "enemy_laser_beams", [])):
+    
+    beams_to_remove = set()
+    enemy_laser_beams = getattr(state, "enemy_laser_beams", [])
+    
+    for beam in enemy_laser_beams:
         deploy_timer = beam.get("deploy_timer", 0.0)
         if deploy_timer > 0:
             beam["deploy_timer"] = deploy_timer - dt
             continue
         beam["timer"] = beam.get("timer", 0.2) - dt
         if beam["timer"] <= 0:
-            state.enemy_laser_beams.remove(beam)
+            beams_to_remove.add(id(beam))
             continue
         damage_per_sec = beam.get("damage", 80 * 60)
         if line_rect(beam["start"], beam["end"], player):
             if state.shield_active:
                 continue  # Shield blocks enemy laser beams
             apply_player_damage(state, int(damage_per_sec * dt), ctx)
+    
+    # O(n) bulk removal instead of O(n²) .remove() in loop
+    if beams_to_remove:
+        state.enemy_laser_beams[:] = [b for b in enemy_laser_beams if id(b) not in beams_to_remove]
 
 
 def handle_enemy_projectile_player_collisions(state, ctx: dict) -> None:
     """Enemy projectiles that hit the player apply damage and are removed."""
     player = state.player_rect
-    if not player:
+    if not player or not state.enemy_projectiles:
         return
-    for proj in state.enemy_projectiles[:]:
+    
+    projs_to_remove = set()
+    
+    for proj in state.enemy_projectiles:
+        if id(proj) in projs_to_remove:
+            continue
         if not proj["rect"].colliderect(player):
             continue
         if state.shield_active:
-            if proj in state.enemy_projectiles:
-                state.enemy_projectiles.remove(proj)
+            projs_to_remove.add(id(proj))
             continue
         damage = proj.get("damage", 10)
         apply_player_damage(state, damage, ctx)
-        if proj in state.enemy_projectiles:
-            state.enemy_projectiles.remove(proj)
+        projs_to_remove.add(id(proj))
+    
+    # O(n) bulk removal instead of O(n²) .remove() in loop
+    if projs_to_remove:
+        state.enemy_projectiles[:] = [p for p in state.enemy_projectiles if id(p) not in projs_to_remove]
 
 
 def handle_teleporter_player(state, ctx: dict) -> None:

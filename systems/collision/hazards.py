@@ -62,11 +62,11 @@ def handle_laser_beam_collisions(state: "GameState", dt: float, ctx: dict) -> No
     # Build enemy grid for spatial queries
     enemy_grid = _build_enemy_grid(state, ctx)
     
-    beams_to_remove = []
+    beams_to_remove = set()
     for beam in state.laser_beams:
         beam["timer"] = beam.get("timer", 0.1) - dt
         if beam["timer"] <= 0:
-            beams_to_remove.append(beam)
+            beams_to_remove.add(id(beam))
             continue
         
         damage = beam.get("damage", 50) * dt * 60
@@ -82,7 +82,7 @@ def handle_laser_beam_collisions(state: "GameState", dt: float, ctx: dict) -> No
         beam_rect = pygame.Rect(min_x - 50, min_y - 50, max_x - min_x + 100, max_y - min_y + 100)
         
         # Query only nearby enemies using spatial grid
-        nearby_enemies = enemy_grid.query(beam_rect)
+        nearby_enemies = enemy_grid.query_rect(beam_rect)
         
         for enemy in nearby_enemies:
             if line_rect(start, end, enemy["rect"]):
@@ -91,7 +91,6 @@ def handle_laser_beam_collisions(state: "GameState", dt: float, ctx: dict) -> No
                 if enemy["hp"] <= 0:
                     kill(enemy, state)
     
-    # Remove expired beams
-    for beam in beams_to_remove:
-        if beam in state.laser_beams:
-            state.laser_beams.remove(beam)
+    # O(n) bulk removal instead of O(n²) .remove() in loop
+    if beams_to_remove:
+        state.laser_beams[:] = [b for b in state.laser_beams if id(b) not in beams_to_remove]

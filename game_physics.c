@@ -197,10 +197,16 @@ static PyObject* update_bullets_c(PyObject* self, PyObject* args) {
                              y + h < 0 || y > screen_height);
             
             if (!offscreen) {
-                // Update rect position
-                PyObject_SetAttrString(rect, "x", PyLong_FromLong(x));
-                PyObject_SetAttrString(rect, "y", PyLong_FromLong(y));
-                PyList_Append(result, bullet);
+                // Update rect position - properly manage new references
+                PyObject* new_x = PyLong_FromLong(x);
+                PyObject* new_y = PyLong_FromLong(y);
+                if (new_x && new_y) {
+                    PyObject_SetAttrString(rect, "x", new_x);
+                    PyObject_SetAttrString(rect, "y", new_y);
+                    PyList_Append(result, bullet);
+                }
+                Py_XDECREF(new_x);
+                Py_XDECREF(new_y);
             }
             
             Py_DECREF(rect_w);
@@ -248,6 +254,35 @@ static PyObject* distance_squared_c(PyObject* self, PyObject* args) {
     return PyFloat_FromDouble(dist_sq);
 }
 
+/* Helper: Extract rect components from a Python object with "rect" attribute.
+ * Returns true on success, false on failure (with refs cleaned up). */
+static bool extract_rect_components(PyObject* obj, Rect* out) {
+    PyObject* rect = PyObject_GetAttrString(obj, "rect");
+    if (!rect) return false;
+    
+    PyObject* x_attr = PyObject_GetAttrString(rect, "x");
+    PyObject* y_attr = PyObject_GetAttrString(rect, "y");
+    PyObject* w_attr = PyObject_GetAttrString(rect, "w");
+    PyObject* h_attr = PyObject_GetAttrString(rect, "h");
+    
+    bool success = (x_attr && y_attr && w_attr && h_attr);
+    
+    if (success) {
+        out->x = (int)PyLong_AsLong(x_attr);
+        out->y = (int)PyLong_AsLong(y_attr);
+        out->w = (int)PyLong_AsLong(w_attr);
+        out->h = (int)PyLong_AsLong(h_attr);
+    }
+    
+    Py_XDECREF(x_attr);
+    Py_XDECREF(y_attr);
+    Py_XDECREF(w_attr);
+    Py_XDECREF(h_attr);
+    Py_DECREF(rect);
+    
+    return success;
+}
+
 /* Batch collision check between bullets and targets */
 static PyObject* check_bullet_collisions_c(PyObject* self, PyObject* args) {
     PyObject* bullets_list;
@@ -267,41 +302,31 @@ static PyObject* check_bullet_collisions_c(PyObject* self, PyObject* args) {
         PyObject* bullet = PyList_GetItem(bullets_list, i);
         if (!bullet) continue;
         
-        PyObject* bullet_rect = PyObject_GetAttrString(bullet, "rect");
-        if (!bullet_rect) continue;
-        
-        int bx = (int)PyLong_AsLong(PyObject_GetAttrString(bullet_rect, "x"));
-        int by = (int)PyLong_AsLong(PyObject_GetAttrString(bullet_rect, "y"));
-        int bw = (int)PyLong_AsLong(PyObject_GetAttrString(bullet_rect, "w"));
-        int bh = (int)PyLong_AsLong(PyObject_GetAttrString(bullet_rect, "h"));
-        
-        Rect bullet_r = {bx, by, bw, bh};
+        Rect bullet_r;
+        if (!extract_rect_components(bullet, &bullet_r)) {
+            PyErr_Clear();
+            continue;
+        }
         
         for (Py_ssize_t j = 0; j < targets_len; j++) {
             PyObject* target = PyList_GetItem(targets_list, j);
             if (!target) continue;
             
-            PyObject* target_rect = PyObject_GetAttrString(target, "rect");
-            if (!target_rect) continue;
-            
-            int tx = (int)PyLong_AsLong(PyObject_GetAttrString(target_rect, "x"));
-            int ty = (int)PyLong_AsLong(PyObject_GetAttrString(target_rect, "y"));
-            int tw = (int)PyLong_AsLong(PyObject_GetAttrString(target_rect, "w"));
-            int th = (int)PyLong_AsLong(PyObject_GetAttrString(target_rect, "h"));
-            
-            Rect target_r = {tx, ty, tw, th};
+            Rect target_r;
+            if (!extract_rect_components(target, &target_r)) {
+                PyErr_Clear();
+                continue;
+            }
             
             if (rect_collide(&bullet_r, &target_r)) {
                 PyObject* collision = Py_BuildValue("(OO)", bullet, target);
-                PyList_Append(collisions, collision);
-                Py_DECREF(collision);
+                if (collision) {
+                    PyList_Append(collisions, collision);
+                    Py_DECREF(collision);
+                }
                 break;  // One collision per bullet
             }
-            
-            Py_DECREF(target_rect);
         }
-        
-        Py_DECREF(bullet_rect);
     }
     
     return collisions;
@@ -366,7 +391,11 @@ static PyObject* find_in_radius_c(PyObject* self, PyObject* args) {
         double dist_sq = dx * dx + dy * dy;
         
         if (dist_sq <= r_sq) {
-            PyList_Append(result, PyLong_FromSsize_t(i));
+            PyObject* idx = PyLong_FromSsize_t(i);
+            if (idx) {
+                PyList_Append(result, idx);
+                Py_DECREF(idx);
+            }
         }
     }
     
@@ -417,7 +446,11 @@ static PyObject* get_grid_cell_indices_for_rect_c(PyObject* self, PyObject* args
     for (int row = min_row; row <= max_row; row++) {
         for (int col = min_col; col <= max_col; col++) {
             int idx = row * cols + col;
-            PyList_Append(result, PyLong_FromLong(idx));
+            PyObject* py_idx = PyLong_FromLong(idx);
+            if (py_idx) {
+                PyList_Append(result, py_idx);
+                Py_DECREF(py_idx);
+            }
         }
     }
     
@@ -514,7 +547,11 @@ static PyObject* find_dodge_threats_c(PyObject* self, PyObject* args) {
                 double time_to_reach = dist / vel_len;
                 
                 if (time_to_reach < time_threshold) {
-                    PyList_Append(result, PyLong_FromSsize_t(i));
+                    PyObject* idx = PyLong_FromSsize_t(i);
+                    if (idx) {
+                        PyList_Append(result, idx);
+                        Py_DECREF(idx);
+                    }
                 }
             }
         }

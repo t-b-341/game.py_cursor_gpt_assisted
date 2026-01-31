@@ -40,20 +40,23 @@ def kill_enemy(
     
     # Spawner enemy: when killed, all spawned enemies die
     if enemy.get("is_spawner"):
-        for spawned_enemy in state.enemies[:]:
+        spawned_types_to_remove = set()
+        enemies_to_remove = []
+        for spawned_enemy in state.enemies:
             if spawned_enemy.get("spawned_by") is enemy:
-                spawned_enemy_type = spawned_enemy.get("type", "enemy")
-                # Remove projectiles
-                for proj in state.enemy_projectiles[:]:
-                    if proj.get("enemy_type") == spawned_enemy_type:
-                        state.enemy_projectiles.remove(proj)
-                # Remove from list
-                try:
-                    state.enemies.remove(spawned_enemy)
-                except ValueError:
-                    pass
+                spawned_types_to_remove.add(spawned_enemy.get("type", "enemy"))
+                enemies_to_remove.append(spawned_enemy)
                 state.enemies_killed += 1
                 state.score += calculate_kill_score(state.wave_number, state.run_time)
+        # O(n) filter-based removal instead of O(n²) .remove() in loop
+        if spawned_types_to_remove:
+            state.enemy_projectiles[:] = [
+                p for p in state.enemy_projectiles 
+                if p.get("enemy_type") not in spawned_types_to_remove
+            ]
+        if enemies_to_remove:
+            enemies_set = set(id(e) for e in enemies_to_remove)
+            state.enemies[:] = [e for e in state.enemies if id(e) not in enemies_set]
     
     # Add defeat message
     enemy_type = enemy.get("type", "enemy")
@@ -63,19 +66,20 @@ def kill_enemy(
     })
     
     # Remove projectiles and damage numbers associated with this dead enemy
-    enemy_pos = pygame.Vector2(enemy["rect"].center)
+    # O(n) filter-based removal instead of O(n²) .remove() in loop
+    enemy_pos_x, enemy_pos_y = enemy["rect"].centerx, enemy["rect"].centery
     cleanup_radius_sq = 2500  # 50 pixels squared
     
     # Remove ALL enemy projectiles from this dead enemy (by matching enemy_type)
-    for proj in state.enemy_projectiles[:]:
-        if proj.get("enemy_type") == enemy_type:
-            state.enemy_projectiles.remove(proj)
+    state.enemy_projectiles[:] = [
+        p for p in state.enemy_projectiles if p.get("enemy_type") != enemy_type
+    ]
     
     # Remove damage numbers near the dead enemy's position
-    for dmg_num in state.damage_numbers[:]:
-        dmg_pos = pygame.Vector2(dmg_num["x"], dmg_num["y"])
-        if (dmg_pos - enemy_pos).length_squared() < cleanup_radius_sq:
-            state.damage_numbers.remove(dmg_num)
+    state.damage_numbers[:] = [
+        d for d in state.damage_numbers
+        if (d["x"] - enemy_pos_x) ** 2 + (d["y"] - enemy_pos_y) ** 2 >= cleanup_radius_sq
+    ]
     
     # If boss is killed, spawn level completion weapon in center
     if is_boss:

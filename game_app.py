@@ -113,7 +113,8 @@ class GameApp:
                 from config.balance import laser_cooldown, laser_length, laser_damage, UNLOCKED_WEAPON_DAMAGE_MULT
                 from constants import AIM_ARROWS
                 from geometry_utils import vec_toward
-                if self.game_state.current_weapon_mode != "laser" or self.game_state.laser_time_since_shot < laser_cooldown:
+                # Laser is now a separate ability (right click), not a weapon mode
+                if self.game_state.laser_time_since_shot < laser_cooldown:
                     return
                 pl = self.game_state.player_rect
                 if not pl:

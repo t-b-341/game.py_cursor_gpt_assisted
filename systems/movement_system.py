@@ -407,7 +407,12 @@ def _update_missiles(state, dt: float, ctx: dict) -> None:
     # Check if player is dashing - missiles lose lock during dash
     is_dashing = getattr(state, "is_jumping", False)
     
-    for missile in state.missiles[:]:
+    missiles_to_remove = set()
+    
+    for missile in state.missiles:
+        if id(missile) in missiles_to_remove:
+            continue
+            
         if missile.get("target_player"):
             # If player is dashing, missile loses lock permanently
             # It will continue on its current trajectory
@@ -415,26 +420,25 @@ def _update_missiles(state, dt: float, ctx: dict) -> None:
                 missile["target_player"] = False
                 missile["lost_lock"] = True  # Mark as having lost lock
                 # Keep current velocity - missile continues straight
-                continue
-            
-            # Check if there's a dropped ally to draw missile aggro
-            dropped_ally = getattr(state, "dropped_ally", None)
-            if dropped_ally and dropped_ally in state.friendly_ai and dropped_ally.get("hp", 0) > 0:
-                # Dropped ally draws missile attention - redirect to ally
-                ally_rect = dropped_ally.get("rect")
-                if ally_rect:
-                    target_pos = pygame.Vector2(ally_rect.center)
-                else:
-                    target_pos = pygame.Vector2(player.center)
             else:
-                # No dropped ally, target player as normal
-                target_pos = pygame.Vector2(player.center)
-            
-            missile_pos = pygame.Vector2(missile["rect"].center)
-            d = (target_pos - missile_pos)
-            if d.length_squared() > 0:
-                direction = d.normalize()
-                missile["vel"] = direction * missile["speed"]
+                # Check if there's a dropped ally to draw missile aggro
+                dropped_ally = getattr(state, "dropped_ally", None)
+                if dropped_ally and dropped_ally in state.friendly_ai and dropped_ally.get("hp", 0) > 0:
+                    # Dropped ally draws missile attention - redirect to ally
+                    ally_rect = dropped_ally.get("rect")
+                    if ally_rect:
+                        target_pos = pygame.Vector2(ally_rect.center)
+                    else:
+                        target_pos = pygame.Vector2(player.center)
+                else:
+                    # No dropped ally, target player as normal
+                    target_pos = pygame.Vector2(player.center)
+                
+                missile_pos = pygame.Vector2(missile["rect"].center)
+                d = (target_pos - missile_pos)
+                if d.length_squared() > 0:
+                    direction = d.normalize()
+                    missile["vel"] = direction * missile["speed"]
         elif missile.get("target_enemy"):
             if missile["target_enemy"] not in state.enemies:
                 # Find nearest enemy using C-accelerated distance
@@ -470,7 +474,11 @@ def _update_missiles(state, dt: float, ctx: dict) -> None:
                 "damage": missile.get("damage", 100),
                 "source": "wall_impact",  # Player takes no damage from missile-on-wall explosions
             })
-            state.missiles.remove(missile)
+            missiles_to_remove.add(id(missile))
+    
+    # O(n) bulk removal instead of O(n²) .remove() in loop
+    if missiles_to_remove:
+        state.missiles[:] = [m for m in state.missiles if id(m) not in missiles_to_remove]
 
 
 def _update_ecs_position_velocity(state: "GameState", dt: float) -> None:
