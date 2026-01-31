@@ -5,17 +5,27 @@ import pygame
 
 from constants import STATE_GAME_OVER, STATE_SAVE_GAME, STATE_TITLE, STATE_PLAYING
 from rendering import RenderContext, draw_centered_text
+from rendering.menu_helpers import render_menu_options, handle_menu_navigation
 from scenes.transitions import SceneTransition
 
 
-GAME_OVER_OPTIONS = ["Try Again (Current Wave)", "Save Progress", "Quit to Title"]
+# Base options - first one is customized with wave number
+_BASE_OPTIONS = ["Try Again (Wave {wave})", "Save Progress", "Quit to Title"]
 
 
 class GameOverScene:
     """Game over screen. Shows options to retry current wave, save, or quit."""
 
+    def __init__(self):
+        self._option_rects: list[pygame.Rect] = []
+
     def state_id(self) -> str:
         return STATE_GAME_OVER
+
+    def _get_options(self, game_state) -> list[str]:
+        """Get options with wave number substituted."""
+        wave_num = getattr(game_state, "game_over_wave", 1)
+        return [opt.format(wave=wave_num) for opt in _BASE_OPTIONS]
 
     def handle_input(self, events, game_state, ctx: dict) -> dict:
         out = {
@@ -29,29 +39,32 @@ class GameOverScene:
             "save": False,
         }
         
+        options = self._get_options(game_state)
+        
+        # Use shared navigation handler
+        new_idx, confirmed, clicked_idx = handle_menu_navigation(
+            events, len(options),
+            game_state.ui.game_over_selected,
+            self._option_rects
+        )
+        game_state.ui.game_over_selected = new_idx
+        
+        # Handle confirmation (Enter or click)
+        selected = clicked_idx if clicked_idx >= 0 else (game_state.ui.game_over_selected if confirmed else -1)
+        if selected >= 0:
+            if selected == 0:  # Try Again
+                out["try_again"] = True
+                out["screen"] = STATE_PLAYING
+            elif selected == 1:  # Save
+                out["save"] = True
+                out["screen"] = STATE_SAVE_GAME
+            elif selected == 2:  # Quit to Title
+                out["screen"] = STATE_TITLE
+            return out
+        
+        # Handle escape
         for event in events:
-            if event.type != pygame.KEYDOWN:
-                continue
-            
-            if event.key in (pygame.K_UP, pygame.K_w):
-                game_state.ui.game_over_selected = (game_state.ui.game_over_selected - 1) % len(GAME_OVER_OPTIONS)
-            elif event.key in (pygame.K_DOWN, pygame.K_s):
-                game_state.ui.game_over_selected = (game_state.ui.game_over_selected + 1) % len(GAME_OVER_OPTIONS)
-            elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
-                selected = game_state.ui.game_over_selected
-                if selected == 0:  # Try Again
-                    out["try_again"] = True
-                    out["screen"] = STATE_PLAYING
-                    return out
-                elif selected == 1:  # Save
-                    out["save"] = True
-                    out["screen"] = STATE_SAVE_GAME
-                    return out
-                elif selected == 2:  # Quit to Title
-                    out["screen"] = STATE_TITLE
-                    return out
-            elif event.key == pygame.K_ESCAPE:
-                # ESC goes back to title
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                 out["screen"] = STATE_TITLE
                 return out
         
@@ -105,25 +118,14 @@ class GameOverScene:
         score = getattr(game_state, "score", 0)
         draw_centered_text(screen, font, big_font, w, f"Final Score: {score}", h // 2 - 50, color=(200, 200, 200))
         
-        # Menu options
+        # Menu options using shared helper
         selected = game_state.ui.game_over_selected
         y_start = h // 2 + 20
-        
-        for i, option in enumerate(GAME_OVER_OPTIONS):
-            # Customize display for Try Again option
-            if i == 0:
-                display_text = f"Try Again (Wave {wave_num})"
-            else:
-                display_text = option
-            
-            if i == selected:
-                color = (255, 255, 0)
-                prefix = "-> "
-            else:
-                color = (200, 200, 200)
-                prefix = "   "
-            
-            draw_centered_text(screen, font, big_font, w, f"{prefix}{display_text}", y_start + i * 45, color)
+        options = self._get_options(game_state)
+        self._option_rects = render_menu_options(
+            screen, font, big_font, w, options,
+            selected, y_start, line_height=45
+        )
         
         # Instructions
         draw_centered_text(screen, font, big_font, w, "UP/DOWN: Select | ENTER: Confirm | ESC: Quit", h - 60, (150, 150, 150))

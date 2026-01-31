@@ -5,6 +5,7 @@ import pygame
 
 from constants import STATE_VICTORY, STATE_NAME_INPUT, STATE_TITLE, STATE_PLAYING
 from rendering import RenderContext, draw_centered_text
+from rendering.menu_helpers import render_menu_options, handle_menu_navigation
 from scenes.transitions import SceneTransition
 
 
@@ -13,6 +14,9 @@ VICTORY_OPTIONS = ["Enter High Score", "Play Again", "Quit to Title"]
 
 class VictoryScene:
     """Victory screen. Shows when the player beats all levels."""
+
+    def __init__(self):
+        self._option_rects: list[pygame.Rect] = []
 
     def state_id(self) -> str:
         return STATE_VICTORY
@@ -27,27 +31,29 @@ class VictoryScene:
             "pop": False,
         }
         
+        # Use shared navigation handler
+        new_idx, confirmed, clicked_idx = handle_menu_navigation(
+            events, len(VICTORY_OPTIONS), 
+            game_state.ui.victory_selected,
+            self._option_rects
+        )
+        game_state.ui.victory_selected = new_idx
+        
+        # Handle confirmation (Enter or click)
+        selected = clicked_idx if clicked_idx >= 0 else (game_state.ui.victory_selected if confirmed else -1)
+        if selected >= 0:
+            if selected == 0:  # Enter High Score
+                out["screen"] = STATE_NAME_INPUT
+            elif selected == 1:  # Play Again
+                out["replay"] = True
+                out["screen"] = STATE_PLAYING
+            elif selected == 2:  # Quit to Title
+                out["screen"] = STATE_TITLE
+            return out
+        
+        # Handle escape
         for event in events:
-            if event.type != pygame.KEYDOWN:
-                continue
-            
-            if event.key in (pygame.K_UP, pygame.K_w):
-                game_state.ui.victory_selected = (game_state.ui.victory_selected - 1) % len(VICTORY_OPTIONS)
-            elif event.key in (pygame.K_DOWN, pygame.K_s):
-                game_state.ui.victory_selected = (game_state.ui.victory_selected + 1) % len(VICTORY_OPTIONS)
-            elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
-                selected = game_state.ui.victory_selected
-                if selected == 0:  # Enter High Score
-                    out["screen"] = STATE_NAME_INPUT
-                    return out
-                elif selected == 1:  # Play Again
-                    out["replay"] = True
-                    out["screen"] = STATE_PLAYING
-                    return out
-                elif selected == 2:  # Quit to Title
-                    out["screen"] = STATE_TITLE
-                    return out
-            elif event.key == pygame.K_ESCAPE:
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                 out["screen"] = STATE_TITLE
                 return out
         
@@ -104,19 +110,13 @@ class VictoryScene:
         enemies_killed = getattr(game_state, "enemies_killed", 0)
         draw_centered_text(screen, font, big_font, w, f"Waves Completed: {wave_num} | Enemies Defeated: {enemies_killed}", h // 2 - 20, color=(200, 200, 200))
         
-        # Menu options
+        # Menu options using shared helper
         selected = game_state.ui.victory_selected
         y_start = h // 2 + 40
-        
-        for i, option in enumerate(VICTORY_OPTIONS):
-            if i == selected:
-                color = (255, 255, 0)
-                prefix = "-> "
-            else:
-                color = (200, 200, 200)
-                prefix = "   "
-            
-            draw_centered_text(screen, font, big_font, w, f"{prefix}{option}", y_start + i * 45, color)
+        self._option_rects = render_menu_options(
+            screen, font, big_font, w, VICTORY_OPTIONS,
+            selected, y_start, line_height=45
+        )
         
         # Instructions
         draw_centered_text(screen, font, big_font, w, "UP/DOWN: Select | ENTER: Confirm | ESC: Quit", h - 60, (150, 150, 150))

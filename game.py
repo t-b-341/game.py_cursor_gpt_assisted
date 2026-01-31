@@ -1,80 +1,21 @@
 """
-Main game entry point. Runs the game loop, handles menus, gameplay, and screen transitions.
-All mutable game state lives in GameState; app-level resources and config in AppContext.
-Level geometry in state.level (LevelState). Gameplay input via handle_gameplay_input;
-per-frame logic in _update_simulation (movement/collision/spawn/ai). Overlay screens use
-scenes from scenes/ and RenderContext.from_app_ctx(ctx).
+Main game entry point and event coordinator.
 
-# -----------------------------------------------------------------------------
-# Screen/state mapping
-# -----------------------------------------------------------------------------
-# All game states are represented as Scene classes in scenes/:
-# - TitleScene (STATE_TITLE): Title screen
-# - OptionsScene (STATE_MENU): Options/settings menu
-# - GameplayScene (STATE_PLAYING, STATE_ENDURANCE): Main gameplay
-# - PauseScene (STATE_PAUSED): Pause overlay
-# - NameInputScene (STATE_NAME_INPUT): High score name entry
-# - HighScoreScene (STATE_HIGH_SCORES): High scores list
-# - GameOverScene (STATE_GAME_OVER): Game over screen
-# - VictoryScene (STATE_VICTORY): Victory screen after beating all levels
-# - SaveGameScene (STATE_SAVE_GAME): Save game menu
-# - LoadGameScene (STATE_LOAD_GAME): Load game menu
-# - QuickLaunchScene (STATE_QUICK_LAUNCH): Quick launch menu
-# - ShaderTestScene ("SHADER_TEST"): Shader testing
-# - ShaderSettingsScreen ("SHADER_SETTINGS"): Shader settings
-#
-# GameState.current_screen (str): canonical "what screen we are on"
-# GameState.previous_screen (str|None): used for pause/unpause to restore PLAYING or ENDURANCE
-#
-# Input flows through scene_stack.current().handle_input_transition() which returns
-# SceneTransition objects (push, pop, replace, quit_game, or none).
-# -----------------------------------------------------------------------------
+Initialization logic is in game_init.py. This file handles:
+- Event polling and dispatch
+- Scene transitions  
+- Simulation stepping
+- Exit cleanup
 """
 import logging
-import os
-import shutil
-import sys
-import warnings
 from datetime import datetime, timezone
-from pathlib import Path
 
 import pygame
 
-# Suppress pygame's pkg_resources deprecation warning (pygame internal, not our code)
-warnings.filterwarnings("ignore", message="pkg_resources is deprecated")
-
-# Optional GPU acceleration (numba/CUDA). Single capability flag; CPU fallback when disabled.
-try:
-    from gpu_physics import update_bullets_batch, check_collisions_batch, CUDA_AVAILABLE  # pyright: ignore[reportMissingImports]
-    USE_GPU = CUDA_AVAILABLE
-    if not USE_GPU:
-        pass  # gpu_physics logs or stays quiet; game uses CPU path when USE_GPU is False
-except Exception as e:
-    USE_GPU = False
-    update_bullets_batch = None
-    check_collisions_batch = None
-    logging.getLogger(__name__).debug("gpu_physics unavailable (%s), using CPU physics.", e)
-
-from telemetry.event_bus_handlers import register_telemetry_event_handlers
-from telemetry import Telemetry, NoOpTelemetry
-
 # -----------------------------------------------------------------------------
-# Internal: constants and config
+# Essential imports for event handling and gameplay
 # -----------------------------------------------------------------------------
 from constants import (
-    AIM_ARROWS,
-    AIM_MOUSE,
-    DIFFICULTY_NORMAL,
-    ENEMY_PROJECTILE_DAMAGE,
-    ENEMY_PROJECTILE_SIZE,
-    ENEMY_PROJECTILES_COLOR,
-    HIGH_SCORES_DB,
-    LIVES_START,
-    PLAYER_CLASS_BALANCED,
-    PICKUP_SPAWN_INTERVAL,
-    SCORE_BASE_POINTS,
-    SCORE_TIME_MULTIPLIER,
-    SCORE_WAVE_MULTIPLIER,
     STATE_ENDURANCE,
     STATE_GAME_OVER,
     STATE_HIGH_SCORES,
@@ -88,110 +29,12 @@ from constants import (
     STATE_TELEMETRY_VIEWER,
     STATE_TITLE,
     STATE_VICTORY,
-    UNLOCKED_WEAPON_DAMAGE_MULT,
-    ally_drop_cooldown,
-    boost_drain_per_s,
-    boost_meter_max,
-    boost_regen_per_s,
-    boost_speed_mult,
-    character_profile_options,
-    custom_profile_stats_keys,
-    custom_profile_stats_list,
-    difficulty_multipliers,
-    difficulty_options,
-    fire_rate_buff_duration,
-    fire_rate_mult,
-    grenade_cooldown,
-    grenade_damage,
-    jump_cooldown,
-    laser_cooldown,
-    laser_damage,
-    laser_length,
-    level_themes,
-    missile_cooldown,
-    missile_damage,
-    overshield_max,
-    overshield_recharge_cooldown,
-    pause_options,
-    player_bullet_shapes,
-    player_bullet_size,
-    player_bullet_speed,
-    player_bullets_color,
-    player_class_options,
-    player_class_stats,
-    shield_duration,
-    shield_recharge_cooldown,
-    slow_speed_mult,
-    weapon_selection_options,
 )
-
-from config_enemies import (
-    ENEMY_TEMPLATES,
-    BOSS_TEMPLATE,
-    BASE_ENEMIES_PER_WAVE,
-    MAX_ENEMIES_PER_WAVE,
-    ENEMY_SPAWN_MULTIPLIER,
-    ENEMY_HP_SCALE_MULTIPLIER,
-    ENEMY_SPEED_SCALE_MULTIPLIER,
-    ENEMY_FIRE_RATE_MULTIPLIER,
-    ENEMY_HP_CAP,
-    QUEEN_FIXED_HP,
-    QUEEN_SPEED_MULTIPLIER,
-    FRIENDLY_AI_TEMPLATES,
-)
-from config_weapons import (
-    WEAPON_CONFIGS,
-    WEAPON_NAMES,
-    WEAPON_DISPLAY_COLORS,
-    WEAPON_UNLOCK_ORDER,
-)
-from rendering import RenderContext, draw_centered_text
-from asset_manager import get_font
-from enemies import (
-    find_nearest_threat,
-    make_enemy_from_template,
-)
-from allies import (
-    find_nearest_enemy,
-    make_friendly_from_template,
-    spawn_friendly_ai,
-    spawn_friendly_projectile,
-    update_friendly_ai,
-)
-from state import GameState
 from context import AppContext
-from event_bus import EventBus, GameEvent
-from config import GameConfig, apply_safe_mode, log_startup_config
-# -----------------------------------------------------------------------------
-# SCENE MIGRATION STATUS: COMPLETE
-# -----------------------------------------------------------------------------
-# INVARIANT: All game states must have a corresponding Scene on the stack.
-# The scene stack is the authoritative source of truth for the current state.
-# If a state lacks a scene, it is treated as a bug (assertion failure in debug).
-#
-# Input flows through the scene stack via handle_scene_events().
-# States are synchronized: game_state.current_screen reflects scene_stack.current().state_id().
-#
-# The screens/ package still contains render/input logic, but it's wrapped
-# by scene classes (e.g., PauseScene wraps screens.pause).
-#
-# Future cleanup opportunities:
-# - Merge screens/*.py logic directly into scenes/*.py
-# - Remove screen_ctx dict (replace with structured context objects)
-# - Remove SCREEN_HANDLERS from screens/__init__.py (currently unused)
-# -----------------------------------------------------------------------------
-from screens.gameplay import render as gameplay_render
-from rendering_shaders import render_gameplay_with_optional_shaders
-from scenes import SceneStack, GameplayScene, PauseScene, HighScoreScene, NameInputScene, ShaderTestScene, TitleScene, OptionsScene, QuickLaunchScene
-from scenes.game_over import GameOverScene
-from scenes.victory import VictoryScene
-from scenes.save_game import SaveGameScene
-from scenes.load_game import LoadGameScene
-from scenes.transitions import SceneTransition, KIND_NONE, KIND_PUSH, KIND_POP, KIND_REPLACE, KIND_QUIT_GAME, apply_scene_transition
-# apply_menu_effects, apply_pause_effects now in engine/render_loop.py
+from state import GameState
+from scenes import SceneStack
+from scenes.transitions import SceneTransition, KIND_NONE, apply_scene_transition
 from shader_effects import get_menu_shader_stack, get_pause_shader_stack, get_gameplay_shader_stack
-from simulation_systems import SIMULATION_SYSTEMS
-from systems.spawn_system import start_wave as spawn_system_start_wave
 from engine.run_manager import (
     start_new_run,
     restart_current_wave,
@@ -200,355 +43,21 @@ from engine.run_manager import (
     try_again as run_try_again,
     load_game as run_load_game,
 )
-from systems.input_system import handle_gameplay_input
+from systems.audio_system import play_music
 from systems.telemetry_system import update_telemetry
-from systems.audio_system import init_mixer, sync_from_config, play_sfx, play_music, stop_music
-from systems.projectile_spawning import (
-    spawn_player_bullet_and_log,
-    spawn_enemy_projectile,
-    spawn_enemy_projectile_predictive,
-    spawn_boss_projectile,
-    spawn_ally_missile,
-)
-from pickups import apply_pickup_effect
-from systems.collision_movement import move_player_with_push, move_enemy_with_push
+from systems.projectile_spawning import spawn_player_bullet_and_log
+
+# Performance recording (no-op unless GAME_DEBUG_PERF=1)
 try:
     from telemetry.perf import record_frame as _perf_record_frame
 except ImportError:
     _perf_record_frame = lambda _dt: None
-from controls_io import _key_name_to_code, load_controls
-from physics_loader import resolve_physics
-from game_utils import init_high_scores_db
-from geometry_utils import (
-    clamp_rect_to_screen,
-    vec_toward,
-    rect_offscreen,
-    filter_blocks_too_close_to_player,
-    set_screen_dimensions,
-)
-from level_utils import filter_blocks_no_overlap, clone_enemies_from_templates
-from level_builder import (
-    build_level_geometry,
-    place_teleporter_pads,
-    generate_wave_beam_points,
-    check_wave_beam_collision,
-)
-from hazards import hazard_obstacles, check_point_in_hazard
-from level_state import LevelState
+
 
 # -----------------------------------------------------------------------------
-# Default display dimensions - used for pygame initialization before detecting
-# actual screen size. _init_pygame() updates these from pygame.display.Info().
-# All runtime code should use ctx.width/ctx.height (world dimensions) or 
-# ctx.display_width/ctx.display_height (screen dimensions).
+# INITIALIZATION - delegated to game_init.py
 # -----------------------------------------------------------------------------
-WIDTH = 1920
-HEIGHT = 1080
-
-# ----------------------------
-# Rendering cache for performance optimization
-# ----------------------------
-# Wall texture, HUD text, health bar, and trapezoid/triangle caches are in rendering.py
-
-
-def _init_pygame_and_mixer() -> None:
-    """Initialize pygame and audio mixer."""
-    pygame.init()
-    init_mixer()
-    print("welcome to my game! :D")
-    
-    # Verify sound files can be loaded
-    from asset_manager import get_sound
-    test_sounds = ["BASIC SHOT", "DODGE", "WAVE START"]
-    for name in test_sounds:
-        snd = get_sound(name)
-        if snd:
-            print(f"[audio] Sound loaded OK: {name}")
-        else:
-            print(f"[audio] WARNING: Could not load sound: {name}")
-
-
-def _create_window_and_clock() -> tuple[pygame.Surface, pygame.time.Clock, int, int]:
-    """Create window, clock, and fonts. Returns (screen, clock, width, height)."""
-    pygame.display.init()
-    screen_info = pygame.display.Info()
-    WIDTH, HEIGHT = screen_info.current_w, screen_info.current_h
-    set_screen_dimensions(WIDTH, HEIGHT)
-    # Use hardware acceleration, double buffering, and disable vsync for max FPS
-    display_flags = pygame.FULLSCREEN | pygame.HWSURFACE | pygame.DOUBLEBUF
-    # vsync=0 disables vertical sync for uncapped frame rates
-    screen = pygame.display.set_mode((WIDTH, HEIGHT), display_flags, vsync=0)
-    pygame.display.set_caption("Mouse Aim Shooter + Telemetry (SQLite)")
-
-    clock = pygame.time.Clock()
-    font = get_font("main", 28)
-    big_font = get_font("main", 56)
-    small_font = get_font("main", 20)
-    
-    return screen, clock, WIDTH, HEIGHT
-
-
-def _build_app_context(screen: pygame.Surface, clock: pygame.time.Clock, display_width: int, display_height: int, using_c_physics: bool) -> AppContext:
-    """Build AppContext with config, controls, and resources."""
-    # EventBus is imported at module level
-    controls = load_controls()
-    
-    cfg = GameConfig(
-        difficulty=DIFFICULTY_NORMAL,
-        aim_mode=AIM_MOUSE,
-        aiming_mechanic="mouse",
-        player_class=PLAYER_CLASS_BALANCED,
-        enable_telemetry=True,  # Enable telemetry by default for analytics
-        show_metrics=True,
-        show_hud=True,
-        show_health_bars=True,
-        show_player_health_bar=True,
-        profile_enabled=False,
-        testing_mode=True,
-        invulnerability_mode=False,
-        default_weapon_mode="giant",
-        mod_enemy_spawn_multiplier=1.0,
-        mod_custom_waves_enabled=False,
-    )
-    
-    # Calculate world dimensions based on world_scale
-    # World is larger than display, rendered then scaled down
-    world_scale = cfg.world_scale
-    world_width = int(display_width * world_scale)
-    world_height = int(display_height * world_scale)
-    
-    # Create world surface for rendering (larger than display)
-    # Use convert() for hardware-accelerated blitting
-    world_surface = pygame.Surface((world_width, world_height)).convert()
-    
-    # Update screen dimensions used by physics/collision
-    set_screen_dimensions(world_width, world_height)
-    
-    event_bus = EventBus()
-    ctx = AppContext(
-        screen=screen,
-        clock=clock,
-        font=get_font("main", 28),
-        big_font=get_font("main", 56),
-        small_font=get_font("main", 20),
-        display_width=display_width,
-        display_height=display_height,
-        width=world_width,
-        height=world_height,
-        world_surface=world_surface,
-        telemetry_client=None,
-        run_started_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        controls=controls,
-        config=cfg,
-        using_c_physics=using_c_physics,
-        event_bus=event_bus,
-    )
-    sync_from_config(ctx.config)
-    print(f"World scale: {world_scale}x | Display: {display_width}x{display_height} | World: {world_width}x{world_height}")
-    
-    # Initialize camera for viewport management
-    from systems.camera import create_camera
-    camera = create_camera(
-        display_width=display_width,
-        display_height=display_height,
-        world_width=world_width,
-        world_height=world_height,
-        smoothing=8.0,  # Smooth camera follow
-    )
-    print(f"Camera initialized: viewport {display_width}x{display_height}, world {world_width}x{world_height}")
-    
-    return ctx
-
-def _build_initial_game_state(ctx: AppContext) -> GameState:
-    """Create and initialize GameState with level geometry and context."""
-    game_state = GameState()
-    game_state.player_rect = pygame.Rect((ctx.width - 28) // 2, (ctx.height - 28) // 2, 28, 28)
-    game_state.current_screen = STATE_TITLE
-    game_state.run_started_at = ctx.run_started_at
-
-    # Initialize pygame mouse visibility
-    pygame.mouse.set_visible(True)
-
-    # Build level geometry and store in game_state.level
-    level = build_level_geometry(ctx.width, ctx.height)
-    level.destructible_blocks = filter_blocks_no_overlap(level.destructible_blocks, [level.moveable_blocks, level.giant_blocks, level.super_giant_blocks, level.trapezoid_blocks, level.triangle_blocks], game_state.player_rect)
-    level.moveable_blocks = filter_blocks_no_overlap(level.moveable_blocks, [level.destructible_blocks, level.giant_blocks, level.super_giant_blocks, level.trapezoid_blocks, level.triangle_blocks], game_state.player_rect)
-    level.giant_blocks = filter_blocks_no_overlap(level.giant_blocks, [level.destructible_blocks, level.moveable_blocks, level.super_giant_blocks, level.trapezoid_blocks, level.triangle_blocks], game_state.player_rect)
-    level.super_giant_blocks = filter_blocks_no_overlap(level.super_giant_blocks, [level.destructible_blocks, level.moveable_blocks, level.giant_blocks, level.trapezoid_blocks, level.triangle_blocks], game_state.player_rect)
-    game_state.level = level
-    game_state.teleporter_pads = place_teleporter_pads(level, ctx.width, ctx.height)
-    
-    # Level context for movement_system and collision_system (callables and data)
-    from level_utils import make_level_context
-    game_state.level_context = make_level_context(ctx, game_state)
-    game_state.run_id = None  # Will be set when game starts
-    return game_state
-
-
-def _setup_initial_resources() -> None:
-    """Initialize high scores database, copy music file if needed, and play initial music."""
-    init_high_scores_db()
-    
-    # Ensure in-game.ogg is available: copy from project root to assets/music/ if missing
-    _project_root = Path(__file__).resolve().parent
-    _music_dir = _project_root / "assets" / "music"
-    _in_game_dst = _music_dir / "in-game.ogg"
-    _in_game_src = _project_root / "in-game.ogg"
-    if not _in_game_dst.exists() and _in_game_src.exists():
-        try:
-            _music_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(_in_game_src, _in_game_dst)
-        except OSError:
-            pass
-    
-    # Load and apply shader settings from config/shaders.json if available
-    try:
-        from rendering_shaders import apply_shader_settings_to_pipeline
-        apply_shader_settings_to_pipeline()
-    except Exception as e:
-        print(f"[Game] Failed to load shader settings on startup: {e}")
-    
-    # Main menu (title + pre-game options) uses ambient2 music
-    play_music("ambient2", loop=True)
-
-
-def _prompt_shader_mode(ctx: AppContext, show_prompt: bool = False) -> None:
-    """Initialize shader mode settings.
-    
-    Args:
-        ctx: Application context
-        show_prompt: If True, show the interactive Y/N prompt. If False, use defaults.
-                     The prompt can be re-enabled later if needed.
-    """
-    try:
-        import moderngl  # noqa: F401  # type: ignore[import-untyped]
-        moderngl_available = True
-    except ImportError:
-        print("moderngl not available; disabling shader mode.")
-        ctx.config.use_shaders = False
-        moderngl_available = False
-    
-    if moderngl_available and show_prompt:
-        # Interactive prompt (disabled by default)
-        prompt_done = False
-        prompt_clock = pygame.time.Clock()
-        # Use display dimensions for the prompt (not world dimensions)
-        display_w = getattr(ctx, 'display_width', ctx.width)
-        display_h = getattr(ctx, 'display_height', ctx.height)
-        while not prompt_done:
-            prompt_clock.tick(60)  # Limit to 60 FPS for the prompt
-            ctx.screen.fill((30, 30, 40))
-            draw_centered_text(ctx.screen, ctx.font, ctx.big_font, display_w, "Enable GPU shaders?", display_h // 2 - 50, color=(220, 220, 220), use_big=True)
-            draw_centered_text(ctx.screen, ctx.font, ctx.big_font, display_w, "(Y)es  /  (N)o", display_h // 2 + 20, (180, 180, 180))
-            pygame.display.flip()
-            for e in pygame.event.get():
-                if e.type == pygame.QUIT:
-                    prompt_done = True
-                    ctx.config.use_shaders = False
-                elif e.type == pygame.KEYDOWN:
-                    if e.key == pygame.K_y:
-                        ctx.config.use_shaders = True
-                        ctx.config.use_gpu_shader_pipeline = True  # Enable GPU particle effects
-                        # CPU effects disabled by default for performance
-                        # Enable via pause menu Shader Options if desired
-                        ctx.config.enable_gameplay_shaders = False
-                        ctx.config.enable_pause_shaders = True  # Pause effects are lightweight
-                        ctx.config.pause_shader_profile = "pause_dim_vignette"
-                        prompt_done = True
-                    elif e.key == pygame.K_n:
-                        ctx.config.use_shaders = False
-                        ctx.config.use_gpu_shader_pipeline = False
-                        ctx.config.enable_gameplay_shaders = False
-                        ctx.config.enable_pause_shaders = False
-                        prompt_done = True
-    elif moderngl_available:
-        # Default: shaders disabled at startup, can be enabled via pause menu Shader Options
-        ctx.config.use_shaders = False
-        ctx.config.use_gpu_shader_pipeline = False
-        ctx.config.enable_gameplay_shaders = False
-        ctx.config.enable_pause_shaders = False
-    
-    # Log shader configuration (only if enabled)
-    if ctx.config.use_shaders:
-        print("Shader mode: ON")
-    if ctx.config.use_gpu_shader_pipeline:
-        print("GPU particle effects: ENABLED (shot/rocket/bomb bursts)")
-    if ctx.config.enable_pause_shaders:
-        print(f"Pause effects: ENABLED (profile: {ctx.config.pause_shader_profile})")
-    if ctx.config.enable_gameplay_shaders:
-        print(f"CPU gameplay effects: ENABLED (profile: {ctx.config.gameplay_shader_profile})")
-
-
-def _build_scene_stack() -> SceneStack:
-    """Create and initialize scene stack with TitleScene."""
-    scene_stack = SceneStack()
-    scene_stack.push(TitleScene())
-    return scene_stack
-
-
-def _build_loop_params(target_fps: int = 144) -> tuple[int, float, int]:
-    """Return (FPS, FIXED_DT, MAX_SIMULATION_STEPS).
-    
-    Args:
-        target_fps: Target frame rate. 0 means uncapped.
-    """
-    FPS = target_fps if target_fps > 0 else 0  # 0 = uncapped
-    FIXED_DT = 1.0 / 60.0  # Physics runs at fixed 60Hz regardless of display FPS
-    MAX_SIMULATION_STEPS = 8  # Increased to handle higher frame rates
-    return FPS, FIXED_DT, MAX_SIMULATION_STEPS
-
-
-def _create_app():
-    """Build ctx, game_state, scene_stack and loop invariants. Used by GameApp."""
-    # Check for --safe-mode CLI flag or environment variable
-    safe_mode = "--safe-mode" in sys.argv or os.environ.get("GAME_SAFE_MODE", "").strip() == "1"
-    
-    # Resolve physics backend before any geometry/physics use
-    force_python = "--python-physics" in sys.argv or os.environ.get("USE_PYTHON_PHYSICS", "").strip() == "1"
-    _physics_impl, using_c_physics = resolve_physics(force_python=force_python)
-
-    _init_pygame_and_mixer()
-    screen, clock, width, height = _create_window_and_clock()
-    ctx = _build_app_context(screen, clock, width, height, using_c_physics)
-    
-    # Apply safe mode if requested (disables GPU, CUDA, telemetry)
-    if safe_mode:
-        ctx.config.safe_mode = True
-        apply_safe_mode(ctx.config)
-    
-    # Log startup configuration summary
-    log_startup_config(ctx.config)
-    
-    game_state = _build_initial_game_state(ctx)
-    _setup_initial_resources()
-    _prompt_shader_mode(ctx)
-
-    # Hook telemetry handlers into EventBus
-    register_telemetry_event_handlers(ctx.event_bus, ctx, game_state)
-
-    # Get target FPS from config (default 144)
-    target_fps = getattr(ctx.config, 'target_fps', 144)
-    FPS, FIXED_DT, MAX_SIMULATION_STEPS = _build_loop_params(target_fps)
-    
-    def _update_simulation(sim_dt: float, gs: GameState, app_ctx: AppContext) -> None:
-        """Run one fixed timestep of gameplay (timers, movement, collision, spawn, AI)."""
-        for system in SIMULATION_SYSTEMS:
-            system(gs, sim_dt, app_ctx)
-
-    scene_stack = _build_scene_stack()
-    
-    class _AppRes:
-        pass
-    r = _AppRes()
-    r.ctx = ctx
-    r.game_state = game_state
-    r.scene_stack = scene_stack
-    r.fps = FPS
-    r.fixed_dt = FIXED_DT
-    r.max_sim_steps = MAX_SIMULATION_STEPS
-    r.update_simulation = _update_simulation
-    r.simulation_accumulator = 0.0
-    return r
+from game_init import create_app as _create_app
 
 
 def _print_active_shader_profiles(config) -> None:

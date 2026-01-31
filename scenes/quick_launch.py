@@ -5,6 +5,7 @@ import pygame
 
 from constants import STATE_PLAYING, STATE_TITLE, STATE_QUICK_LAUNCH, STATE_LOAD_GAME, difficulty_options
 from rendering import RenderContext, draw_centered_text
+from rendering.menu_helpers import render_menu_options, handle_menu_navigation
 from scenes.transitions import SceneTransition
 from save_system import load_saves
 
@@ -19,6 +20,7 @@ class QuickLaunchScene:
     def __init__(self):
         self._selected = 1  # Default to NORMAL (index 1)
         self._has_saves = False  # Cache whether saves exist
+        self._option_rects: list[pygame.Rect] = []
 
     def state_id(self) -> str:
         return STATE_QUICK_LAUNCH
@@ -47,50 +49,50 @@ class QuickLaunchScene:
         
         menu_options = self._get_menu_options()
         num_options = len(menu_options)
+        
+        # Use shared navigation handler
+        new_idx, confirmed, clicked_idx = handle_menu_navigation(
+            events, num_options, self._selected, self._option_rects
+        )
+        self._selected = new_idx
 
+        # Handle escape and L key
         for event in events:
             if event.type != pygame.KEYDOWN:
                 continue
-
             if event.key == pygame.K_ESCAPE:
-                # Go back to title screen
                 out["screen"] = STATE_TITLE
                 return out
-            
-            # Quick key: L for Load Game
             if event.key == pygame.K_l and self._has_saves:
                 out["screen"] = STATE_LOAD_GAME
                 return out
 
-            if event.key in (pygame.K_UP, pygame.K_w):
-                self._selected = (self._selected - 1) % num_options
-            elif event.key in (pygame.K_DOWN, pygame.K_s):
-                self._selected = (self._selected + 1) % num_options
-            elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE):
-                selected_option = menu_options[self._selected]
-                
-                # Check if Load Game was selected
-                if selected_option == _LOAD_GAME_OPTION:
-                    out["screen"] = STATE_LOAD_GAME
-                    return out
-                
-                # Otherwise, it's a difficulty - start new game
-                cfg.difficulty = selected_option
-                
-                # Set sensible defaults for quick launch
-                cfg.profile_enabled = False
-                cfg.show_metrics = True
-                cfg.show_hud = True
-                cfg.enable_telemetry = True  # Keep telemetry enabled for analytics
-                
-                # Reset menu section in case they later go to full options
-                game_state.ui.menu_section = 0
-                game_state.ui.endurance_mode_selected = 0  # Normal mode, not endurance
-                
-                # Signal game start
-                out["screen"] = STATE_PLAYING
-                out["start_game"] = True
+        # Handle confirmation (Enter or click)
+        if confirmed or clicked_idx >= 0:
+            selected_idx = clicked_idx if clicked_idx >= 0 else self._selected
+            selected_option = menu_options[selected_idx]
+            
+            if selected_option == _LOAD_GAME_OPTION:
+                out["screen"] = STATE_LOAD_GAME
                 return out
+            
+            # Otherwise, it's a difficulty - start new game
+            cfg.difficulty = selected_option
+            
+            # Set sensible defaults for quick launch
+            cfg.profile_enabled = False
+            cfg.show_metrics = True
+            cfg.show_hud = True
+            cfg.enable_telemetry = True  # Keep telemetry enabled for analytics
+            
+            # Reset menu section in case they later go to full options
+            game_state.ui.menu_section = 0
+            game_state.ui.endurance_mode_selected = 0  # Normal mode, not endurance
+            
+            # Signal game start
+            out["screen"] = STATE_PLAYING
+            out["start_game"] = True
+            return out
 
         return out
 
@@ -122,19 +124,14 @@ class QuickLaunchScene:
         # Title
         draw_centered_text(screen, font, big_font, w, "QUICK LAUNCH", h // 4, use_big=True)
 
-        # Menu options
+        # Menu options using shared helper
         menu_options = self._get_menu_options()
         y = h // 2 - 40
         draw_centered_text(screen, font, big_font, w, "Select Difficulty or Load Game:", y - 60)
-        
-        for i, option in enumerate(menu_options):
-            if i == self._selected:
-                color = (255, 255, 0)
-                prefix = "-> "
-            else:
-                color = (200, 200, 200)
-                prefix = "   "
-            draw_centered_text(screen, font, big_font, w, f"{prefix}{option}", y + i * 45, color)
+        self._option_rects = render_menu_options(
+            screen, font, big_font, w, menu_options,
+            self._selected, y, line_height=45
+        )
 
         # Instructions
         hint = "UP/DOWN: Select | ENTER: Confirm | ESC: Back"
