@@ -475,6 +475,60 @@ def init_schema(conn: sqlite3.Connection) -> None:
         );
     """)
 
+    # Wave summaries for ML training (Dynamic Difficulty Adjustment)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS wave_summaries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            run_id INTEGER NOT NULL,
+            wave_number INTEGER NOT NULL,
+            
+            -- Wave metadata
+            wave_start_t REAL NOT NULL,
+            wave_end_t REAL,
+            wave_duration_sec REAL,
+            
+            -- Difficulty settings applied
+            hp_scale REAL NOT NULL,
+            speed_scale REAL NOT NULL,
+            enemies_spawned INTEGER NOT NULL,
+            
+            -- Player performance metrics (inputs for ML)
+            shots_fired INTEGER NOT NULL DEFAULT 0,
+            shots_hit INTEGER NOT NULL DEFAULT 0,
+            accuracy_pct REAL,
+            damage_dealt INTEGER NOT NULL DEFAULT 0,
+            damage_taken INTEGER NOT NULL DEFAULT 0,
+            deaths_this_wave INTEGER NOT NULL DEFAULT 0,
+            pickups_collected INTEGER NOT NULL DEFAULT 0,
+            abilities_used INTEGER NOT NULL DEFAULT 0,
+            enemies_killed INTEGER NOT NULL DEFAULT 0,
+            
+            -- Weapon-specific tracking
+            rockets_fired INTEGER NOT NULL DEFAULT 0,
+            rockets_hit INTEGER NOT NULL DEFAULT 0,
+            rocket_kills INTEGER NOT NULL DEFAULT 0,
+            grenades_thrown INTEGER NOT NULL DEFAULT 0,
+            grenade_kills INTEGER NOT NULL DEFAULT 0,
+            laser_time REAL NOT NULL DEFAULT 0.0,
+            laser_kills INTEGER NOT NULL DEFAULT 0,
+            
+            -- Player state at wave end
+            player_hp_start INTEGER,
+            player_hp_end INTEGER,
+            player_hp_pct_end REAL,
+            
+            -- Derived metrics
+            kills_per_second REAL,
+            damage_per_second REAL,
+            
+            -- Outcome label for training (survived/died/struggled/dominated)
+            outcome TEXT,
+            
+            FOREIGN KEY(run_id) REFERENCES runs(id) ON DELETE CASCADE,
+            UNIQUE(run_id, wave_number)
+        );
+    """)
+
     conn.commit()
 
     _add_column_if_missing(conn, "runs", "damage_dealt", "damage_dealt INTEGER NOT NULL DEFAULT 0")
@@ -511,6 +565,8 @@ def init_schema(conn: sqlite3.Connection) -> None:
     _create_index_if_missing(conn, "wave_enemy_types", "idx_wave_enemy_types_run_wave", "run_id, wave_number")
     _create_index_if_missing(conn, "wave_enemy_types", "idx_wave_enemy_types_type", "enemy_type")
     _create_index_if_missing(conn, "frame_times", "idx_frame_times_run_t", "run_id, t")
+    _create_index_if_missing(conn, "wave_summaries", "idx_wave_summaries_run_wave", "run_id, wave_number")
+    _create_index_if_missing(conn, "wave_summaries", "idx_wave_summaries_outcome", "outcome")
 
     conn.commit()
     _create_views(conn)

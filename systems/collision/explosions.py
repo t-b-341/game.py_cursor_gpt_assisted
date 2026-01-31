@@ -75,6 +75,7 @@ def handle_grenade_explosion_damage(state: "GameState", dt: float, ctx: dict) ->
                         enemy["rect"].centerx, enemy["rect"].y - 20, damage_val, (255, 200, 100)
                     ))
                     if enemy["hp"] <= 0 and kill:
+                        enemy["killed_by"] = "grenade"  # Tag for DDA tracking
                         kill(enemy, state)
         
         # Damage friendlies if explosion targets player/allies
@@ -199,6 +200,7 @@ def handle_missile_collisions(state: "GameState", ctx: dict) -> None:
                             enemy["rect"].centerx, enemy["rect"].y - 20, dmg, (255, 150, 50)
                         ))
                         if enemy["hp"] <= 0 and kill:
+                            enemy["killed_by"] = "rocket"  # Tag for DDA tracking
                             kill(enemy, state)
             
             # Damage the ally that was directly hit

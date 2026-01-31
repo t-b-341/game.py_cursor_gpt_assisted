@@ -245,3 +245,54 @@ class FrameTimeEvent:
     damage_numbers: int = 0  # Number of floating damage numbers
     friendly_ai: int = 0  # Number of friendly AI units
     wave_number: int = 0  # Current wave (for correlation)
+
+
+@dataclass
+class WaveSummaryEvent:
+    """Per-wave summary for ML training (Dynamic Difficulty Adjustment).
+    
+    Logged at the end of each wave to capture player performance.
+    Used as training data for difficulty prediction models.
+    """
+    wave_number: int
+    wave_start_t: float
+    wave_end_t: float
+    wave_duration_sec: float
+    
+    # Difficulty settings that were applied
+    hp_scale: float
+    speed_scale: float
+    enemies_spawned: int
+    
+    # Player performance metrics
+    shots_fired: int
+    shots_hit: int
+    accuracy_pct: float
+    damage_dealt: int
+    damage_taken: int
+    deaths_this_wave: int
+    pickups_collected: int
+    abilities_used: int
+    enemies_killed: int
+    
+    # Weapon-specific tracking
+    rockets_fired: int = 0
+    rockets_hit: int = 0
+    rocket_kills: int = 0
+    grenades_thrown: int = 0
+    grenade_kills: int = 0
+    laser_time: float = 0.0
+    laser_kills: int = 0
+    
+    # Player state
+    player_hp_start: int = 0
+    player_hp_end: int = 0
+    player_hp_pct_end: float = 0.0
+    
+    # Derived metrics
+    kills_per_second: float = 0.0
+    damage_per_second: float = 0.0
+    
+    # Outcome label: 'dominated' (hp>80%), 'comfortable' (hp 50-80%), 
+    #                'challenged' (hp 20-50%), 'struggled' (hp 1-20%), 'died' (hp=0)
+    outcome: str = "unknown"

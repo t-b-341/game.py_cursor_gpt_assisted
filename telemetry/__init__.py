@@ -25,6 +25,7 @@ from .events import (
     ShotEvent,
     WaveEnemyTypeEvent,
     WaveEvent,
+    WaveSummaryEvent,
     WeaponSwitchEvent,
     ZoneVisitEvent,
 )
@@ -52,6 +53,7 @@ __all__ = [
     "PlayerDeathEvent",
     "WaveEvent",
     "WaveEnemyTypeEvent",
+    "WaveSummaryEvent",
     "EnemyPositionEvent",
     "PlayerVelocityEvent",
     "BulletMetadataEvent",

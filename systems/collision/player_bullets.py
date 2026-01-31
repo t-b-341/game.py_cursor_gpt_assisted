@@ -171,6 +171,7 @@ def _process_bullet_enemy_hit(state: "GameState", ctx: dict, bullet: dict, enemy
             enemy["rect"].centerx, enemy["rect"].y - 20, dmg
         ))
         if enemy["hp"] <= 0:
+            enemy["killed_by"] = "shot"  # Tag for DDA tracking
             kill(enemy, state)
         if bullet.get("penetration", 0) <= 0:
             if bullet in state.player_bullets:
@@ -187,6 +188,7 @@ def _process_bullet_enemy_hit(state: "GameState", ctx: dict, bullet: dict, enemy
         enemy["rect"].centerx, enemy["rect"].y - 20, dmg
     ))
     if enemy["hp"] <= 0:
+        enemy["killed_by"] = "shot"  # Tag for DDA tracking
         kill(enemy, state)
     if bullet.get("penetration", 0) <= 0:
         if bullet in state.player_bullets:

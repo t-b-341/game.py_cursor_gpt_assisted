@@ -31,6 +31,22 @@ if TYPE_CHECKING:
 
 _log = get_logger(__name__)
 
+# DDA integration (optional, lazy-loaded)
+_dda_integration = None
+
+
+def _get_dda():
+    """Lazy-load DDA integration to avoid circular imports."""
+    global _dda_integration
+    if _dda_integration is None:
+        try:
+            from ml.dda_integration import get_dda
+            _dda_integration = get_dda()
+        except ImportError:
+            # ML module not available
+            _dda_integration = False
+    return _dda_integration if _dda_integration is not False else None
+
 
 def update(state: "GameState", dt: float) -> None:
     """Spawn enemies, advance waves, handle spawner minions. Called each gameplay frame."""
@@ -141,6 +157,14 @@ def _start_wave(wave_num: int, state, ctx: dict) -> None:
                 speed_scale=speed_scale,
             )
         )
+    
+    # Track wave start for DDA
+    dda = _get_dda()
+    if dda is not None:
+        try:
+            dda.on_wave_start(state, wave_num, hp_scale, speed_scale, count)
+        except Exception as e:
+            _log.warning(f"DDA wave start failed: {e}")
 
 
 def _spawn_ambient_enemies(state, ctx: dict, wave_num: int, random_spawn, telemetry, telemetry_enabled: bool) -> None:
@@ -239,6 +263,18 @@ def _spawn_regular_wave(
         spawn_mult = ENEMY_SPAWN_MULTIPLIER
     base_count = base_enemies + 2 * (wave_num - 1)
     count = min(int(base_count * diff_mult["enemy_spawn"] * spawn_mult), MAX_ENEMIES_PER_WAVE)
+    
+    # Apply DDA adjustment if available
+    dda_adj = getattr(state, "dda_adjustment", None)
+    if dda_adj:
+        hp_scale *= dda_adj.get("hp_mult", 1.0)
+        speed_scale *= dda_adj.get("speed_mult", 1.0)
+        spawn_dda_mult = dda_adj.get("spawn_mult", 1.0)
+        count = min(int(count * spawn_dda_mult), MAX_ENEMIES_PER_WAVE)
+        _log.debug(f"DDA applied: hp={dda_adj.get('hp_mult', 1.0):.2f}x, "
+                   f"speed={dda_adj.get('speed_mult', 1.0):.2f}x, spawn={spawn_dda_mult:.2f}x")
+        # Clear adjustment after use
+        state.dda_adjustment = None
 
     spawned = []
     enemy_type_counts = {}
@@ -368,6 +404,19 @@ def _update_wave_timers(state, dt: float, ctx: dict) -> None:
     state.time_to_next_wave += dt
     if state.time_to_next_wave < 3.0:
         return
+
+    # Log wave summary for DDA (before incrementing wave number)
+    dda = _get_dda()
+    telemetry = ctx.get("telemetry")
+    if dda is not None:
+        try:
+            adjustment = dda.on_wave_end(state, telemetry)
+            if adjustment:
+                # Store adjustment for next wave (will be applied in _start_wave)
+                state.dda_adjustment = adjustment
+                _log.debug(f"DDA adjustment for next wave: {adjustment}")
+        except Exception as e:
+            _log.warning(f"DDA wave end failed: {e}")
 
     # Perfect wave bonus
     if state.wave_damage_taken == 0 and state.side_quests["no_hit_wave"]["active"]:

@@ -222,6 +222,32 @@ def spawn_player_bullet_and_log(state: GameState, ctx: AppContext):
                 color_b=player_bullets_color[2],
             )
         )
+    
+    # Track shot for DDA (regardless of telemetry setting)
+    _track_dda_shot()
+
+
+# DDA tracking helpers (lazy-loaded)
+_dda_integration = None
+
+
+def _get_dda():
+    """Lazy-load DDA integration."""
+    global _dda_integration
+    if _dda_integration is None:
+        try:
+            from ml.dda_integration import get_dda
+            _dda_integration = get_dda()
+        except ImportError:
+            _dda_integration = False
+    return _dda_integration if _dda_integration is not False else None
+
+
+def _track_dda_shot() -> None:
+    """Track regular shot for DDA."""
+    dda = _get_dda()
+    if dda:
+        dda.on_shot_fired()
 
 
 def spawn_enemy_projectile(enemy: dict, state: GameState, telemetry_client=None, telemetry_enabled: bool = False):

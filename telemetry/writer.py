@@ -32,6 +32,7 @@ from .events import (
     ShotEvent,
     WaveEnemyTypeEvent,
     WaveEvent,
+    WaveSummaryEvent,
     WeaponSwitchEvent,
     ZoneVisitEvent,
 )
@@ -107,6 +108,7 @@ class Telemetry:
         self._wave_enemy_types_buf: list[tuple] = []
         self._run_state_buf: list[tuple] = []
         self._frame_time_buf: list[tuple] = []
+        self._wave_summary_buf: list[tuple] = []
     
     def _start_writer_thread(self) -> None:
         """Start the background writer thread."""
@@ -442,6 +444,47 @@ class Telemetry:
             )
         )
 
+    def log_wave_summary(self, event: WaveSummaryEvent) -> None:
+        """Log wave summary for ML training (Dynamic Difficulty Adjustment)."""
+        if self.run_id is None:
+            return
+        self._wave_summary_buf.append(
+            (
+                self.run_id,
+                int(event.wave_number),
+                float(event.wave_start_t),
+                float(event.wave_end_t) if event.wave_end_t else None,
+                float(event.wave_duration_sec) if event.wave_duration_sec else None,
+                float(event.hp_scale),
+                float(event.speed_scale),
+                int(event.enemies_spawned),
+                int(event.shots_fired),
+                int(event.shots_hit),
+                float(event.accuracy_pct) if event.accuracy_pct else None,
+                int(event.damage_dealt),
+                int(event.damage_taken),
+                int(event.deaths_this_wave),
+                int(event.pickups_collected),
+                int(event.abilities_used),
+                int(event.enemies_killed),
+                # Weapon-specific tracking
+                int(event.rockets_fired),
+                int(event.rockets_hit),
+                int(event.rocket_kills),
+                int(event.grenades_thrown),
+                int(event.grenade_kills),
+                float(event.laser_time),
+                int(event.laser_kills),
+                # Player state
+                int(event.player_hp_start) if event.player_hp_start else None,
+                int(event.player_hp_end) if event.player_hp_end else None,
+                float(event.player_hp_pct_end) if event.player_hp_pct_end else None,
+                float(event.kills_per_second) if event.kills_per_second else None,
+                float(event.damage_per_second) if event.damage_per_second else None,
+                event.outcome,
+            )
+        )
+
     def tick(self, dt: float) -> None:
         self._time_since_flush += float(dt)
         if self._time_since_flush >= self.flush_interval_s:
@@ -615,6 +658,21 @@ class Telemetry:
                 list(self._frame_time_buf),
             ))
             self._frame_time_buf.clear()
+        if self._wave_summary_buf:
+            writes.append((
+                """INSERT OR REPLACE INTO wave_summaries (
+                    run_id, wave_number, wave_start_t, wave_end_t, wave_duration_sec,
+                    hp_scale, speed_scale, enemies_spawned,
+                    shots_fired, shots_hit, accuracy_pct, damage_dealt, damage_taken,
+                    deaths_this_wave, pickups_collected, abilities_used, enemies_killed,
+                    rockets_fired, rockets_hit, rocket_kills,
+                    grenades_thrown, grenade_kills, laser_time, laser_kills,
+                    player_hp_start, player_hp_end, player_hp_pct_end,
+                    kills_per_second, damage_per_second, outcome
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);""",
+                list(self._wave_summary_buf),
+            ))
+            self._wave_summary_buf.clear()
         
         if not writes:
             return

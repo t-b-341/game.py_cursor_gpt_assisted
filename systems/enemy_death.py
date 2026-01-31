@@ -107,6 +107,37 @@ def kill_enemy(
             }))
         except Exception:
             logging.exception("Failed to publish enemy_killed")
+    
+    # Track kill for DDA (pass weapon type if known)
+    _track_dda_kill(enemy)
+
+
+# DDA tracking (lazy-loaded)
+_dda_integration = None
+
+
+def _get_dda():
+    """Lazy-load DDA integration."""
+    global _dda_integration
+    if _dda_integration is None:
+        try:
+            from ml.dda_integration import get_dda
+            _dda_integration = get_dda()
+        except ImportError:
+            _dda_integration = False
+    return _dda_integration if _dda_integration is not False else None
+
+
+def _track_dda_kill(enemy: dict) -> None:
+    """Track enemy kill for DDA, inferring weapon from enemy death context."""
+    dda = _get_dda()
+    if not dda:
+        return
+    
+    # Try to infer weapon from how enemy died
+    # This is a best-effort heuristic since we don't have explicit kill source
+    killed_by = enemy.get("killed_by", "shot")  # Default to shot
+    dda.on_enemy_killed(killed_by)
 
 
 def reset_after_death(state: "GameState", width: int, height: int) -> None:

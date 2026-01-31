@@ -36,6 +36,43 @@ def _log_weapon_switch(game_state, ctx: dict, weapon_mode: str) -> None:
         ))
 
 
+# DDA tracking helpers (lazy-loaded to avoid circular imports)
+_dda_integration = None
+
+
+def _get_dda():
+    """Lazy-load DDA integration."""
+    global _dda_integration
+    if _dda_integration is None:
+        try:
+            from ml.dda_integration import get_dda
+            _dda_integration = get_dda()
+        except ImportError:
+            _dda_integration = False
+    return _dda_integration if _dda_integration is not False else None
+
+
+def _track_dda_rocket() -> None:
+    """Track rocket fired for DDA."""
+    dda = _get_dda()
+    if dda:
+        dda.on_rocket_fired()
+
+
+def _track_dda_grenade() -> None:
+    """Track grenade thrown for DDA."""
+    dda = _get_dda()
+    if dda:
+        dda.on_grenade_thrown()
+
+
+def _track_dda_shot() -> None:
+    """Track regular shot fired for DDA."""
+    dda = _get_dda()
+    if dda:
+        dda.on_shot_fired()
+
+
 def _add_particle_effect(player_rect, camera, ctx, effect_type: str) -> None:
     """Add a particle effect at the player's position.
     
@@ -162,6 +199,8 @@ def handle_gameplay_input(events, game_state, ctx) -> None:
                     play_sfx("GRENADE")
                     # Add bomb particle effect
                     _add_particle_effect(player, camera, ctx, "bomb")
+                    # Track for DDA
+                    _track_dda_grenade()
 
             if event.key == pygame.K_r and player:
                 if game_state.missile_time_since_used >= missile_cooldown_val:
@@ -184,6 +223,8 @@ def handle_gameplay_input(events, game_state, ctx) -> None:
                         play_sfx("ROCKET")
                         # Add rocket particle effect
                         _add_particle_effect(player, camera, ctx, "rocket")
+                        # Track for DDA
+                        _track_dda_rocket()
 
             if event.key == controls.get("ally_drop", pygame.K_q) and player:
                 # Only use ability if cooldown is ready - otherwise ignore the keypress
