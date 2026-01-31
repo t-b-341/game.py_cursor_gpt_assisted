@@ -14,7 +14,8 @@ from typing import TYPE_CHECKING
 import pygame
 
 from ..collision_common import set_enemy_damage_flash
-from ..spatial_grid import get_enemy_grid, get_block_grid, SpatialGrid, invalidate_block_grid
+from ..spatial_grid import invalidate_block_grid
+from .helpers import create_damage_number, build_enemy_grid, build_block_grid
 
 if TYPE_CHECKING:
     from state import GameState
@@ -25,50 +26,6 @@ try:
 except Exception:
     _USE_GPU_COLLISION = False
     check_collisions_batch = None
-
-
-def _create_damage_number(x, y, damage, color=(255, 255, 100), timer=2.0):
-    """Create a damage number dict for display."""
-    return {"x": x, "y": y, "damage": int(damage), "timer": timer, "color": color}
-
-
-def _build_enemy_grid(state: "GameState", ctx: dict) -> SpatialGrid:
-    """Build spatial grid containing all enemies."""
-    width: int = ctx.get("width", 1920)
-    height: int = ctx.get("height", 1080)
-    frame_id: int = ctx.get("frame_id", -1)
-    grid = get_enemy_grid(width, height, frame_id=frame_id)
-    if len(grid._obj_cells) == 0 and state.enemies:
-        grid.insert_all(state.enemies)
-    return grid
-
-
-def _build_block_grid(state: "GameState", ctx: dict) -> SpatialGrid:
-    """Build spatial grid containing all collidable blocks."""
-    cached = ctx.get("_block_grid")
-    if cached is not None:
-        return cached
-    
-    lev = getattr(state, "level", None)
-    if lev is None:
-        return SpatialGrid(1920, 1080, 64)
-    
-    all_blocks = []
-    for block in getattr(lev, "destructible_blocks", []):
-        if block.get("is_destructible"):
-            all_blocks.append(block)
-    for block in getattr(lev, "moveable_blocks", []):
-        if block.get("is_destructible"):
-            all_blocks.append(block)
-    
-    width: int = ctx.get("width", 1920)
-    height: int = ctx.get("height", 1080)
-    grid = get_block_grid(width, height)
-    if all_blocks:
-        grid.insert_all(all_blocks)
-    
-    ctx["_block_grid"] = grid
-    return grid
 
 
 def handle_dead_enemies(state: "GameState", ctx: dict) -> None:
@@ -167,7 +124,7 @@ def _process_bullet_enemy_hit(state: "GameState", ctx: dict, bullet: dict, enemy
         dmg = bullet.get("damage", player_damage)
         enemy["hp"] -= dmg
         set_enemy_damage_flash(enemy, ctx)
-        state.damage_numbers.append(_create_damage_number(
+        state.damage_numbers.append(create_damage_number(
             enemy["rect"].centerx, enemy["rect"].y - 20, dmg
         ))
         if enemy["hp"] <= 0:
@@ -184,7 +141,7 @@ def _process_bullet_enemy_hit(state: "GameState", ctx: dict, bullet: dict, enemy
     dmg = bullet.get("damage", player_damage)
     enemy["hp"] -= dmg
     set_enemy_damage_flash(enemy, ctx)
-    state.damage_numbers.append(_create_damage_number(
+    state.damage_numbers.append(create_damage_number(
         enemy["rect"].centerx, enemy["rect"].y - 20, dmg
     ))
     if enemy["hp"] <= 0:
@@ -209,7 +166,7 @@ def handle_player_bullet_enemy_collisions(state: "GameState", ctx: dict) -> None
         return
     
     # Build enemy grid (uses frame caching for efficiency)
-    enemy_grid = _build_enemy_grid(state, ctx)
+    enemy_grid = build_enemy_grid(state, ctx)
     
     bullets_processed = set()
     
@@ -245,7 +202,7 @@ def handle_player_bullet_block_collisions(state: "GameState", dt: float, ctx: di
     if not state.player_bullets:
         return
     
-    block_grid = _build_block_grid(state, ctx)
+    block_grid = build_block_grid(state, ctx)
     bullets_to_remove = set()
     d_blocks_to_remove = set()
     m_blocks_to_remove = set()

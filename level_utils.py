@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 import pygame
 
-from config_enemies import ENEMY_TEMPLATES
+from config.enemy_defs import ENEMY_TEMPLATES
 from enemies import make_enemy_from_template
 
 if TYPE_CHECKING:
@@ -73,7 +73,7 @@ def make_level_context(ctx: "AppContext", game_state: "GameState") -> dict:
     Returns:
         Dict with all level context callables and data
     """
-    from constants import (
+    from config.balance import (
         overshield_recharge_cooldown,
         ally_drop_cooldown,
         ENEMY_PROJECTILE_SIZE,

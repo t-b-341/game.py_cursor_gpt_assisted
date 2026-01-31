@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 import pygame
 
-from constants import MAX_ENEMIES_TARGETING_PLAYER
+from config.balance import MAX_ENEMIES_TARGETING_PLAYER
 from enemies import find_nearest_threat, find_threats_in_dodge_range
 from physics_loader import distance_squared as c_distance_squared
 

@@ -35,7 +35,7 @@ def make_friendly_from_template(t: dict, hp_scale: float, speed_scale: float) ->
         "projectile_speed": t["projectile_speed"],
         "projectile_color": t["projectile_color"],
         "projectile_shape": t["projectile_shape"],
-        "speed": t["speed"] * speed_scale * 2.2,  # 2x movement speed (was 1.1)
+        "speed": t["speed"] * speed_scale * 3.0,  # 3x movement speed for responsive following
         "behavior": t["behavior"],
         "damage": int(t["damage"] * 1.1),  # 110% damage
         "target": None,  # Current target enemy
@@ -184,23 +184,40 @@ def update_friendly_ai(
         target = find_nearest_enemy_func(pygame.Vector2(friendly["rect"].center), enemies)
         move_toward_x, move_toward_y = None, None
 
-        # Follow player around map: move toward player (or command target); only use enemy for shooting
+        # Follow player around map: ALWAYS follow player (or command target); only use enemy for shooting
         is_commanded = ally_cmd is not None and ally_cmd_time > 0
         if is_commanded:
             move_toward_x, move_toward_y = ally_cmd[0], ally_cmd[1]
         elif player_rect is not None:
             move_toward_x = player_rect.centerx
             move_toward_y = player_rect.centery
+        else:
+            move_toward_x, move_toward_y = None, None
 
         if move_toward_x is not None and move_toward_y is not None:
-            direction = vec_toward_func(
-                friendly["rect"].centerx, friendly["rect"].centery,
-                move_toward_x, move_toward_y
-            )
-            friendly_speed = friendly.get("speed", 100) * dt
-            move_x = int(direction.x * friendly_speed)
-            move_y = int(direction.y * friendly_speed)
-            move_enemy_with_push_func(friendly["rect"], move_x, move_y, blocks)
+            # Calculate distance to target
+            dx = move_toward_x - friendly["rect"].centerx
+            dy = move_toward_y - friendly["rect"].centery
+            dist_sq = dx * dx + dy * dy
+            
+            # Always move toward player/target - never stay stationary
+            # Only stop moving if within 30 pixels of target (but keep following if target moves)
+            min_follow_dist = 30
+            if dist_sq > min_follow_dist * min_follow_dist:
+                direction = vec_toward_func(
+                    friendly["rect"].centerx, friendly["rect"].centery,
+                    move_toward_x, move_toward_y
+                )
+                friendly_speed = friendly.get("speed", 100) * dt
+                # Ensure minimum movement of 1 pixel to prevent appearing stuck
+                move_x = int(direction.x * friendly_speed)
+                move_y = int(direction.y * friendly_speed)
+                # If speed is too low, ensure at least 1 pixel movement in the right direction
+                if move_x == 0 and abs(direction.x) > 0.1:
+                    move_x = 1 if direction.x > 0 else -1
+                if move_y == 0 and abs(direction.y) > 0.1:
+                    move_y = 1 if direction.y > 0 else -1
+                move_enemy_with_push_func(friendly["rect"], move_x, move_y, blocks)
 
         # When commanded (right-click), check for collision/proximity with enemies and explode
         if is_commanded and state is not None and player_rect is not None:

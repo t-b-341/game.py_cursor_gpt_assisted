@@ -1,7 +1,7 @@
 """Telemetry logging integration during gameplay. Per-frame sampling and flush tick."""
 from __future__ import annotations
 
-from constants import POS_SAMPLE_INTERVAL
+from config.balance import POS_SAMPLE_INTERVAL
 from context import AppContext
 from telemetry import PlayerPosEvent, FrameTimeEvent
 from state import GameState

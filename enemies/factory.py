@@ -5,14 +5,14 @@ import random
 import pygame
 
 from entities import Enemy
-from config_enemies import (
+from config.enemy_defs import (
     ENEMY_HP_SCALE_MULTIPLIER,
     ENEMY_SPEED_SCALE_MULTIPLIER,
     ENEMY_FIRE_RATE_MULTIPLIER,
     ENEMY_HP_CAP,
     QUEEN_FIXED_HP,
 )
-from constants import ENEMY_COLOR, ENEMY_PROJECTILES_COLOR
+from config.balance import ENEMY_COLOR, ENEMY_PROJECTILES_COLOR
 from telemetry import EnemySpawnEvent
 
 

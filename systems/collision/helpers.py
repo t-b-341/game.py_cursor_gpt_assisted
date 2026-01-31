@@ -113,3 +113,7 @@ def build_block_grid(state: "GameState", ctx: dict) -> SpatialGrid:
             grid.insert(tr, br)
     
     return grid
+
+
+# Alias for backward compatibility with code that used the cached version name
+build_block_grid_cached = build_block_grid

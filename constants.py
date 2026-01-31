@@ -135,60 +135,15 @@ weapon_selection_options = ["laser", "triple", "giant", "basic"]
 
 # Note: WEAPON_KEY_MAP uses pygame constants and must remain in game.py
 
-# Balance/tuning: re-export from config.balance (single source of truth)
-from config.balance import (
-    # Player base stats
-    PLAYER_BASE_SPEED,
-    PLAYER_BASE_MAX_HP,
-    MISSILE_BASE_SPEED,
-    MISSILE_EXPLOSION_RADIUS,
-    # Game config
-    LIVES_START,
-    SCORE_BASE_POINTS,
-    SCORE_TIME_MULTIPLIER,
-    SCORE_WAVE_MULTIPLIER,
-    ENEMY_COLOR,
-    ENEMY_PROJECTILE_DAMAGE,
-    ENEMY_PROJECTILE_SIZE,
-    ENEMY_PROJECTILES_COLOR,
-    MAX_ENEMIES_TARGETING_PLAYER,
-    PICKUP_BONUS_POINTS,
-    PICKUP_LIFETIME,
-    PICKUP_SPAWN_INTERVAL,
-    POS_SAMPLE_INTERVAL,
-    UNLOCKED_WEAPON_DAMAGE_MULT,
-    ALLY_AGGRO_RADIUS,
-    ALLY_AGGRO_PRIORITY,
-    DROPPED_ALLY_AGGRO_RADIUS,
-    DROPPED_ALLY_AGGRO_PRIORITY,
-    ally_drop_cooldown,
-    boost_drain_per_s,
-    boost_meter_max,
-    boost_regen_per_s,
-    boost_speed_mult,
-    fire_rate_buff_duration,
-    fire_rate_mult,
-    grenade_cooldown,
-    grenade_damage,
-    jump_cooldown,
-    jump_duration,
-    jump_speed,
-    laser_cooldown,
-    laser_damage,
-    laser_length,
-    missile_cooldown,
-    missile_damage,
-    rocket_cooldown,
-    rocket_damage,
-    overshield_max,
-    overshield_recharge_cooldown,
-    player_bullet_damage,
-    player_bullet_shapes,
-    player_bullet_size,
-    player_bullet_speed,
-    player_bullets_color,
-    player_shoot_cooldown,
-    shield_duration,
-    shield_recharge_cooldown,
-    slow_speed_mult,
-)
+# ----------------------------
+# Balance/tuning values
+# ----------------------------
+# IMPORTANT: Balance and tuning values are now in config.balance (the canonical source).
+# Import directly from config.balance for:
+# - Player stats: PLAYER_BASE_SPEED, PLAYER_BASE_MAX_HP, player_bullet_*, boost_*, etc.
+# - Enemy stats: ENEMY_COLOR, ENEMY_PROJECTILE_*, MAX_ENEMIES_TARGETING_PLAYER
+# - Cooldowns: laser_cooldown, grenade_cooldown, missile_cooldown, etc.
+# - Pickups: PICKUP_BONUS_POINTS, PICKUP_LIFETIME, PICKUP_SPAWN_INTERVAL
+# - Allies: ALLY_AGGRO_*, DROPPED_ALLY_AGGRO_*, ally_drop_cooldown
+#
+# Example: from config.balance import PLAYER_BASE_SPEED, boost_meter_max

@@ -4,13 +4,11 @@ import random
 
 import pygame
 
-from constants import (
+from config.balance import (
     ALLY_AGGRO_RADIUS,
     ALLY_AGGRO_PRIORITY,
     DROPPED_ALLY_AGGRO_RADIUS,
     DROPPED_ALLY_AGGRO_PRIORITY,
-)
-from config.balance import (
     DECOY_AGGRO_RADIUS,
     DECOY_AGGRO_PRIORITY,
 )

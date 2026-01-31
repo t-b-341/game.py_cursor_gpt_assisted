@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 import pygame
 
-from config_weapons import WEAPON_DISPLAY_COLORS
+from config.projectile_defs import WEAPON_DISPLAY_COLORS
 
 if TYPE_CHECKING:
     from state import GameState

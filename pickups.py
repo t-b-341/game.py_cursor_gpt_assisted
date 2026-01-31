@@ -11,14 +11,14 @@ if TYPE_CHECKING:
     from state import GameState
     from context import AppContext
 
-from constants import (
+from config.balance import (
     boost_meter_max,
     jump_cooldown,
     fire_rate_buff_duration,
     ally_drop_cooldown,
     PICKUP_BONUS_POINTS,
 )
-from config_weapons import WEAPON_NAMES, WEAPON_DISPLAY_COLORS
+from config.projectile_defs import WEAPON_NAMES, WEAPON_DISPLAY_COLORS
 from telemetry import PlayerActionEvent
 
 

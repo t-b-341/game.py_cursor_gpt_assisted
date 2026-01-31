@@ -3,7 +3,7 @@ import unittest
 import pygame
 
 from enemies import make_enemy_from_template
-from config_enemies import ENEMY_TEMPLATES
+from config.enemy_defs import ENEMY_TEMPLATES
 
 
 class TestSpawnFromTemplates(unittest.TestCase):

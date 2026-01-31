@@ -314,7 +314,7 @@ ENEMY_SPAWN_MULTIPLIER = 3.5  # Multiplier applied to base count (increased from
 # ----------------------------
 # These multipliers are applied when creating enemies from templates
 ENEMY_HP_SCALE_MULTIPLIER = 1.1  # 110% health multiplier
-ENEMY_SPEED_SCALE_MULTIPLIER = 1.1  # 110% speed multiplier
+ENEMY_SPEED_SCALE_MULTIPLIER = 2.2  # 220% speed multiplier (doubled from 1.1)
 ENEMY_FIRE_RATE_MULTIPLIER = 7.5  # 5x fire rate (cooldown / 5; was 1.5 for 150%)
 ENEMY_HP_CAP = 300  # Maximum HP for non-queen enemies
 

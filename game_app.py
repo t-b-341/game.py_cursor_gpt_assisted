@@ -101,7 +101,7 @@ class GameApp:
             def _try_spawn_bullet():
                 if not getattr(self.game_state, "fire_pressed", False):
                     return
-                from constants import fire_rate_mult, fire_rate_buff_duration
+                from config.balance import fire_rate_mult, fire_rate_buff_duration
                 eff = self.game_state.player_shoot_cooldown * (
                     fire_rate_mult if self.game_state.fire_rate_buff_t < fire_rate_buff_duration else 1.0
                 )
@@ -110,7 +110,8 @@ class GameApp:
                     self.game_state.player_time_since_shot = 0.0
 
             def _try_laser():
-                from constants import laser_cooldown, AIM_ARROWS, laser_length, laser_damage, UNLOCKED_WEAPON_DAMAGE_MULT
+                from config.balance import laser_cooldown, laser_length, laser_damage, UNLOCKED_WEAPON_DAMAGE_MULT
+                from constants import AIM_ARROWS
                 from geometry_utils import vec_toward
                 if self.game_state.current_weapon_mode != "laser" or self.game_state.laser_time_since_shot < laser_cooldown:
                     return
@@ -149,7 +150,7 @@ class GameApp:
             # Note: handle_gameplay_input will call _try_spawn_bullet and _try_laser via callbacks
             events = self._current_events
             from systems.input_system import handle_gameplay_input
-            from constants import (
+            from config.balance import (
                 overshield_recharge_cooldown, shield_duration, grenade_cooldown,
                 missile_cooldown, ally_drop_cooldown, boost_meter_max,
                 boost_drain_per_s, boost_regen_per_s, boost_speed_mult, slow_speed_mult

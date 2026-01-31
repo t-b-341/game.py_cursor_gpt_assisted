@@ -25,15 +25,13 @@ from config.balance import (
     DECOY_HP,
     DECOY_MAX_COUNT,
 )
-from config_weapons import WEAPON_CONFIGS
+from config.projectile_defs import WEAPON_CONFIGS
 
 # Aliases for compatibility with original code style
 enemy_projectile_size = ENEMY_PROJECTILE_SIZE
 enemy_projectiles_color = ENEMY_PROJECTILES_COLOR
-from constants import (
-    AIM_ARROWS,
-    UNLOCKED_WEAPON_DAMAGE_MULT,
-)
+from config.balance import UNLOCKED_WEAPON_DAMAGE_MULT
+from constants import AIM_ARROWS
 from enemies import find_nearest_threat
 from geometry_utils import vec_toward
 from systems.audio_system import play_sfx

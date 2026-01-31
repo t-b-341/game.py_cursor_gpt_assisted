@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 import pygame
 
-from config_weapons import WEAPON_UNLOCK_ORDER
+from config.projectile_defs import WEAPON_UNLOCK_ORDER
 from event_bus import GameEvent
 from game_utils import calculate_kill_score
 from systems.audio_system import play_sfx

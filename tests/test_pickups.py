@@ -23,7 +23,7 @@ from pickups import (
     _apply_spawn_boost_pickup,
     _apply_bonus_pickup,
 )
-from constants import boost_meter_max, jump_cooldown, PICKUP_BONUS_POINTS
+from config.balance import boost_meter_max, jump_cooldown, PICKUP_BONUS_POINTS
 
 
 @dataclass

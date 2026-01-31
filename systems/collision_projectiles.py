@@ -31,71 +31,14 @@ except Exception:
     check_collisions_batch = None
 
 
-# Local helper functions (also available in .collision.helpers for external use)
-def _create_damage_number(x, y, damage, color=(255, 255, 100), timer=2.0):
-    """Create a damage number dict for display."""
-    return {"x": x, "y": y, "damage": int(damage), "timer": timer, "color": color}
-
-
-def _bulk_remove(items: list, ids_to_remove: set) -> None:
-    """Remove items from list by id set (O(n) filtering)."""
-    if ids_to_remove:
-        items[:] = [item for item in items if id(item) not in ids_to_remove]
-
-
-def _build_enemy_grid(state: "GameState", ctx: dict) -> SpatialGrid:
-    """Build spatial grid containing all enemies."""
-    width: int = ctx.get("width", 1920)
-    height: int = ctx.get("height", 1080)
-    frame_id: int = ctx.get("frame_id", -1)
-    grid = get_enemy_grid(width, height, frame_id=frame_id)
-    if len(grid._obj_cells) == 0 and state.enemies:
-        grid.insert_all(state.enemies)
-    return grid
-
-
-def _build_block_grid(state: "GameState", ctx: dict) -> SpatialGrid:
-    """Build spatial grid containing all collidable blocks."""
-    cached = ctx.get("_block_grid")
-    if cached is not None:
-        return cached
-    return build_block_grid_cached(state, ctx)
-
-
-def build_block_grid_cached(state, ctx: dict) -> SpatialGrid:
-    """Build spatial grid containing all collidable blocks."""
-    width = ctx.get("width", 1920)
-    height = ctx.get("height", 1080)
-    frame_id = ctx.get("frame_id", -1)
-    
-    lev = getattr(state, "level", None)
-    if lev is None:
-        return get_block_grid(width, height, frame_id=frame_id)
-    
-    grid = get_block_grid(width, height, frame_id=frame_id)
-    
-    if len(grid._obj_cells) > 0:
-        return grid
-    
-    for block in lev.destructible_blocks:
-        if block.get("rect"):
-            grid.insert(block, block["rect"])
-    for block in lev.moveable_blocks:
-        if block.get("rect"):
-            grid.insert(block, block["rect"])
-    for block in lev.giant_blocks + lev.super_giant_blocks:
-        if block.get("rect"):
-            grid.insert(block, block["rect"])
-    for tb in lev.trapezoid_blocks:
-        br = tb.get("bounding_rect", tb.get("rect"))
-        if br:
-            grid.insert(tb, br)
-    for tr in lev.triangle_blocks:
-        br = tr.get("bounding_rect", tr.get("rect"))
-        if br:
-            grid.insert(tr, br)
-    
-    return grid
+# Import shared helpers from collision.helpers
+from .collision.helpers import (
+    create_damage_number as _create_damage_number,
+    bulk_remove as _bulk_remove,
+    build_enemy_grid as _build_enemy_grid,
+    build_block_grid as _build_block_grid,
+    build_block_grid_cached,
+)
 
 
 # =============================================================================

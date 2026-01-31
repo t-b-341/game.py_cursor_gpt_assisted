@@ -4,7 +4,7 @@ import pygame
 
 from enemies import find_nearest_threat, make_enemy_from_template
 from geometry_utils import clamp_rect_to_screen
-from config_enemies import ENEMY_TEMPLATES
+from config.enemy_defs import ENEMY_TEMPLATES
 
 
 class TestClampRectToScreen(unittest.TestCase):

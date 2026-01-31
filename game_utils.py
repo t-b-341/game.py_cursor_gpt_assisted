@@ -8,8 +8,8 @@ import math
 import sqlite3
 from datetime import datetime, timezone
 
-from constants import (
-    HIGH_SCORES_DB,
+from constants import HIGH_SCORES_DB
+from config.balance import (
     PICKUP_LIFETIME,
     SCORE_BASE_POINTS,
     SCORE_TIME_MULTIPLIER,

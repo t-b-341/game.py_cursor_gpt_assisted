@@ -191,8 +191,8 @@ def build_gameplay_ctx(
     Returns:
         Dict with all gameplay rendering context
     """
-    from config_weapons import WEAPON_NAMES
-    from constants import (
+    from config.projectile_defs import WEAPON_NAMES
+    from config.balance import (
         grenade_cooldown,
         missile_cooldown,
         ally_drop_cooldown,

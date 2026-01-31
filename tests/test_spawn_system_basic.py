@@ -8,7 +8,7 @@ import random
 import pygame
 import pytest
 
-from config_enemies import MAX_ENEMIES_PER_WAVE
+from config.enemy_defs import MAX_ENEMIES_PER_WAVE
 from state import GameState
 from systems.spawn_system import start_wave, update as spawn_update
 

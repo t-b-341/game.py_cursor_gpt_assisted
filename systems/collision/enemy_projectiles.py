@@ -10,38 +10,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ..spatial_grid import get_block_grid, SpatialGrid, invalidate_block_grid
+from ..spatial_grid import invalidate_block_grid
+from .helpers import build_block_grid
 
 if TYPE_CHECKING:
     from state import GameState
-
-
-def _build_block_grid(state: "GameState", ctx: dict) -> SpatialGrid:
-    """Build spatial grid containing all collidable blocks."""
-    cached = ctx.get("_block_grid")
-    if cached is not None:
-        return cached
-    
-    lev = getattr(state, "level", None)
-    if lev is None:
-        return SpatialGrid(1920, 1080, 64)
-    
-    all_blocks = []
-    for block in getattr(lev, "destructible_blocks", []):
-        if block.get("is_destructible"):
-            all_blocks.append(block)
-    for block in getattr(lev, "moveable_blocks", []):
-        if block.get("is_destructible"):
-            all_blocks.append(block)
-    
-    width: int = ctx.get("width", 1920)
-    height: int = ctx.get("height", 1080)
-    grid = get_block_grid(width, height)
-    if all_blocks:
-        grid.insert_all(all_blocks)
-    
-    ctx["_block_grid"] = grid
-    return grid
 
 
 def handle_enemy_projectile_lifetime_offscreen(state: "GameState", ctx: dict) -> None:
@@ -72,7 +45,7 @@ def handle_enemy_projectile_block_collisions(state: "GameState", ctx: dict) -> N
     if not state.enemy_projectiles:
         return
     
-    block_grid = _build_block_grid(state, ctx)
+    block_grid = build_block_grid(state, ctx)
     projs_to_remove = set()
     d_blocks_to_remove = set()
     m_blocks_to_remove = set()

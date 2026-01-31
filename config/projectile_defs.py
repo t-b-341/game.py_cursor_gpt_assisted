@@ -101,7 +101,7 @@ def get_projectile_def(type_id: str) -> Optional[dict[str, Any]]:
 
 
 def _build_player_def(weapon_key: str) -> dict[str, Any]:
-    from constants import (
+    from config.balance import (
         player_bullet_damage,
         player_bullet_size,
         player_bullet_speed,
@@ -130,7 +130,7 @@ def _build_player_def(weapon_key: str) -> dict[str, Any]:
 
 
 def _build_enemy_default() -> dict[str, Any]:
-    from constants import (
+    from config.balance import (
         ENEMY_PROJECTILE_DAMAGE,
         ENEMY_PROJECTILES_COLOR,
         ENEMY_PROJECTILE_SIZE,

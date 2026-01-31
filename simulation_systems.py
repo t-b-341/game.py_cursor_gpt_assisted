@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import pygame
 
-from constants import jump_duration
+from config.balance import jump_duration
 from context import AppContext
 from game_utils import update_pickup_effects
 from hazards import update_hazard_obstacles

@@ -10,6 +10,8 @@ from constants import (
     MOUSE_BUTTON_RIGHT,
     STATE_ENDURANCE,
     STATE_PLAYING,
+)
+from config.balance import (
     ally_drop_cooldown,
     grenade_cooldown,
     grenade_damage,
@@ -21,7 +23,7 @@ from constants import (
     overshield_recharge_cooldown,
     shield_duration,
 )
-from config_enemies import FRIENDLY_AI_TEMPLATES
+from config.enemy_defs import FRIENDLY_AI_TEMPLATES
 from allies import make_friendly_from_template
 from telemetry import WeaponSwitchEvent
 

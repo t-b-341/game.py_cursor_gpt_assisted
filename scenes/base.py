@@ -270,6 +270,60 @@ class BaseMenuScene(BaseScene):
     def on_enter(self, game_state: Any, ctx: dict) -> None:
         """Reset selection when entering menu."""
         self._selected_index = 0
+    
+    # --- Common input helpers for scenes that need more control ---
+    
+    def handle_keyboard_navigation(self, events: list) -> tuple[int, bool]:
+        """Handle keyboard navigation (up/down/enter).
+        
+        Returns:
+            (delta, confirmed): delta is -1/0/+1 for selection change, 
+                               confirmed is True if enter was pressed
+        """
+        import pygame
+        delta = 0
+        confirmed = False
+        for event in events:
+            if event.type == pygame.KEYDOWN:
+                if event.key in (pygame.K_UP, pygame.K_w):
+                    delta = -1
+                elif event.key in (pygame.K_DOWN, pygame.K_s):
+                    delta = 1
+                elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                    confirmed = True
+        return delta, confirmed
+    
+    def handle_escape(self, events: list) -> bool:
+        """Check if escape was pressed.
+        
+        Returns:
+            True if ESC was pressed
+        """
+        import pygame
+        for event in events:
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                return True
+        return False
+    
+    def handle_number_keys(self, events: list, max_option: int) -> Optional[int]:
+        """Check for number key shortcuts (1-9).
+        
+        Args:
+            events: Event list
+            max_option: Maximum valid option (1-indexed)
+            
+        Returns:
+            Option index (0-indexed) if a valid number key was pressed, else None
+        """
+        import pygame
+        for event in events:
+            if event.type == pygame.KEYDOWN:
+                # Check 1-9 keys
+                if pygame.K_1 <= event.key <= pygame.K_9:
+                    option = event.key - pygame.K_1  # Convert to 0-indexed
+                    if option < max_option:
+                        return option
+        return None
 
 
 class SceneStack:

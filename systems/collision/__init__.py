@@ -28,6 +28,7 @@ from .helpers import (
     bulk_remove,
     build_enemy_grid,
     build_block_grid,
+    build_block_grid_cached,
 )
 
 # Re-export from split modules
@@ -59,8 +60,7 @@ from .explosions import (
     handle_missile_collisions,
 )
 
-# Re-export build_block_grid_cached from original module for backward compatibility
-from ..collision_projectiles import build_block_grid_cached
+# build_block_grid_cached is now re-exported from helpers above
 
 __all__ = [
     # Helpers
