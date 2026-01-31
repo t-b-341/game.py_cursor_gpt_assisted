@@ -171,6 +171,22 @@ class TitleScene:
         game_state.ui.title_confirm_quit = False
         # Reset ambient timer
         self._ambient_timer = random.uniform(AMBIENT_SOUND_MIN_INTERVAL, AMBIENT_SOUND_MAX_INTERVAL)
+        
+        # Start preloading assets in background while player is on title screen
+        self._start_asset_preload()
 
     def on_exit(self, game_state, ctx: dict) -> None:
         pass
+    
+    def _start_asset_preload(self) -> None:
+        """Start preloading game assets in background threads."""
+        try:
+            from asset_manager import preload_all_sfx, preload_all_images
+            
+            # Preload all sound effects (most impactful for first-wave stutter)
+            preload_all_sfx()
+            
+            # Preload all images
+            preload_all_images()
+        except Exception as e:
+            print(f"[Title] Asset preload failed: {e}")

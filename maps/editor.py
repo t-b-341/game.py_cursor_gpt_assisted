@@ -18,6 +18,7 @@ PALETTE_WIDTH = 200
 PALETTE_TILE_SIZE = 48
 PALETTE_PADDING = 8
 MAX_UNDO_HISTORY = 100  # Maximum number of undo steps
+AUTOSAVE_INTERVAL = 60.0  # Autosave every 60 seconds
 
 
 @dataclass
@@ -96,6 +97,11 @@ class MapEditor:
         # Name input mode
         self._naming_mode: bool = False
         self._name_input: str = ""
+        
+        # Autosave state
+        self._autosave_timer: float = AUTOSAVE_INTERVAL
+        self._has_unsaved_changes: bool = False
+        self._last_autosave_action_count: int = 0
         
         # Resize mode
         self._resize_mode: bool = False
@@ -331,12 +337,41 @@ class MapEditor:
         self._set_status(f"Theme: {theme}")
     
     def _save_map(self) -> None:
-        """Save the current map."""
+        """Save the current map (background thread for large maps)."""
+        import threading
+        
         filename = self.map_grid.name
-        if save_map(self.map_grid, filename):
-            self._set_status(f"Saved: {filename}.json")
+        # Create a copy of the data to avoid race conditions
+        map_data = self.map_grid.to_dict()
+        
+        def save_task():
+            try:
+                from .map_saver import get_maps_data_dir
+                import json
+                
+                data_dir = get_maps_data_dir()
+                filepath = data_dir / f"{filename}.json"
+                
+                with open(filepath, "w", encoding="utf-8") as f:
+                    json.dump(map_data, f, indent=2)
+                
+                # Update status (safe from thread since it's just setting a string)
+                self._set_status(f"Saved: {filename}.json")
+            except Exception as e:
+                self._set_status(f"Error saving: {e}")
+        
+        # For small maps, save synchronously for immediate feedback
+        # For larger maps (>500 tiles), use background thread
+        if self.map_grid.width * self.map_grid.height > 500:
+            self._set_status(f"Saving {filename}...")
+            thread = threading.Thread(target=save_task, daemon=True)
+            thread.start()
         else:
-            self._set_status("Error saving map!")
+            # Synchronous for small maps
+            if save_map(self.map_grid, filename):
+                self._set_status(f"Saved: {filename}.json")
+            else:
+                self._set_status("Error saving map!")
     
     def _set_status(self, message: str) -> None:
         """Set a status message."""
@@ -827,6 +862,48 @@ class MapEditor:
         # Update status timer
         if self.status_timer > 0:
             self.status_timer -= dt
+        
+        # Autosave check
+        self._update_autosave(dt)
+    
+    def _update_autosave(self, dt: float) -> None:
+        """Check and perform autosave if needed."""
+        self._autosave_timer -= dt
+        
+        if self._autosave_timer <= 0:
+            self._autosave_timer = AUTOSAVE_INTERVAL
+            
+            # Check if there are unsaved changes (new actions since last autosave)
+            current_action_count = len(self._undo_stack)
+            if current_action_count > self._last_autosave_action_count:
+                self._perform_autosave()
+                self._last_autosave_action_count = current_action_count
+    
+    def _perform_autosave(self) -> None:
+        """Perform background autosave."""
+        import threading
+        
+        filename = self.map_grid.name
+        map_data = self.map_grid.to_dict()
+        
+        def autosave_task():
+            try:
+                from .map_saver import get_maps_data_dir
+                import json
+                
+                data_dir = get_maps_data_dir()
+                filepath = data_dir / f"{filename}.json"
+                
+                with open(filepath, "w", encoding="utf-8") as f:
+                    json.dump(map_data, f, indent=2)
+                
+                self._set_status(f"Autosaved: {filename}")
+            except Exception as e:
+                self._set_status(f"Autosave failed: {e}")
+        
+        # Always use background thread for autosave
+        thread = threading.Thread(target=autosave_task, daemon=True)
+        thread.start()
     
     def render(self, screen: pygame.Surface) -> None:
         """Render the editor.

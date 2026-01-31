@@ -31,6 +31,14 @@ from .map_loader import load_map
 from .map_manager import MapManager
 from .collision import world_to_tile, is_tile_blocking, resolve_entity_map_collision
 from .spawn_point import SpawnPoint, ENEMY_POOLS, get_available_enemy_types
+from .pathfinding import (
+    find_path,
+    find_path_async,
+    find_path_cached,
+    find_paths_batch,
+    clear_path_cache,
+    PathResult,
+)
 
 __all__ = [
     "Tile",
@@ -49,6 +57,13 @@ __all__ = [
     "SpawnPoint",
     "ENEMY_POOLS",
     "get_available_enemy_types",
+    # Pathfinding
+    "find_path",
+    "find_path_async",
+    "find_path_cached",
+    "find_paths_batch",
+    "clear_path_cache",
+    "PathResult",
 ]
 
 # Default tile size (64x64 pixels)

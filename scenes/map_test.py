@@ -2,27 +2,54 @@
 from __future__ import annotations
 
 import pygame
+from concurrent.futures import ThreadPoolExecutor, Future
+from dataclasses import dataclass
+from typing import Optional
 
 from constants import STATE_MAP_TEST, STATE_PLAYING
 from rendering import RenderContext, draw_centered_text
 from scenes.transitions import SceneTransition
 
 
+@dataclass
+class MapInfo:
+    """Cached info about a map for display."""
+    name: str
+    spawn_count: int = 0
+    width: int = 0
+    height: int = 0
+    has_player_spawn: bool = False
+
+
 class MapTestScene:
     """Scene for selecting a custom map to test in gameplay.
     
     Lists all available maps and allows launching gameplay with a selected map.
+    Uses background loading for map metadata to avoid frame drops.
     """
+
+    # Shared thread pool for async operations
+    _executor: Optional[ThreadPoolExecutor] = None
 
     def __init__(self):
         self._selected_idx = 0
         self._maps: list[str] = []
+        self._map_info: dict[str, MapInfo] = {}  # Cached map metadata
         self._scroll_offset = 0
         self._max_visible = 10
         self._status_message = ""
         self._status_timer = 0.0
+        self._loading_futures: list[Future] = []
+        self._is_loading = False
         # Load maps on init as fallback (on_enter may not always be called)
         self._load_map_list()
+    
+    @classmethod
+    def _get_executor(cls) -> ThreadPoolExecutor:
+        """Get or create the shared thread pool."""
+        if cls._executor is None:
+            cls._executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="mapload")
+        return cls._executor
 
     def state_id(self) -> str:
         return STATE_MAP_TEST
@@ -42,19 +69,60 @@ class MapTestScene:
             
             maps_dir = get_maps_data_dir()
             self._maps = []
+            self._map_info = {}
             
             if os.path.exists(maps_dir):
                 for filename in os.listdir(maps_dir):
                     if filename.endswith(".json"):
-                        self._maps.append(filename[:-5])  # Remove .json extension
+                        map_name = filename[:-5]  # Remove .json extension
+                        self._maps.append(map_name)
+                        # Initialize with placeholder
+                        self._map_info[map_name] = MapInfo(name=map_name)
             
             self._maps.sort()
             
             if not self._maps:
                 self._status_message = "No maps found in maps/data/"
+            else:
+                # Start async loading of map metadata
+                self._start_async_metadata_load()
         except Exception as e:
             self._status_message = f"Error loading maps: {e}"
             self._maps = []
+    
+    def _start_async_metadata_load(self) -> None:
+        """Start background loading of map metadata."""
+        self._is_loading = True
+        self._loading_futures = []
+        
+        executor = self._get_executor()
+        for map_name in self._maps:
+            future = executor.submit(self._load_map_metadata, map_name)
+            self._loading_futures.append(future)
+    
+    def _load_map_metadata(self, map_name: str) -> None:
+        """Load metadata for a single map (runs in background thread)."""
+        try:
+            from maps import load_map
+            map_grid = load_map(map_name)
+            if map_grid:
+                self._map_info[map_name] = MapInfo(
+                    name=map_name,
+                    spawn_count=len(map_grid.spawn_points),
+                    width=map_grid.width,
+                    height=map_grid.height,
+                    has_player_spawn=map_grid.player_spawn is not None,
+                )
+        except Exception:
+            pass  # Keep placeholder info
+    
+    def _check_loading_complete(self) -> None:
+        """Check if background loading is complete."""
+        if self._is_loading and self._loading_futures:
+            all_done = all(f.done() for f in self._loading_futures)
+            if all_done:
+                self._is_loading = False
+                self._loading_futures = []
 
     def handle_input(self, events, game_state, ctx: dict) -> dict:
         out = {"screen": None, "quit": False, "pop": False, "selected_map": None}
@@ -126,6 +194,9 @@ class MapTestScene:
     def update(self, dt: float, game_state, ctx: dict) -> None:
         if self._status_timer > 0:
             self._status_timer -= dt
+        
+        # Check if async loading is complete
+        self._check_loading_complete()
 
     def handle_input_transition(self, events, game_state, ctx: dict) -> SceneTransition:
         result = self.handle_input(events, game_state, ctx)
@@ -186,17 +257,20 @@ class MapTestScene:
                 text = font.render(f"  {map_name}", True, color)
                 screen.blit(text, (list_x, y))
                 
-                # Draw spawn point count if available
-                try:
-                    from maps import load_map
-                    map_grid = load_map(map_name)
-                    if map_grid:
-                        spawn_count = len(map_grid.spawn_points)
-                        info = f"({spawn_count} spawns)"
-                        info_text = font.render(info, True, (120, 120, 120))
-                        screen.blit(info_text, (list_x + list_width - 100, y))
-                except Exception:
-                    pass
+                # Draw map info from cache (loaded async)
+                info = self._map_info.get(map_name)
+                if info and info.spawn_count > 0:
+                    info_str = f"({info.spawn_count} spawns, {info.width}x{info.height})"
+                    info_color = (120, 120, 120)
+                    if info.has_player_spawn:
+                        info_color = (100, 150, 100)  # Green tint if has player spawn
+                    info_text = font.render(info_str, True, info_color)
+                    screen.blit(info_text, (list_x + list_width - 180, y))
+                elif self._is_loading:
+                    # Show loading indicator
+                    dots = "." * (int(pygame.time.get_ticks() / 300) % 4)
+                    loading_text = font.render(f"loading{dots}", True, (80, 80, 80))
+                    screen.blit(loading_text, (list_x + list_width - 100, y))
             
             # Scroll indicators
             if self._scroll_offset > 0:

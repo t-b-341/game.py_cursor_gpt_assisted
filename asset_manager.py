@@ -7,12 +7,16 @@ of scattering pygame.image.load / mixer.Sound / font.Font across the codebase.
 
 Missing assets are handled gracefully: a clear message is printed and a fallback
 is returned when possible (e.g. SysFont for fonts, a tiny placeholder surface for images).
+
+Supports async preloading via background threads to eliminate first-use stutter.
 """
 from __future__ import annotations
 
 import os
+import threading
+from concurrent.futures import ThreadPoolExecutor, Future
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Callable
 
 import pygame
 
@@ -33,6 +37,30 @@ _font_cache: dict[tuple[str, int], pygame.font.Font] = {}
 
 # Track missing assets to avoid spamming logs
 _missing_reported: set[str] = set()
+
+# Async loading infrastructure
+_preload_executor: Optional[ThreadPoolExecutor] = None
+_preload_lock = threading.Lock()
+_preload_futures: list[Future] = []
+_preload_progress: dict[str, str] = {}  # asset_name -> status
+
+
+def _get_preload_executor() -> ThreadPoolExecutor:
+    """Get or create the preload thread pool."""
+    global _preload_executor
+    with _preload_lock:
+        if _preload_executor is None:
+            _preload_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="preload")
+        return _preload_executor
+
+
+def shutdown_preload_executor() -> None:
+    """Shutdown the preload thread pool."""
+    global _preload_executor
+    with _preload_lock:
+        if _preload_executor is not None:
+            _preload_executor.shutdown(wait=False)
+            _preload_executor = None
 
 
 def _report_missing(kind: str, path: Path, detail: str = "") -> None:
@@ -204,3 +232,149 @@ def clear_caches() -> None:
     _sound_cache.clear()
     _font_cache.clear()
     _missing_reported.clear()
+
+
+# =============================================================================
+# ASYNC PRELOADING
+# =============================================================================
+
+def get_sound_async(name: str) -> Future[Optional[pygame.mixer.Sound]]:
+    """Load a sound asynchronously. Returns a Future.
+    
+    Usage:
+        future = get_sound_async("explosion")
+        # Later:
+        sound = future.result()  # Blocks until loaded
+        # Or check without blocking:
+        if future.done():
+            sound = future.result()
+    """
+    executor = _get_preload_executor()
+    return executor.submit(get_sound, name)
+
+
+def preload_sounds(names: list[str], on_complete: Optional[Callable[[], None]] = None) -> None:
+    """Preload multiple sounds in background threads.
+    
+    Args:
+        names: List of sound names to preload
+        on_complete: Optional callback when all sounds are loaded
+    """
+    global _preload_futures
+    
+    executor = _get_preload_executor()
+    futures = []
+    
+    for name in names:
+        if name not in _sound_cache:
+            _preload_progress[name] = "loading"
+            future = executor.submit(_preload_sound_task, name)
+            futures.append(future)
+    
+    _preload_futures.extend(futures)
+    
+    if on_complete and futures:
+        def wait_and_callback():
+            for f in futures:
+                try:
+                    f.result()
+                except Exception:
+                    pass
+            on_complete()
+        executor.submit(wait_and_callback)
+
+
+def _preload_sound_task(name: str) -> None:
+    """Background task to preload a sound."""
+    try:
+        get_sound(name)
+        _preload_progress[name] = "done"
+    except Exception as e:
+        _preload_progress[name] = f"error: {e}"
+
+
+def preload_images(names: list[str], on_complete: Optional[Callable[[], None]] = None) -> None:
+    """Preload multiple images in background threads.
+    
+    Note: pygame.image.load must be called from main thread after pygame.init().
+    This queues the file reads but final Surface creation happens on main thread.
+    """
+    global _preload_futures
+    
+    executor = _get_preload_executor()
+    futures = []
+    
+    for name in names:
+        key = f"{name}_True"
+        if key not in _image_cache:
+            _preload_progress[name] = "loading"
+            future = executor.submit(_preload_image_task, name)
+            futures.append(future)
+    
+    _preload_futures.extend(futures)
+    
+    if on_complete and futures:
+        def wait_and_callback():
+            for f in futures:
+                try:
+                    f.result()
+                except Exception:
+                    pass
+            on_complete()
+        executor.submit(wait_and_callback)
+
+
+def _preload_image_task(name: str) -> None:
+    """Background task to preload an image."""
+    try:
+        get_image(name)
+        _preload_progress[name] = "done"
+    except Exception as e:
+        _preload_progress[name] = f"error: {e}"
+
+
+def preload_all_sfx(on_complete: Optional[Callable[[], None]] = None) -> None:
+    """Preload all sound effects from assets/sfx/ and Game Sound FX/ directories."""
+    sounds_to_load = []
+    
+    # Collect all sound files
+    for sfx_dir in [_SFX_DIR, _GAME_SFX_DIR]:
+        if sfx_dir.exists():
+            for path in sfx_dir.iterdir():
+                if path.suffix.lower() in (".wav", ".ogg"):
+                    sounds_to_load.append(path.stem)
+    
+    preload_sounds(sounds_to_load, on_complete)
+
+
+def preload_all_images(on_complete: Optional[Callable[[], None]] = None) -> None:
+    """Preload all images from assets/images/ directory."""
+    images_to_load = []
+    
+    if _IMAGES_DIR.exists():
+        for path in _IMAGES_DIR.iterdir():
+            if path.suffix.lower() in (".png", ".jpg", ".jpeg"):
+                images_to_load.append(path.stem)
+    
+    preload_images(images_to_load, on_complete)
+
+
+def get_preload_progress() -> tuple[int, int]:
+    """Get preloading progress as (completed, total)."""
+    total = len(_preload_progress)
+    completed = sum(1 for status in _preload_progress.values() if status == "done")
+    return completed, total
+
+
+def is_preloading() -> bool:
+    """Check if preloading is still in progress."""
+    return any(not f.done() for f in _preload_futures)
+
+
+def wait_for_preload(timeout: Optional[float] = None) -> bool:
+    """Wait for all preloading to complete. Returns True if all completed."""
+    from concurrent.futures import wait, ALL_COMPLETED
+    if not _preload_futures:
+        return True
+    done, not_done = wait(_preload_futures, timeout=timeout, return_when=ALL_COMPLETED)
+    return len(not_done) == 0

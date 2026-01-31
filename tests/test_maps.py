@@ -721,6 +721,109 @@ class TestEditorUndoRedo:
                 assert editor.map_grid.get_tile_id(x, y) == "floor"
 
 
+class TestPathfinding:
+    """Tests for A* pathfinding."""
+    
+    def test_find_path_simple(self):
+        """Find path in open area."""
+        from maps.map_grid import MapGrid
+        from maps.pathfinding import find_path
+        
+        grid = MapGrid(name="test", width=10, height=10)
+        result = find_path(grid, 0, 0, 5, 5)
+        
+        assert result.found is True
+        assert len(result.path) > 0
+        assert result.path[0] == (0, 0)
+        assert result.path[-1] == (5, 5)
+    
+    def test_find_path_around_obstacle(self):
+        """Path goes around wall."""
+        from maps.map_grid import MapGrid
+        from maps.pathfinding import find_path
+        
+        grid = MapGrid(name="test", width=10, height=10)
+        # Create a wall blocking direct path
+        for y in range(5):
+            grid.set_tile_id(5, y, "wall")
+        
+        result = find_path(grid, 0, 2, 9, 2)
+        
+        assert result.found is True
+        # Path should go around the wall
+        assert all(pos[0] != 5 or pos[1] >= 5 for pos in result.path)
+    
+    def test_find_path_blocked(self):
+        """No path when completely blocked."""
+        from maps.map_grid import MapGrid
+        from maps.pathfinding import find_path
+        
+        grid = MapGrid(name="test", width=10, height=10)
+        # Create a complete wall
+        for y in range(10):
+            grid.set_tile_id(5, y, "wall")
+        
+        result = find_path(grid, 0, 5, 9, 5)
+        
+        assert result.found is False
+        assert len(result.path) == 0
+    
+    def test_find_path_diagonal(self):
+        """Path with diagonal movement."""
+        from maps.map_grid import MapGrid
+        from maps.pathfinding import find_path
+        
+        grid = MapGrid(name="test", width=10, height=10)
+        result = find_path(grid, 0, 0, 5, 5, allow_diagonal=True)
+        
+        assert result.found is True
+        # Diagonal path should be shorter
+        assert len(result.path) <= 11  # Would be 11 without diagonal
+    
+    def test_path_result_methods(self):
+        """PathResult helper methods."""
+        from maps.map_grid import MapGrid
+        from maps.pathfinding import find_path
+        
+        grid = MapGrid(name="test", width=10, height=10)
+        result = find_path(grid, 0, 0, 2, 0)
+        
+        assert result.found is True
+        assert result.length == 3  # 3 tiles: (0,0), (1,0), (2,0)
+        assert result.get_next_step() == (1, 0)
+        assert result.get_direction() == (1, 0)
+    
+    def test_find_path_cached(self):
+        """Cached pathfinding returns same result."""
+        from maps.map_grid import MapGrid
+        from maps.pathfinding import find_path_cached, clear_path_cache
+        
+        clear_path_cache()
+        grid = MapGrid(name="test", width=10, height=10)
+        
+        result1 = find_path_cached(grid, 0, 0, 5, 5)
+        result2 = find_path_cached(grid, 0, 0, 5, 5)
+        
+        assert result1.path == result2.path
+    
+    def test_find_paths_batch(self):
+        """Batch pathfinding returns multiple results."""
+        from maps.map_grid import MapGrid
+        from maps.pathfinding import find_paths_batch
+        
+        grid = MapGrid(name="test", width=10, height=10)
+        requests = [
+            (0, 0, 5, 5),
+            (0, 0, 9, 0),
+            (5, 5, 0, 0),
+        ]
+        
+        results = find_paths_batch(grid, requests)
+        
+        assert len(results) == 3
+        assert all(r.found for r in results)
+
+
 class TestCollision:
     """Tests for collision helpers."""
     

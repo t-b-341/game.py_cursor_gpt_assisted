@@ -1,7 +1,11 @@
 """
 Buffered SQLite telemetry writer. Buffers inserts, flushes on timer or when full, closes cleanly.
+
+Uses background thread for flushing to avoid frame drops during gameplay.
 """
+import queue
 import sqlite3
+import threading
 from typing import Optional
 
 from . import schema
@@ -42,8 +46,8 @@ class NoOpTelemetry:
 
 class Telemetry:
     """
-    Buffered SQLite telemetry writer.
-    Buffers inserts in memory, flushes on a timer or when buffers get large, flushes and closes on shutdown.
+    Buffered SQLite telemetry writer with background thread.
+    Buffers inserts in memory, flushes asynchronously to avoid frame drops.
     """
 
     def __init__(
@@ -51,12 +55,14 @@ class Telemetry:
         db_path: str = "game_telemetry.db",
         flush_interval_s: float = 0.5,
         max_buffer: int = 500,
+        async_writes: bool = True,
     ):
         self.db_path = db_path
         self.flush_interval_s = float(flush_interval_s)
         self.max_buffer = int(max_buffer)
+        self._async_writes = async_writes
 
-        self.conn = sqlite3.connect(self.db_path)
+        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self.conn.execute("PRAGMA journal_mode = WAL;")
         self.conn.execute("PRAGMA synchronous = NORMAL;")
         self.conn.execute("PRAGMA cache_size = -64000;")
@@ -65,6 +71,16 @@ class Telemetry:
 
         self.run_id: Optional[int] = None
         self._time_since_flush = 0.0
+        
+        # Thread-safe queue for async writes
+        self._write_queue: queue.Queue = queue.Queue()
+        self._writer_thread: Optional[threading.Thread] = None
+        self._shutdown_flag = threading.Event()
+        self._db_lock = threading.Lock()
+        
+        # Start background writer thread
+        if self._async_writes:
+            self._start_writer_thread()
 
         self._enemy_spawn_buf: list[tuple] = []
         self._pos_buf: list[tuple] = []
@@ -91,6 +107,42 @@ class Telemetry:
         self._wave_enemy_types_buf: list[tuple] = []
         self._run_state_buf: list[tuple] = []
         self._frame_time_buf: list[tuple] = []
+    
+    def _start_writer_thread(self) -> None:
+        """Start the background writer thread."""
+        self._writer_thread = threading.Thread(
+            target=self._writer_loop,
+            name="telemetry-writer",
+            daemon=True,
+        )
+        self._writer_thread.start()
+    
+    def _writer_loop(self) -> None:
+        """Background thread that processes write queue."""
+        while not self._shutdown_flag.is_set():
+            try:
+                # Wait for work with timeout to check shutdown flag
+                try:
+                    work = self._write_queue.get(timeout=0.5)
+                except queue.Empty:
+                    continue
+                
+                # Process the work item
+                if work is None:  # Shutdown signal
+                    break
+                
+                sql, params = work
+                with self._db_lock:
+                    try:
+                        cur = self.conn.cursor()
+                        cur.executemany(sql, params)
+                        self.conn.commit()
+                    except Exception as e:
+                        print(f"[Telemetry] Write error: {e}")
+                
+                self._write_queue.task_done()
+            except Exception as e:
+                print(f"[Telemetry] Writer thread error: {e}")
 
     def start_run(self, started_at_iso: str, player_max_hp: int) -> int:
         cur = self.conn.cursor()
@@ -409,196 +461,190 @@ class Telemetry:
     def flush(self, force: bool = False) -> None:
         if not force:
             self._time_since_flush = 0.0
-        cur = self.conn.cursor()
-        wrote_any = False
-
-        def run(table_sql_values: list[tuple[str, str, list]]) -> bool:
-            nonlocal wrote_any
-            for sql, params in table_sql_values:
-                if params:
-                    cur.executemany(sql, params)
-                    wrote_any = True
-            return wrote_any
-
+        
+        # Collect all pending writes
+        writes: list[tuple[str, list[tuple]]] = []
+        
         if self._enemy_spawn_buf:
-            cur.executemany(
+            writes.append((
                 "INSERT INTO enemy_spawns (run_id, t, enemy_type, x, y, w, h, hp) VALUES (?, ?, ?, ?, ?, ?, ?, ?);",
-                self._enemy_spawn_buf,
-            )
+                list(self._enemy_spawn_buf),
+            ))
             self._enemy_spawn_buf.clear()
-            wrote_any = True
         if self._pos_buf:
-            cur.executemany(
+            writes.append((
                 "INSERT INTO player_positions (run_id, t, x, y) VALUES (?, ?, ?, ?);",
-                self._pos_buf,
-            )
+                list(self._pos_buf),
+            ))
             self._pos_buf.clear()
-            wrote_any = True
         if self._shot_buf:
-            cur.executemany(
+            writes.append((
                 "INSERT INTO shots (run_id, t, origin_x, origin_y, target_x, target_y, dir_x, dir_y) VALUES (?, ?, ?, ?, ?, ?, ?, ?);",
-                self._shot_buf,
-            )
+                list(self._shot_buf),
+            ))
             self._shot_buf.clear()
-            wrote_any = True
         if self._enemy_hit_buf:
-            cur.executemany(
+            writes.append((
                 "INSERT INTO enemy_hits (run_id, t, enemy_type, enemy_x, enemy_y, damage, enemy_hp_after, killed) VALUES (?, ?, ?, ?, ?, ?, ?, ?);",
-                self._enemy_hit_buf,
-            )
+                list(self._enemy_hit_buf),
+            ))
             self._enemy_hit_buf.clear()
-            wrote_any = True
         if self._player_damage_buf:
-            cur.executemany(
+            writes.append((
                 "INSERT INTO player_damage (run_id, t, amount, source_type, source_enemy_type, player_x, player_y, player_hp_after) VALUES (?, ?, ?, ?, ?, ?, ?, ?);",
-                self._player_damage_buf,
-            )
+                list(self._player_damage_buf),
+            ))
             self._player_damage_buf.clear()
-            wrote_any = True
         if self._player_death_buf:
-            cur.executemany(
+            writes.append((
                 "INSERT INTO player_deaths (run_id, t, player_x, player_y, lives_left, wave_number) VALUES (?, ?, ?, ?, ?, ?);",
-                self._player_death_buf,
-            )
+                list(self._player_death_buf),
+            ))
             self._player_death_buf.clear()
-            wrote_any = True
         if self._run_state_buf:
-            cur.executemany(
+            writes.append((
                 "INSERT INTO run_state_samples (run_id, t, player_hp, enemies_alive) VALUES (?, ?, ?, ?);",
-                self._run_state_buf,
-            )
+                list(self._run_state_buf),
+            ))
             self._run_state_buf.clear()
-            wrote_any = True
         if self._wave_buf:
-            cur.executemany(
+            writes.append((
                 "INSERT INTO waves (run_id, t, wave_number, event_type, enemies_spawned, hp_scale, speed_scale) VALUES (?, ?, ?, ?, ?, ?, ?);",
-                self._wave_buf,
-            )
+                list(self._wave_buf),
+            ))
             self._wave_buf.clear()
-            wrote_any = True
         if self._enemy_pos_buf:
-            cur.executemany(
+            writes.append((
                 "INSERT INTO enemy_positions (run_id, t, enemy_type, x, y, speed, vel_x, vel_y) VALUES (?, ?, ?, ?, ?, ?, ?, ?);",
-                self._enemy_pos_buf,
-            )
+                list(self._enemy_pos_buf),
+            ))
             self._enemy_pos_buf.clear()
-            wrote_any = True
         if self._player_velocity_buf:
-            cur.executemany(
+            writes.append((
                 "INSERT INTO player_velocities (run_id, t, x, y, vel_x, vel_y, speed) VALUES (?, ?, ?, ?, ?, ?, ?);",
-                self._player_velocity_buf,
-            )
+                list(self._player_velocity_buf),
+            ))
             self._player_velocity_buf.clear()
-            wrote_any = True
         if self._bullet_metadata_buf:
-            cur.executemany(
+            writes.append((
                 "INSERT INTO bullet_metadata (run_id, t, bullet_type, shape, color_r, color_g, color_b, source_enemy_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?);",
-                self._bullet_metadata_buf,
-            )
+                list(self._bullet_metadata_buf),
+            ))
             self._bullet_metadata_buf.clear()
-            wrote_any = True
         if self._score_buf:
-            cur.executemany(
+            writes.append((
                 "INSERT INTO score_events (run_id, t, score, score_change, source) VALUES (?, ?, ?, ?, ?);",
-                self._score_buf,
-            )
+                list(self._score_buf),
+            ))
             self._score_buf.clear()
-            wrote_any = True
         if self._level_buf:
-            cur.executemany(
+            writes.append((
                 "INSERT INTO level_events (run_id, t, level, level_name) VALUES (?, ?, ?, ?);",
-                self._level_buf,
-            )
+                list(self._level_buf),
+            ))
             self._level_buf.clear()
-            wrote_any = True
         if self._boss_buf:
-            cur.executemany(
+            writes.append((
                 "INSERT INTO boss_events (run_id, t, wave_number, phase, hp, max_hp, event_type) VALUES (?, ?, ?, ?, ?, ?, ?);",
-                self._boss_buf,
-            )
+                list(self._boss_buf),
+            ))
             self._boss_buf.clear()
-            wrote_any = True
         if self._weapon_switch_buf:
-            cur.executemany(
+            writes.append((
                 "INSERT INTO weapon_switches (run_id, t, weapon_mode) VALUES (?, ?, ?);",
-                self._weapon_switch_buf,
-            )
+                list(self._weapon_switch_buf),
+            ))
             self._weapon_switch_buf.clear()
-            wrote_any = True
         if self._pickup_buf:
-            cur.executemany(
+            writes.append((
                 "INSERT INTO pickup_events (run_id, t, pickup_type, x, y, collected) VALUES (?, ?, ?, ?, ?, ?);",
-                self._pickup_buf,
-            )
+                list(self._pickup_buf),
+            ))
             self._pickup_buf.clear()
-            wrote_any = True
         if self._overshield_buf:
-            cur.executemany(
+            writes.append((
                 "INSERT INTO overshield_events (run_id, t, overshield, max_overshield, change) VALUES (?, ?, ?, ?, ?);",
-                self._overshield_buf,
-            )
+                list(self._overshield_buf),
+            ))
             self._overshield_buf.clear()
-            wrote_any = True
         if self._player_action_buf:
-            cur.executemany(
+            writes.append((
                 "INSERT INTO player_actions (run_id, t, action_type, x, y, duration, success) VALUES (?, ?, ?, ?, ?, ?, ?);",
-                self._player_action_buf,
-            )
+                list(self._player_action_buf),
+            ))
             self._player_action_buf.clear()
-            wrote_any = True
         if self._zone_visit_buf:
-            cur.executemany(
+            writes.append((
                 "INSERT INTO player_zone_visits (run_id, t, zone_id, zone_name, zone_type, event_type, x, y) VALUES (?, ?, ?, ?, ?, ?, ?, ?);",
-                self._zone_visit_buf,
-            )
+                list(self._zone_visit_buf),
+            ))
             self._zone_visit_buf.clear()
-            wrote_any = True
         if self._friendly_spawn_buf:
-            cur.executemany(
+            writes.append((
                 "INSERT INTO friendly_ai_spawns (run_id, t, friendly_type, x, y, w, h, hp, behavior) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);",
-                self._friendly_spawn_buf,
-            )
+                list(self._friendly_spawn_buf),
+            ))
             self._friendly_spawn_buf.clear()
-            wrote_any = True
         if self._friendly_position_buf:
-            cur.executemany(
+            writes.append((
                 "INSERT INTO friendly_ai_positions (run_id, t, friendly_type, x, y, speed, vel_x, vel_y, target_enemy_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);",
-                self._friendly_position_buf,
-            )
+                list(self._friendly_position_buf),
+            ))
             self._friendly_position_buf.clear()
-            wrote_any = True
         if self._friendly_shot_buf:
-            cur.executemany(
+            writes.append((
                 "INSERT INTO friendly_ai_shots (run_id, t, friendly_type, origin_x, origin_y, target_x, target_y, target_enemy_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?);",
-                self._friendly_shot_buf,
-            )
+                list(self._friendly_shot_buf),
+            ))
             self._friendly_shot_buf.clear()
-            wrote_any = True
         if self._friendly_death_buf:
-            cur.executemany(
+            writes.append((
                 "INSERT INTO friendly_ai_deaths (run_id, t, friendly_type, x, y, killed_by) VALUES (?, ?, ?, ?, ?, ?);",
-                self._friendly_death_buf,
-            )
+                list(self._friendly_death_buf),
+            ))
             self._friendly_death_buf.clear()
-            wrote_any = True
         if self._wave_enemy_types_buf:
-            cur.executemany(
+            writes.append((
                 "INSERT INTO wave_enemy_types (run_id, t, wave_number, enemy_type, count) VALUES (?, ?, ?, ?, ?);",
-                self._wave_enemy_types_buf,
-            )
+                list(self._wave_enemy_types_buf),
+            ))
             self._wave_enemy_types_buf.clear()
-            wrote_any = True
         if self._frame_time_buf:
-            cur.executemany(
+            writes.append((
                 "INSERT INTO frame_times (run_id, t, frame_time_ms, fps, player_bullets, enemy_projectiles, enemies, friendly_projectiles) VALUES (?, ?, ?, ?, ?, ?, ?, ?);",
-                self._frame_time_buf,
-            )
+                list(self._frame_time_buf),
+            ))
             self._frame_time_buf.clear()
-            wrote_any = True
-
-        if wrote_any:
-            self.conn.commit()
+        
+        if not writes:
+            return
+        
+        # Execute writes (async or sync)
+        if self._async_writes and self._writer_thread and self._writer_thread.is_alive() and not force:
+            # Queue for background thread
+            for sql, params in writes:
+                self._write_queue.put((sql, params))
+        else:
+            # Synchronous write (for force=True or if async not available)
+            with self._db_lock:
+                cur = self.conn.cursor()
+                for sql, params in writes:
+                    cur.executemany(sql, params)
+                self.conn.commit()
 
     def close(self) -> None:
+        """Shutdown telemetry writer, flushing all pending data."""
+        # Signal writer thread to stop
+        self._shutdown_flag.set()
+        
+        if self._writer_thread and self._writer_thread.is_alive():
+            # Send shutdown signal
+            self._write_queue.put(None)
+            # Wait for thread to finish (with timeout)
+            self._writer_thread.join(timeout=2.0)
+        
+        # Final synchronous flush to ensure all data is written
         self.flush(force=True)
-        self.conn.close()
+        
+        with self._db_lock:
+            self.conn.close()
