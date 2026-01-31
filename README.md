@@ -1,23 +1,173 @@
-# python project - gpt, cursor assisted
+# Bullet Hell Arena
 
-***
-requires libraries: matplotlib, pygame, and pandas; 
-pygame will likely not run on 3.14 python, but has been verified to run on 3.12, and will likely run on 3.13
-***
+A fast-paced top-down bullet hell shooter built with Python and Pygame. Survive waves of increasingly difficult enemies, collect powerful weapons, and command AI allies in your fight for survival.
 
-this is a project I had gpt generate to learn sql
-start with game.py, which references telemetry.py to collect data, then use sqlite3 to explore the db generated data, and modify visualize.py to see different data, using sql script
+## Features
 
-download of sql database is unnecessary, it will be generated with the running of game.py, which runs telemetry.py, which generates game_telemetry.db, which can be visualized with visualize.py
+- **Wave-based survival** — Fight through escalating waves of diverse enemy types
+- **Multiple enemy types** — Grunts, heavies, spawners, laser enemies, suiciders, the Queen boss, and more
+- **AI allies** — Spawn and command friendly units (scout, sniper, striker, guardian, tank)
+- **Weapon variety** — Grenades, missiles, lasers, and special abilities
+- **Custom maps** — Built-in map editor for creating your own arenas
+- **Shader effects** — Optional GPU-accelerated visual effects (CRT, vignette, glow)
+- **Save system** — Save and load your progress
+- **Telemetry** — Track gameplay data and visualize statistics
 
-EDIT 1-20-26:
-I have started using Cursor to add additional features to the game, in collaboration with LP, A, J, and others
+## Quick Start
 
-EDIT 2:
-I have begun to use the game to develop into a sort of bullet hell game, using cursor. The game is intentionally simple, and is meant to be fun, (even if it was generated using AI, I wouldn't have been able to make the game otherwise)
+### Requirements
 
-I'm focusing on mechanics of the games, rather than the nitty gritty of the programming itself
+- Python 3.10+ (3.12 recommended)
+- Pygame 2.0+
 
-EDIT 1-30-26: 
-There's been a lot of progress made in the last 10 days, huzzah! The project's been refactored heavily, and there have been features added.
+### Installation
 
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/game.py_cursor_gpt.git
+cd game.py_cursor_gpt
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run the game
+python game.py
+```
+
+### Optional: Build executable
+
+```bash
+# Windows
+build_game.bat
+```
+
+## Controls
+
+| Action | Key |
+|--------|-----|
+| Move | WASD |
+| Shoot | Mouse (aim) + auto-fire |
+| Dash | Space |
+| Grenade | E |
+| Missile | R |
+| Overshield | Tab |
+| Spawn/Command Ally | Q (spawn) / Right-click (command) |
+| Boost | Left Shift |
+| Slow | Left Ctrl |
+| Pause | Escape |
+
+## Game Mechanics
+
+### Enemies
+
+| Type | Behavior |
+|------|----------|
+| Grunt | Basic shooter, chases player |
+| Heavy | Slower, tankier, harder hitting |
+| Suicide | Rushes player and explodes |
+| Spawner | Summons additional enemies |
+| Patrol | Circles the arena edges |
+| Laser | Fires deadly beam attacks |
+| Evasive | Fast, dodges projectiles |
+| Queen | Boss enemy with shields, grenades, and missiles |
+
+### Allies
+
+All allies appear as purple units with different sizes:
+- **Scout** (smallest) — Fast, aggressive
+- **Sniper** — Long-range precision shots
+- **Striker** — Fires missile bursts
+- **Guardian** — Defensive, stays near player
+- **Tank** (largest) — High HP, draws fire
+
+Command allies with right-click to send them to a location. They'll explode on contact with enemies when commanded.
+
+### Pickups
+
+Defeated enemies drop various pickups: health, ammo, weapon upgrades, and more.
+
+## Map Editor
+
+Create custom maps with the built-in editor:
+
+```bash
+python run_editor.py
+```
+
+### Editor Controls
+
+| Action | Key |
+|--------|-----|
+| Place/remove tile | Left-click / Right-click |
+| Pan view | Middle-click drag |
+| Cycle tiles | Mouse wheel |
+| Quick save | S |
+| Save as | Ctrl+S |
+| Load | L |
+| New map | N |
+| Resize | Ctrl+R |
+| Spawn mode | P |
+| Undo/Redo | Ctrl+Z / Ctrl+Y |
+| Help | H |
+
+## Project Structure
+
+```
+game.py_cursor_gpt/
+├── game.py              # Main entry point
+├── game_app.py          # Game loop and initialization
+├── scenes/              # Game screens (title, gameplay, pause, etc.)
+├── systems/             # Game systems (collision, spawning, UI, audio)
+├── rendering/           # Rendering modules (world, HUD, shaders)
+├── maps/                # Map system and editor
+├── config/              # Game configuration and balance
+├── tests/               # Test suite (pytest)
+├── assets/              # Game assets (fonts, sounds, shaders)
+└── telemetry/           # Gameplay data collection
+```
+
+## Development
+
+### Running Tests
+
+```bash
+pytest
+```
+
+### Profiling
+
+```bash
+python profile_game.py
+```
+
+### Optional Performance Enhancements
+
+**C Extension** (faster physics):
+```bash
+python setup.py build_ext --inplace
+```
+
+**GPU Physics** (CUDA):
+Enable in Options menu if CUDA is available. See `comments/CUDA_INSTALLATION_GUIDE.md`.
+
+## Configuration
+
+Game settings are in `config/game_config.py`:
+- Difficulty presets (Easy, Normal, Hard)
+- Player classes
+- Visual effect toggles
+- Performance options
+
+## Documentation
+
+- `dev.md` — Developer setup and architecture guide
+- `ROADMAP.txt` — Feature backlog and plans
+- `comments/` — Detailed documentation on specific systems
+
+## Credits
+
+Built with AI assistance (GPT, Claude, Cursor) as a learning project that evolved into a full game.
+
+## License
+
+This project is for personal/educational use.
