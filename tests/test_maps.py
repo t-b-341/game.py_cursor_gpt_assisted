@@ -219,6 +219,179 @@ class TestMapManager:
         manager.render(surface)  # Should not crash
 
 
+class TestEditorEyedropper:
+    """Tests for eyedropper tool."""
+    
+    def test_eyedropper_picks_tile(self):
+        """Eyedropper picks tile from map."""
+        from maps.editor import MapEditor
+        editor = MapEditor(map_width=10, map_height=10)
+        
+        # Place a wall
+        editor.map_grid.set_tile_id(5, 5, "wall")
+        
+        # Eyedropper should pick it
+        result = editor._eyedropper(5, 5)
+        assert result is True
+        assert editor.selected_tile_id == "wall"
+    
+    def test_eyedropper_out_of_bounds(self):
+        """Eyedropper returns False for out of bounds."""
+        from maps.editor import MapEditor
+        editor = MapEditor(map_width=10, map_height=10)
+        
+        result = editor._eyedropper(-1, -1)
+        assert result is False
+
+
+class TestEditorNaming:
+    """Tests for map naming feature."""
+    
+    def test_start_naming_mode(self):
+        """N key starts naming mode."""
+        from maps.editor import MapEditor
+        editor = MapEditor(map_width=10, map_height=10)
+        
+        editor._start_naming_mode()
+        assert editor._naming_mode is True
+        assert editor._name_input == "new_map"  # Default name
+    
+    def test_naming_applies_new_name(self):
+        """Naming mode applies new name."""
+        from maps.editor import MapEditor
+        import pygame
+        pygame.init()
+        
+        editor = MapEditor(map_width=10, map_height=10)
+        editor._start_naming_mode()
+        editor._name_input = "my_custom_map"
+        
+        # Simulate Enter key
+        event = pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN)
+        editor._handle_naming_input(event)
+        
+        assert editor._naming_mode is False
+        assert editor.map_grid.name == "my_custom_map"
+    
+    def test_naming_cancel_with_escape(self):
+        """ESC cancels naming mode."""
+        from maps.editor import MapEditor
+        import pygame
+        pygame.init()
+        
+        editor = MapEditor(map_width=10, map_height=10)
+        editor.map_grid.name = "original_name"
+        editor._start_naming_mode()
+        editor._name_input = "changed_name"
+        
+        # Simulate Escape
+        event = pygame.event.Event(pygame.KEYDOWN, key=pygame.K_ESCAPE)
+        editor._handle_naming_input(event)
+        
+        assert editor._naming_mode is False
+        assert editor.map_grid.name == "original_name"  # Unchanged
+
+
+class TestEditorFloodFill:
+    """Tests for flood fill tool."""
+    
+    def test_flood_fill_connected_region(self):
+        """Flood fill fills connected region."""
+        from maps.editor import MapEditor
+        editor = MapEditor(map_width=10, map_height=10)
+        
+        # Create a small enclosed area with walls
+        # All floor except walls at edges
+        for x in range(10):
+            editor.map_grid.set_tile_id(x, 0, "wall")
+            editor.map_grid.set_tile_id(x, 9, "wall")
+        for y in range(10):
+            editor.map_grid.set_tile_id(0, y, "wall")
+            editor.map_grid.set_tile_id(9, y, "wall")
+        
+        # Flood fill center with ocean_water
+        editor._flood_fill(5, 5, "ocean_water")
+        
+        # Center should be filled
+        assert editor.map_grid.get_tile_id(5, 5) == "ocean_water"
+        assert editor.map_grid.get_tile_id(1, 1) == "ocean_water"
+        
+        # Walls should not be filled
+        assert editor.map_grid.get_tile_id(0, 0) == "wall"
+    
+    def test_flood_fill_same_tile_no_change(self):
+        """Flood fill with same tile does nothing."""
+        from maps.editor import MapEditor
+        editor = MapEditor(map_width=10, map_height=10)
+        
+        # All tiles are floor by default
+        initial_undo_count = len(editor._undo_stack)
+        
+        editor._flood_fill(5, 5, "floor")
+        
+        # Should not create undo entry
+        assert len(editor._undo_stack) == initial_undo_count
+    
+    def test_flood_fill_is_undoable(self):
+        """Flood fill can be undone."""
+        from maps.editor import MapEditor
+        editor = MapEditor(map_width=5, map_height=5)
+        
+        editor._flood_fill(2, 2, "wall")
+        
+        # All should be wall
+        assert editor.map_grid.get_tile_id(0, 0) == "wall"
+        
+        # Undo
+        editor._undo()
+        
+        # All should be floor again
+        assert editor.map_grid.get_tile_id(0, 0) == "floor"
+
+
+class TestEditorBrushSize:
+    """Tests for brush size feature."""
+    
+    def test_default_brush_size(self):
+        """Default brush size is 1."""
+        from maps.editor import MapEditor
+        editor = MapEditor(map_width=10, map_height=10)
+        assert editor.brush_size == 1
+    
+    def test_brush_size_increase(self):
+        """Brush size can be increased."""
+        from maps.editor import MapEditor
+        editor = MapEditor(map_width=10, map_height=10)
+        
+        editor.brush_size = 2
+        assert editor.brush_size == 2
+    
+    def test_paint_with_larger_brush(self):
+        """Larger brush paints multiple tiles."""
+        from maps.editor import MapEditor
+        editor = MapEditor(map_width=10, map_height=10)
+        
+        editor.brush_size = 3
+        editor._begin_stroke()
+        editor._paint_with_brush(5, 5, "wall")
+        editor._end_stroke()
+        
+        # 3x3 area around center should be wall
+        for dy in range(-1, 2):
+            for dx in range(-1, 2):
+                assert editor.map_grid.get_tile_id(5 + dx, 5 + dy) == "wall"
+    
+    def test_brush_size_limits(self):
+        """Brush size has max limit."""
+        from maps.editor import MapEditor
+        editor = MapEditor(map_width=10, map_height=10)
+        
+        # Max is 5 by default
+        editor.brush_size = 10
+        editor.brush_size = min(editor.max_brush_size, editor.brush_size)
+        assert editor.brush_size <= 5
+
+
 class TestEditorUndoRedo:
     """Tests for map editor undo/redo functionality."""
     

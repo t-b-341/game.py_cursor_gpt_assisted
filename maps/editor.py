@@ -88,6 +88,14 @@ class MapEditor:
         self._current_stroke: list[TileAction] = []  # Actions in current brush stroke
         self._is_painting: bool = False  # Track if we're in a brush stroke
         
+        # Brush settings
+        self.brush_size: int = 1  # Brush size in tiles (1 = single tile)
+        self.max_brush_size: int = 5
+        
+        # Name input mode
+        self._naming_mode: bool = False
+        self._name_input: str = ""
+        
         # Get available tiles for current theme
         self._update_palette()
     
@@ -128,12 +136,16 @@ class MapEditor:
         """Handle keyboard input."""
         key = event.key
         
+        # Handle name input mode separately
+        if self._naming_mode:
+            return self._handle_naming_input(event)
+        
         # Quit
         if key == pygame.K_ESCAPE:
             return True
         
         # Save
-        if key == pygame.K_s:
+        if key == pygame.K_s and not (pygame.key.get_mods() & pygame.KMOD_CTRL):
             self._save_map()
         
         # Toggle grid
@@ -148,6 +160,10 @@ class MapEditor:
         # Cycle theme
         if key == pygame.K_t:
             self._cycle_theme()
+        
+        # Rename map (N key)
+        if key == pygame.K_n:
+            self._start_naming_mode()
         
         # Number keys for palette selection
         if pygame.K_1 <= key <= pygame.K_9:
@@ -166,6 +182,18 @@ class MapEditor:
             self.camera_y = max(0, self.camera_y - cam_speed)
         if key == pygame.K_DOWN:
             self.camera_y += cam_speed
+        
+        # Brush size controls
+        if key == pygame.K_LEFTBRACKET:  # [ key - decrease brush
+            self.brush_size = max(1, self.brush_size - 1)
+            self._set_status(f"Brush size: {self.brush_size}")
+        if key == pygame.K_RIGHTBRACKET:  # ] key - increase brush
+            self.brush_size = min(self.max_brush_size, self.brush_size + 1)
+            self._set_status(f"Brush size: {self.brush_size}")
+        
+        # Flood fill (F key without Ctrl)
+        if key == pygame.K_f and not (pygame.key.get_mods() & pygame.KMOD_CTRL):
+            self._flood_fill_at_cursor()
         
         # Fill map with selected tile (Ctrl+F)
         if key == pygame.K_f and pygame.key.get_mods() & pygame.KMOD_CTRL:
@@ -209,13 +237,19 @@ class MapEditor:
         tx = int(world_x // TILE_SIZE)
         ty = int(world_y // TILE_SIZE)
         
+        # Check for eyedropper (Alt+click or middle click)
+        mods = pygame.key.get_mods()
+        if mods & pygame.KMOD_ALT or event.button == 2:
+            self._eyedropper(tx, ty)
+            return
+        
         # Begin brush stroke
         self._begin_stroke()
         
         if event.button == 1:  # Left click - place tile
-            self._place_tile_with_undo(tx, ty, self.selected_tile_id)
+            self._paint_with_brush(tx, ty, self.selected_tile_id)
         elif event.button == 3:  # Right click - erase (place floor)
-            self._place_tile_with_undo(tx, ty, "floor")
+            self._paint_with_brush(tx, ty, "floor")
     
     def _handle_palette_click(self, mx: int, my: int) -> None:
         """Handle click in the palette area."""
@@ -329,15 +363,185 @@ class MapEditor:
         
         self._set_status(f"Redo ({len(group.actions)} tiles)")
     
+    # =========================================================================
+    # EYEDROPPER TOOL
+    # =========================================================================
+    
+    def _eyedropper(self, tx: int, ty: int) -> bool:
+        """Pick the tile at the given coordinates.
+        
+        Returns True if a tile was picked.
+        """
+        tile_id = self.map_grid.get_tile_id(tx, ty)
+        if tile_id:
+            self.selected_tile_id = tile_id
+            self._set_status(f"Picked: {tile_id}")
+            return True
+        return False
+    
+    # =========================================================================
+    # MAP NAMING
+    # =========================================================================
+    
+    def _start_naming_mode(self) -> None:
+        """Enter name input mode."""
+        self._naming_mode = True
+        self._name_input = self.map_grid.name
+        self._set_status("Enter map name (ENTER to confirm, ESC to cancel)")
+    
+    def _handle_naming_input(self, event: pygame.event.Event) -> bool:
+        """Handle keyboard input during naming mode."""
+        key = event.key
+        
+        if key == pygame.K_ESCAPE:
+            # Cancel naming
+            self._naming_mode = False
+            self._name_input = ""
+            self._set_status("Rename cancelled")
+            return False
+        
+        if key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+            # Confirm name
+            new_name = self._name_input.strip()
+            if new_name:
+                self.map_grid.name = new_name
+                self._set_status(f"Map renamed to: {new_name}")
+            else:
+                self._set_status("Name cannot be empty")
+            self._naming_mode = False
+            self._name_input = ""
+            return False
+        
+        if key == pygame.K_BACKSPACE:
+            self._name_input = self._name_input[:-1]
+            return False
+        
+        # Add printable characters
+        if event.unicode and event.unicode.isprintable() and len(self._name_input) < 30:
+            # Filter out characters that are problematic for filenames
+            char = event.unicode
+            if char not in r'\/:*?"<>|':
+                self._name_input += char
+        
+        return False
+    
+    # =========================================================================
+    # FLOOD FILL
+    # =========================================================================
+    
+    def _flood_fill_at_cursor(self) -> None:
+        """Flood fill at the current mouse position."""
+        mx, my = pygame.mouse.get_pos()
+        
+        # Check if mouse is in map area
+        if mx >= self.screen_width - PALETTE_WIDTH:
+            self._set_status("Move cursor to map area to fill")
+            return
+        
+        # Convert to tile coordinates
+        world_x = mx + self.camera_x
+        world_y = my + self.camera_y
+        tx = int(world_x // TILE_SIZE)
+        ty = int(world_y // TILE_SIZE)
+        
+        self._flood_fill(tx, ty, self.selected_tile_id)
+    
+    def _flood_fill(self, start_x: int, start_y: int, fill_tile_id: str) -> None:
+        """Flood fill starting from a position.
+        
+        Uses breadth-first search to fill connected tiles of the same type.
+        """
+        target_tile_id = self.map_grid.get_tile_id(start_x, start_y)
+        
+        if target_tile_id is None:
+            return
+        
+        if target_tile_id == fill_tile_id:
+            self._set_status("Already filled with this tile")
+            return
+        
+        # BFS flood fill
+        self._begin_stroke()
+        
+        visited = set()
+        queue = [(start_x, start_y)]
+        filled_count = 0
+        max_fill = 10000  # Safety limit
+        
+        while queue and filled_count < max_fill:
+            x, y = queue.pop(0)
+            
+            if (x, y) in visited:
+                continue
+            
+            if x < 0 or x >= self.map_grid.width or y < 0 or y >= self.map_grid.height:
+                continue
+            
+            current_tile = self.map_grid.get_tile_id(x, y)
+            if current_tile != target_tile_id:
+                continue
+            
+            visited.add((x, y))
+            
+            if self._place_tile_with_undo(x, y, fill_tile_id):
+                filled_count += 1
+            
+            # Add neighbors (4-directional)
+            queue.append((x + 1, y))
+            queue.append((x - 1, y))
+            queue.append((x, y + 1))
+            queue.append((x, y - 1))
+        
+        self._end_stroke()
+        
+        if filled_count > 0:
+            self._set_status(f"Filled {filled_count} tiles")
+        else:
+            self._set_status("Nothing to fill")
+    
+    # =========================================================================
+    # BRUSH SIZE
+    # =========================================================================
+    
+    def _paint_with_brush(self, center_tx: int, center_ty: int, tile_id: str) -> None:
+        """Paint tiles using the current brush size.
+        
+        Brush is centered on the given tile coordinates.
+        """
+        if self.brush_size == 1:
+            self._place_tile_with_undo(center_tx, center_ty, tile_id)
+            return
+        
+        # Calculate brush bounds (centered)
+        half = self.brush_size // 2
+        for dy in range(-half, half + 1):
+            for dx in range(-half, half + 1):
+                # For odd sizes, include center; for even, offset slightly
+                tx = center_tx + dx
+                ty = center_ty + dy
+                self._place_tile_with_undo(tx, ty, tile_id)
+    
     def update(self, dt: float) -> None:
         """Update editor state.
         
         Args:
             dt: Delta time in seconds
         """
+        # Don't paint during naming mode
+        if self._naming_mode:
+            if self.status_timer > 0:
+                self.status_timer -= dt
+            return
+        
         # Handle held mouse buttons for continuous painting
         buttons = pygame.mouse.get_pressed()
-        if buttons[0] or buttons[2]:  # Left or right held
+        mods = pygame.key.get_mods()
+        
+        # Don't paint if Alt is held (eyedropper mode)
+        if mods & pygame.KMOD_ALT:
+            if self._is_painting:
+                self._end_stroke()
+        elif buttons[0] or buttons[2]:  # Left or right held
             mx, my = pygame.mouse.get_pos()
             if mx < self.screen_width - PALETTE_WIDTH:
                 world_x = mx + self.camera_x
@@ -350,9 +554,9 @@ class MapEditor:
                     self._begin_stroke()
                 
                 if buttons[0]:  # Left - place
-                    self._place_tile_with_undo(tx, ty, self.selected_tile_id)
+                    self._paint_with_brush(tx, ty, self.selected_tile_id)
                 elif buttons[2]:  # Right - erase
-                    self._place_tile_with_undo(tx, ty, "floor")
+                    self._paint_with_brush(tx, ty, "floor")
         else:
             # Mouse released - end stroke
             if self._is_painting:
@@ -378,6 +582,9 @@ class MapEditor:
         if self.show_grid:
             self._render_grid(screen)
         
+        # Render brush preview
+        self._render_brush_preview(screen)
+        
         # Render palette
         self._render_palette(screen)
         
@@ -387,6 +594,10 @@ class MapEditor:
         # Render help overlay
         if self.show_help:
             self._render_help(screen)
+        
+        # Render naming overlay
+        if self._naming_mode:
+            self._render_naming_overlay(screen)
     
     def _render_map(self, screen: pygame.Surface) -> None:
         """Render the map tiles."""
@@ -481,10 +692,78 @@ class MapEditor:
         else:
             undo_count = len(self._undo_stack)
             redo_count = len(self._redo_stack)
-            pos_text = f"Map: {self.map_grid.name} | Size: {self.map_grid.width}x{self.map_grid.height} | Undo: {undo_count} | Redo: {redo_count}"
+            brush_str = f"Brush: {self.brush_size}" if self.brush_size > 1 else ""
+            pos_text = f"Map: {self.map_grid.name} | {self.map_grid.width}x{self.map_grid.height} | Undo: {undo_count} | Redo: {redo_count}"
+            if brush_str:
+                pos_text += f" | {brush_str}"
             text = font.render(pos_text, True, (150, 150, 150))
         
         screen.blit(text, (10, self.screen_height - 30))
+    
+    def _render_brush_preview(self, screen: pygame.Surface) -> None:
+        """Render brush size preview at cursor position."""
+        mx, my = pygame.mouse.get_pos()
+        
+        # Only show in map area
+        if mx >= self.screen_width - PALETTE_WIDTH:
+            return
+        
+        # Convert to tile coordinates
+        world_x = mx + self.camera_x
+        world_y = my + self.camera_y
+        center_tx = int(world_x // TILE_SIZE)
+        center_ty = int(world_y // TILE_SIZE)
+        
+        # Check for eyedropper mode
+        mods = pygame.key.get_mods()
+        if mods & pygame.KMOD_ALT:
+            # Show eyedropper cursor
+            screen_x = int(center_tx * TILE_SIZE - self.camera_x)
+            screen_y = int(center_ty * TILE_SIZE - self.camera_y)
+            rect = pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE)
+            pygame.draw.rect(screen, (0, 255, 255), rect, 2)
+            return
+        
+        # Draw brush preview
+        half = self.brush_size // 2
+        for dy in range(-half, half + 1):
+            for dx in range(-half, half + 1):
+                tx = center_tx + dx
+                ty = center_ty + dy
+                
+                if 0 <= tx < self.map_grid.width and 0 <= ty < self.map_grid.height:
+                    screen_x = int(tx * TILE_SIZE - self.camera_x)
+                    screen_y = int(ty * TILE_SIZE - self.camera_y)
+                    rect = pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE)
+                    pygame.draw.rect(screen, (255, 255, 0), rect, 2)
+    
+    def _render_naming_overlay(self, screen: pygame.Surface) -> None:
+        """Render the map naming input overlay."""
+        # Semi-transparent background
+        overlay = pygame.Surface((self.screen_width, self.screen_height))
+        overlay.set_alpha(180)
+        overlay.fill((0, 0, 0))
+        screen.blit(overlay, (0, 0))
+        
+        # Input box
+        font_large = pygame.font.Font(None, 36)
+        font = pygame.font.Font(None, 28)
+        
+        # Title
+        title = font_large.render("Enter Map Name", True, (255, 255, 255))
+        title_rect = title.get_rect(center=(self.screen_width // 2, self.screen_height // 2 - 60))
+        screen.blit(title, title_rect)
+        
+        # Input field with cursor
+        cursor = "_" if (pygame.time.get_ticks() // 500) % 2 == 0 else " "
+        input_text = font.render(f"[ {self._name_input}{cursor} ]", True, (255, 255, 100))
+        input_rect = input_text.get_rect(center=(self.screen_width // 2, self.screen_height // 2))
+        screen.blit(input_text, input_rect)
+        
+        # Instructions
+        hint = font.render("ENTER: Confirm | ESC: Cancel", True, (150, 150, 150))
+        hint_rect = hint.get_rect(center=(self.screen_width // 2, self.screen_height // 2 + 50))
+        screen.blit(hint, hint_rect)
     
     def _render_help(self, screen: pygame.Surface) -> None:
         """Render the help overlay."""
@@ -495,11 +774,15 @@ class MapEditor:
             "T: Cycle theme",
             "G: Toggle grid",
             "S: Save map",
+            "N: Rename map",
+            "F: Flood fill",
+            "[/]: Brush size",
+            "Alt+Click: Eyedropper",
             "Ctrl+Z: Undo",
             "Ctrl+Y: Redo",
             "Arrows: Pan camera",
-            "Ctrl+F: Fill map",
-            "Left click: Place tile",
+            "Ctrl+F: Fill all",
+            "Left click: Paint",
             "Right click: Erase",
             "ESC: Quit",
         ]

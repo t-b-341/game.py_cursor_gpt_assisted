@@ -46,6 +46,14 @@ python run_editor.py my_map_name
 | Erase tile (place floor) | Right-click (or hold and drag) |
 | Select tile 1-9 | Number keys `1` through `9` |
 | Click palette | Click a tile in the right panel |
+| Eyedropper (pick tile) | `Alt+Click` or Middle-click |
+
+### Brush Controls
+| Action | Control |
+|--------|---------|
+| Decrease brush size | `[` (left bracket) |
+| Increase brush size | `]` (right bracket) |
+| Flood fill at cursor | `F` |
 
 ### Camera / Navigation
 | Action | Control |
@@ -66,6 +74,7 @@ python run_editor.py my_map_name
 | Action | Control |
 |--------|---------|
 | Save map | `S` |
+| Rename map | `N` |
 | Quit | `ESC` |
 
 ### Display Options
@@ -146,6 +155,10 @@ New maps are created with:
 3. **Right-click to erase** - faster than selecting floor tile
 4. **Save often** (`S`) - there's no auto-save
 5. **Use themes** for visual variety - ocean for water levels, lava for fire areas
+6. **Eyedropper** (`Alt+Click`) - quickly pick tiles from the map
+7. **Flood fill** (`F`) - fill connected areas instantly
+8. **Larger brush** (`]`) - paint faster with bigger brush sizes
+9. **Rename maps** (`N`) - give your maps meaningful names before saving
 
 ---
 

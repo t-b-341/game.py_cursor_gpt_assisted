@@ -6,16 +6,11 @@ Future enhancements for the map editor, organized by priority and complexity.
 
 ## High Priority (Quick Wins)
 
-### 1. Map Naming Dialog
-**Current**: Maps are named "new_map" by default, must edit JSON manually.
-**Enhancement**: Prompt for map name on first save, or add `N` key to rename.
-
-```python
-# Add name input mode similar to save_game.py name input
-def _prompt_map_name(self):
-    # Show text input overlay
-    # Update self.map_grid.name on confirm
-```
+### 1. ✅ Map Naming Dialog (IMPLEMENTED)
+**Status**: Complete
+- Press `N` to rename map
+- Text input overlay with cursor
+- Enter to confirm, ESC to cancel
 
 ### 2. Map Resize Tool
 **Current**: Map size is fixed at creation.
@@ -33,28 +28,20 @@ Options:
 - `Ctrl+V` to paste at cursor
 - Selection via click-drag rectangle
 
-### 4. Eyedropper Tool
-**Current**: Must manually find tile in palette.
-**Enhancement**: Hold `Alt` + click to pick tile under cursor.
-
-```python
-if event.key == pygame.K_LALT:
-    # Eyedropper mode
-    tile_id = self.map_grid.get_tile_id(tx, ty)
-    if tile_id:
-        self.selected_tile_id = tile_id
-```
+### 4. ✅ Eyedropper Tool (IMPLEMENTED)
+**Status**: Complete
+- `Alt+Click` or Middle-click to pick tile under cursor
+- Visual indicator (cyan border) when Alt is held
 
 ---
 
 ## Medium Priority (Quality of Life)
 
-### 5. Brush Size Options
-**Current**: Single-tile brush only.
-**Enhancement**: 
-- `[` / `]` to decrease/increase brush size
-- Show brush preview on cursor
-- Square or circular brush shapes
+### 5. ✅ Brush Size Options (IMPLEMENTED)
+**Status**: Complete
+- `[` / `]` to decrease/increase brush size (1-5)
+- Yellow brush preview shown at cursor
+- Square brush shape
 
 ### 6. Zoom Controls
 **Current**: Fixed zoom, pan only.
@@ -102,12 +89,12 @@ if event.key == pygame.K_LALT:
 - Radial symmetry for circular arenas
 - Toggle with `M` key
 
-### 12. Flood Fill Tool
-**Current**: Fill entire map only.
-**Enhancement**:
-- `F` key for bucket fill (connected region)
-- Respects tile boundaries
-- Undoable as single action
+### 12. ✅ Flood Fill Tool (IMPLEMENTED)
+**Status**: Complete
+- `F` key for bucket fill at cursor position
+- Uses BFS to fill connected same-tile regions
+- Fully undoable as single action
+- Safety limit of 10,000 tiles
 
 ### 13. Custom Tile Definitions
 **Current**: Tiles defined in code.
