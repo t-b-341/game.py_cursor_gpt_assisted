@@ -13,6 +13,10 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Optional, Any
 
+from game_logging import get_logger
+
+_log = get_logger(__name__)
+
 if TYPE_CHECKING:
     from state import GameState
     from context import AppContext
@@ -79,13 +83,13 @@ class RunManager:
                     )
                     game_state.player_rect.center = (spawn_x, spawn_y)
                     
-                    print(f"[RunManager] Loaded custom map: {custom_map_name}")
-                    print(f"[RunManager] Player spawn: ({spawn_x}, {spawn_y})")
+                    _log.info(f"Loaded custom map: {custom_map_name}")
+                    _log.debug(f"Player spawn: ({spawn_x}, {spawn_y})")
                 else:
-                    print(f"[RunManager] Failed to load custom map: {custom_map_name}")
+                    _log.warning(f"Failed to load custom map: {custom_map_name}")
             except Exception as e:
                 import traceback
-                print(f"[RunManager] Error loading custom map {custom_map_name}: {e}")
+                _log.error(f"Error loading custom map {custom_map_name}: {e}")
                 traceback.print_exc()
         else:
             game_state.custom_map = None
@@ -126,7 +130,7 @@ class RunManager:
         if custom_map is not None:
             from level_utils import make_level_context
             game_state.level_context = make_level_context(ctx, game_state)
-            print(f"[RunManager] Rebuilt level_context for custom map")
+            _log.debug("Rebuilt level_context for custom map")
         
         # Update level context with telemetry and config
         if game_state.level_context:

@@ -3,8 +3,12 @@ import json
 from pathlib import Path
 from typing import Optional
 
+from game_logging import get_logger
+
 from .map_grid import MapGrid
 from .map_saver import get_maps_data_dir
+
+_log = get_logger(__name__)
 
 # Re-export for convenience
 __all__ = ["load_map", "map_exists", "get_maps_data_dir"]
@@ -29,7 +33,7 @@ def load_map(filename: str) -> Optional[MapGrid]:
         filepath = data_dir / filename
         
         if not filepath.exists():
-            print(f"[maps] Map file not found: {filepath}")
+            _log.warning(f"Map file not found: {filepath}")
             return None
         
         with open(filepath, "r", encoding="utf-8") as f:
@@ -37,7 +41,7 @@ def load_map(filename: str) -> Optional[MapGrid]:
         
         return MapGrid.from_dict(data)
     except Exception as e:
-        print(f"[maps] Error loading map: {e}")
+        _log.error(f"Error loading map: {e}")
         return None
 
 

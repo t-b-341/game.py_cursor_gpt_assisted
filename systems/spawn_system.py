@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING
 
 import pygame
 
+from game_logging import get_logger
+
 from config_enemies import (
     BOSS_TEMPLATE,
     BASE_ENEMIES_PER_WAVE,
@@ -26,6 +28,8 @@ from telemetry.events import WaveEnemyTypeEvent, WaveEvent
 
 if TYPE_CHECKING:
     from state import GameState
+
+_log = get_logger(__name__)
 
 
 def update(state: "GameState", dt: float) -> None:
@@ -433,22 +437,22 @@ def spawn_enemies_from_map(state: "GameState", map_grid, wave_num: int, ctx: dic
     
     spawned_count = 0
     
-    print(f"[MapSpawn] Spawning from map '{map_grid.name}' wave {wave_num}, spawn_points: {len(map_grid.spawn_points)}")
+    _log.debug(f"Spawning from map '{map_grid.name}' wave {wave_num}, spawn_points: {len(map_grid.spawn_points)}")
     
     for spawn_point in map_grid.spawn_points:
         if not spawn_point.can_spawn_on_wave(wave_num):
-            print(f"[MapSpawn] Spawn point ({spawn_point.x},{spawn_point.y}) not active for wave {wave_num}")
+            _log.debug(f"Spawn point ({spawn_point.x},{spawn_point.y}) not active for wave {wave_num}")
             continue
         
         enemy_type = spawn_point.get_random_enemy_type()
         if not enemy_type:
-            print(f"[MapSpawn] Spawn point ({spawn_point.x},{spawn_point.y}) has no enemy types")
+            _log.debug(f"Spawn point ({spawn_point.x},{spawn_point.y}) has no enemy types")
             continue
         
         # Get enemy template
         enemy_def = get_enemy_def(enemy_type)
         if not enemy_def:
-            print(f"[MapSpawn] Unknown enemy type '{enemy_type}', falling back to grunt")
+            _log.warning(f"Unknown enemy type '{enemy_type}', falling back to grunt")
             # Fall back to grunt if unknown type
             enemy_def = get_enemy_def("grunt")
         
@@ -526,7 +530,7 @@ def start_wave_from_map(wave_num: int, state: "GameState", map_grid, ctx: dict) 
     
     # If no spawns from map, spawn some default enemies
     if spawned == 0:
-        print(f"[MapSpawn] No spawn points spawned, using fallback spawning")
+        _log.info("No spawn points spawned, using fallback spawning")
         # Fallback: spawn a few grunts
         w = ctx.get("width", 1920)
         h = ctx.get("height", 1080)
@@ -535,7 +539,7 @@ def start_wave_from_map(wave_num: int, state: "GameState", map_grid, ctx: dict) 
         for i in range(num_to_spawn):
             enemy_def = get_enemy_def("grunt")
             if not enemy_def:
-                print(f"[MapSpawn] ERROR: Could not get grunt enemy def!")
+                _log.error("Could not get grunt enemy def!")
                 continue
             enemy = make_enemy_from_template(enemy_def, 1.0, 1.0)
             if random_spawn:
@@ -545,12 +549,12 @@ def start_wave_from_map(wave_num: int, state: "GameState", map_grid, ctx: dict) 
                 enemy["rect"].y = random.randint(100, h - 100)
             state.enemies.append(enemy)
             spawned += 1
-        print(f"[MapSpawn] Fallback spawned {spawned} grunts")
+        _log.debug(f"Fallback spawned {spawned} grunts")
     else:
-        print(f"[MapSpawn] Spawned {spawned} enemies from map spawn points")
+        _log.debug(f"Spawned {spawned} enemies from map spawn points")
     
     state.wave_active = True
-    print(f"[MapSpawn] Wave active, total enemies: {len(state.enemies)}")
+    _log.info(f"Wave active, total enemies: {len(state.enemies)}")
     
     # Log to telemetry
     telemetry = ctx.get("telemetry")

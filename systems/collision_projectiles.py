@@ -6,7 +6,7 @@ Performance optimizations:
 - Bulk processing where possible
 - C-accelerated distance calculations where available
 
-Note: Common helpers have been extracted to systems/collision/helpers.py
+Note: Common helpers are also in systems/collision/helpers.py for external use.
 This module is re-exported through systems/collision/__init__.py
 """
 from __future__ import annotations
@@ -31,7 +31,7 @@ except Exception:
     check_collisions_batch = None
 
 
-# Import helpers from collision package (avoids circular import by using late import)
+# Local helper functions (also available in .collision.helpers for external use)
 def _create_damage_number(x, y, damage, color=(255, 255, 100), timer=2.0):
     """Create a damage number dict for display."""
     return {"x": x, "y": y, "damage": int(damage), "timer": timer, "color": color}
@@ -97,6 +97,10 @@ def build_block_grid_cached(state, ctx: dict) -> SpatialGrid:
     
     return grid
 
+
+# =============================================================================
+# HAZARDS & BEAMS
+# =============================================================================
 
 def handle_hazard_enemy_collisions(state, dt: float, ctx: dict) -> None:
     lev = getattr(state, "level", None)
@@ -165,6 +169,10 @@ def handle_laser_beam_collisions(state, dt: float, ctx: dict) -> None:
         if beam in state.laser_beams:
             state.laser_beams.remove(beam)
 
+
+# =============================================================================
+# PLAYER BULLETS
+# =============================================================================
 
 def handle_dead_enemies(state, ctx: dict) -> None:
     kill = ctx.get("kill_enemy")
@@ -440,6 +448,10 @@ def handle_player_bullet_block_collisions(state, dt: float, ctx: dict) -> None:
         invalidate_block_grid()
 
 
+# =============================================================================
+# ENEMY PROJECTILES
+# =============================================================================
+
 def handle_enemy_projectile_lifetime_offscreen(state, ctx: dict) -> None:
     """Remove expired and offscreen enemy projectiles using efficient filtering."""
     offscreen = ctx.get("rect_offscreen")
@@ -537,6 +549,10 @@ def handle_enemy_projectile_friendly_collisions(state, ctx: dict) -> None:
         state.friendly_ai[:] = [f for f in state.friendly_ai if id(f) not in friendlies_to_remove]
 
 
+# =============================================================================
+# FRIENDLY PROJECTILES
+# =============================================================================
+
 def handle_friendly_projectile_offscreen_blocks_enemies(state, ctx: dict) -> None:
     """Handle friendly projectile collisions with spatial grid and filter-based removal."""
     offscreen = ctx.get("rect_offscreen")
@@ -619,6 +635,10 @@ def handle_friendly_projectile_offscreen_blocks_enemies(state, ctx: dict) -> Non
         lev.moveable_blocks[:] = [b for b in m_blocks if id(b) not in m_blocks_to_remove]
         invalidate_block_grid()
 
+
+# =============================================================================
+# EXPLOSIONS & MISSILES
+# =============================================================================
 
 def handle_grenade_explosion_damage(state, dt: float, ctx: dict) -> None:
     """Handle grenade explosion damage with filter-based removal.

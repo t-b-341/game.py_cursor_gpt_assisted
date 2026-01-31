@@ -5,6 +5,10 @@ from typing import TYPE_CHECKING
 
 import pygame
 
+from game_logging import get_logger
+
+_log = get_logger(__name__)
+
 if TYPE_CHECKING:
     from .map_grid import MapGrid
     from level_state import LevelState
@@ -56,7 +60,7 @@ def map_to_level_state(map_grid: "MapGrid") -> "LevelState":
                 }
                 static_blocks.append(block)
     
-    print(f"[LevelConverter] Converted map '{map_grid.name}' to {len(static_blocks)} static blocks")
+    _log.debug(f"Converted map '{map_grid.name}' to {len(static_blocks)} static blocks")
     
     # Create LevelState with only static blocks from the map
     # Other block types are left empty for custom maps

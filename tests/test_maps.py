@@ -877,3 +877,180 @@ class TestCollision:
         )
         # Should have reverted X movement
         assert new_rect.x == 128
+
+
+class TestLevelConverter:
+    """Tests for converting MapGrid to LevelState."""
+    
+    def test_map_to_level_state_empty_map(self):
+        """Empty map produces empty level with no static blocks."""
+        from maps.level_converter import map_to_level_state
+        
+        grid = MapGrid(width=5, height=5)
+        # Default tiles are floor (walkable)
+        
+        level = map_to_level_state(grid)
+        
+        assert len(level.static_blocks) == 0
+        assert len(level.destructible_blocks) == 0
+        assert len(level.moveable_blocks) == 0
+    
+    def test_map_to_level_state_walls_become_blocks(self):
+        """Non-walkable tiles become static blocks."""
+        from maps.level_converter import map_to_level_state
+        
+        grid = MapGrid(width=5, height=5)
+        # Place some walls
+        grid.set_tile_id(0, 0, "wall")
+        grid.set_tile_id(1, 0, "wall")
+        grid.set_tile_id(2, 2, "wall")
+        
+        level = map_to_level_state(grid)
+        
+        assert len(level.static_blocks) == 3
+        # Check first block position (tile 0,0 -> world 0,0)
+        block = level.static_blocks[0]
+        assert block["rect"].x == 0
+        assert block["rect"].y == 0
+        assert block["rect"].width == 64  # TILE_SIZE
+        assert block["rect"].height == 64
+    
+    def test_map_to_level_state_preserves_tile_color(self):
+        """Static blocks keep the tile's color."""
+        from maps.level_converter import map_to_level_state
+        from maps.registry import get_tile
+        
+        grid = MapGrid(width=3, height=3)
+        grid.set_tile_id(1, 1, "wall")
+        
+        level = map_to_level_state(grid)
+        
+        assert len(level.static_blocks) == 1
+        wall_tile = get_tile("wall")
+        assert level.static_blocks[0]["color"] == wall_tile.color
+    
+    def test_get_player_spawn_position_default(self):
+        """get_player_spawn_position returns default when no spawn set."""
+        from maps.level_converter import get_player_spawn_position
+        
+        grid = MapGrid(width=5, height=5)
+        # No player spawn set
+        
+        x, y = get_player_spawn_position(grid, default_x=100, default_y=200)
+        
+        assert x == 100
+        assert y == 200
+    
+    def test_get_player_spawn_position_from_map(self):
+        """get_player_spawn_position uses map's player_spawn."""
+        from maps.level_converter import get_player_spawn_position
+        
+        grid = MapGrid(width=10, height=10)
+        grid.player_spawn = (5, 3)  # Tile coordinates
+        
+        x, y = get_player_spawn_position(grid)
+        
+        # Should be center of tile (5, 3)
+        # 5 * 64 + 32 = 352, 3 * 64 + 32 = 224
+        assert x == 352
+        assert y == 224
+
+
+class TestMapSpawning:
+    """Tests for spawning enemies from custom maps."""
+    
+    @pytest.fixture
+    def mock_game_state(self):
+        """Create a minimal game state for spawning tests."""
+        class MockGameState:
+            def __init__(self):
+                self.enemies = []
+                self.enemies_spawned = 0
+                self.wave_number = 1
+                self.wave_active = False
+                self.boss_active = False
+                self.wave_damage_taken = 0
+                self.lives = 3
+                self.current_level = 1
+                self.max_level = 5
+                self.wave_in_level = 1
+                self.wave_banner_timer = 0
+                self.wave_banner_text = ""
+                self.side_quests = {
+                    "no_hit_wave": {"active": False, "completed": False}
+                }
+                self.run_time = 0.0
+                self.wave_start_reason = "test"
+                self.wave_reset_log = []
+        return MockGameState()
+    
+    @pytest.fixture
+    def spawn_context(self):
+        """Create a minimal context dict for spawning."""
+        return {
+            "width": 1920,
+            "height": 1080,
+            "difficulty": "NORMAL",
+            "telemetry": None,
+            "telemetry_enabled": False,
+            "enable_wave_banner": False,
+            "play_sfx": None,
+        }
+    
+    def test_spawn_enemies_from_map_empty_spawns(self, mock_game_state, spawn_context):
+        """Map with no spawn points uses fallback spawning."""
+        from systems.spawn_system import spawn_enemies_from_map
+        
+        grid = MapGrid(width=10, height=10)
+        # No spawn points
+        
+        count = spawn_enemies_from_map(mock_game_state, grid, wave_num=1, ctx=spawn_context)
+        
+        # No spawns from map, should return 0 (fallback is in start_wave_from_map)
+        assert count == 0
+    
+    def test_spawn_enemies_from_map_with_spawn_points(self, mock_game_state, spawn_context):
+        """Map with spawn points spawns enemies at those locations."""
+        from systems.spawn_system import spawn_enemies_from_map
+        from maps import SpawnPoint
+        
+        grid = MapGrid(width=10, height=10)
+        # Add spawn points
+        grid.add_spawn_point(SpawnPoint(x=3, y=3, enemy_pool=["grunt"]))
+        grid.add_spawn_point(SpawnPoint(x=5, y=5, enemy_pool=["grunt"]))
+        
+        count = spawn_enemies_from_map(mock_game_state, grid, wave_num=1, ctx=spawn_context)
+        
+        assert count == 2
+        assert len(mock_game_state.enemies) == 2
+    
+    def test_spawn_enemies_respects_wave_min(self, mock_game_state, spawn_context):
+        """Spawn points with wave_min > current wave don't spawn."""
+        from systems.spawn_system import spawn_enemies_from_map
+        from maps import SpawnPoint
+        
+        grid = MapGrid(width=10, height=10)
+        # Spawn point that activates on wave 3
+        grid.add_spawn_point(SpawnPoint(x=3, y=3, enemy_pool=["grunt"], wave_min=3))
+        
+        # Try wave 1
+        count = spawn_enemies_from_map(mock_game_state, grid, wave_num=1, ctx=spawn_context)
+        assert count == 0
+        
+        # Try wave 3
+        mock_game_state.enemies = []
+        count = spawn_enemies_from_map(mock_game_state, grid, wave_num=3, ctx=spawn_context)
+        assert count == 1
+    
+    def test_start_wave_from_map_fallback(self, mock_game_state, spawn_context):
+        """start_wave_from_map spawns fallback enemies when map has no spawns."""
+        from systems.spawn_system import start_wave_from_map
+        
+        grid = MapGrid(width=10, height=10)
+        # No spawn points
+        
+        start_wave_from_map(wave_num=1, state=mock_game_state, map_grid=grid, ctx=spawn_context)
+        
+        # Should have fallback enemies (3 + wave_num = 4)
+        assert len(mock_game_state.enemies) >= 4
+        assert mock_game_state.wave_active is True

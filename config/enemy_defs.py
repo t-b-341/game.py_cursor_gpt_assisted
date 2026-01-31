@@ -12,6 +12,8 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from config.enemy_data import (
+    ALLY_COLOR,
+    ALLY_PROJECTILE_COLOR,
     BOSS_TEMPLATE,
     BASE_ENEMIES_PER_WAVE,
     ENEMY_FIRE_RATE_MULTIPLIER,

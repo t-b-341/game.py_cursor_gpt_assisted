@@ -19,7 +19,7 @@ ENEMY_TEMPLATES: list[dict] = [
     {
         "type": "ambient",
         "rect": pygame.Rect(0, 0, 26, 26),
-        "color": (150, 80, 200),  # Purple
+        "color": (200, 80, 120),  # Rose-pink (changed from purple to avoid ally color)
         "hp": 40,
         "max_hp": 40,
         "shoot_cooldown": 6.0,  # Fires one rocket at player every 6s (dodgeable)
@@ -122,12 +122,12 @@ ENEMY_TEMPLATES: list[dict] = [
     {
         "type": "spawner",
         "rect": pygame.Rect(500, 500, 40, 40),
-        "color": (150, 50, 150),  # Purple
+        "color": (120, 50, 80),  # Dark burgundy (changed from purple to avoid ally color)
         "hp": 120,
         "max_hp": 120,
         "shoot_cooldown": 999.0,  # Doesn't shoot projectiles
         "projectile_speed": 0,
-        "projectile_color": (150, 50, 150),
+        "projectile_color": (150, 80, 100),
         "projectile_shape": "circle",
         "speed": 30,  # Slow movement
         "is_spawner": True,  # Marks this as a spawner enemy
@@ -173,12 +173,12 @@ ENEMY_TEMPLATES: list[dict] = [
     {
         "type": "patrol",
         "rect": pygame.Rect(0, 0, 32, 32),
-        "color": (150, 100, 200),  # Purple
+        "color": (100, 180, 160),  # Teal (changed from purple to avoid ally color)
         "hp": 150,
         "max_hp": 150,
         "shoot_cooldown": 0.5,
         "projectile_speed": 200,  # Reduced by 0.5x
-        "projectile_color": (200, 150, 255),
+        "projectile_color": (150, 220, 200),
         "projectile_shape": "circle",
         "speed": 100,
         "is_patrol": True,
@@ -204,12 +204,12 @@ ENEMY_TEMPLATES: list[dict] = [
     {
         "type": "super_large",
         "rect": pygame.Rect(0, 0, 128, 128),  # 4x large (32*4)
-        "color": (80, 60, 100),
+        "color": (80, 100, 60),  # Dark olive-green (changed from purple to avoid ally color)
         "hp": 800,
         "max_hp": 800,
         "shoot_cooldown": 2.0,
         "projectile_speed": 175,  # Reduced by 0.5x
-        "projectile_color": (180, 100, 150),
+        "projectile_color": (140, 160, 100),
         "projectile_shape": "circle",
         "speed": 20,
         "enemy_size_class": "super_large",
@@ -325,72 +325,49 @@ QUEEN_SPEED_MULTIPLIER = 3.0  # Queen moves 3x standard speed
 # ----------------------------
 # Friendly AI Templates
 # ----------------------------
+# All allies use the same purple color: (180, 100, 255)
+# Each class has a unique size for visual distinction
+ALLY_COLOR = (180, 100, 255)  # Vibrant magenta-purple (unique to allies)
+ALLY_PROJECTILE_COLOR = (220, 160, 255)  # Lighter purple for projectiles
+
 FRIENDLY_AI_TEMPLATES: list[dict] = [
     {
         "type": "scout",
-        "rect": pygame.Rect(0, 0, 24, 24),
-        "color": (100, 200, 255),  # Light blue
+        "rect": pygame.Rect(0, 0, 20, 20),  # Smallest - fast & agile
+        "color": ALLY_COLOR,
         "hp": 75,  # 50-100 health range (randomized at spawn)
         "max_hp": 75,
         "shoot_cooldown": 0.4,
-        "projectile_speed": 300,  # Reduced by 0.5x
-        "projectile_color": (150, 220, 255),
+        "projectile_speed": 300,
+        "projectile_color": ALLY_PROJECTILE_COLOR,
         "projectile_shape": "circle",
         "speed": 180,
         "behavior": "aggressive",  # Charges nearest enemy
         "damage": 15,
     },
     {
-        "type": "guardian",
-        "rect": pygame.Rect(0, 0, 28, 28),
-        "color": (100, 255, 150),  # Light green
-        "hp": 100,  # 50-100 health range (randomized at spawn)
-        "max_hp": 100,
-        "shoot_cooldown": 0.6,
-        "projectile_speed": 250,  # Reduced by 0.5x
-        "projectile_color": (150, 255, 200),
-        "projectile_shape": "square",
-        "speed": 120,
-        "behavior": "defensive",  # Stays near player, attacks nearby enemies
-        "damage": 20,
-    },
-    {
         "type": "sniper",
-        "rect": pygame.Rect(0, 0, 22, 22),
-        "color": (255, 200, 100),  # Orange
+        "rect": pygame.Rect(0, 0, 24, 24),  # Small - precise ranged
+        "color": ALLY_COLOR,
         "hp": 60,  # 50-100 health range (randomized at spawn)
         "max_hp": 60,
         "shoot_cooldown": 1.2,
-        "projectile_speed": 400,  # Reduced by 0.5x
-        "projectile_color": (255, 220, 150),
+        "projectile_speed": 400,
+        "projectile_color": ALLY_PROJECTILE_COLOR,
         "projectile_shape": "diamond",
         "speed": 100,
         "behavior": "ranged",  # Keeps distance, snipes enemies
         "damage": 35,
     },
     {
-        "type": "tank",
-        "rect": pygame.Rect(0, 0, 32, 32),
-        "color": (200, 150, 255),  # Purple
-        "hp": 100,  # 50-100 health range (randomized at spawn)
-        "max_hp": 100,
-        "shoot_cooldown": 0.8,
-        "projectile_speed": 200,  # Reduced by 0.5x
-        "projectile_color": (220, 180, 255),
-        "projectile_shape": "square",
-        "speed": 80,
-        "behavior": "tank",  # Slow, high HP, draws enemy fire
-        "damage": 25,
-    },
-    {
         "type": "striker",
-        "rect": pygame.Rect(0, 0, 26, 26),
-        "color": (255, 180, 100),  # Amber
+        "rect": pygame.Rect(0, 0, 28, 28),  # Medium - missile launcher
+        "color": ALLY_COLOR,
         "hp": 70,
         "max_hp": 70,
         "shoot_cooldown": 2.0,
-        "projectile_speed": 200,  # Reduced by 0.5x
-        "projectile_color": (255, 200, 120),
+        "projectile_speed": 200,
+        "projectile_color": ALLY_PROJECTILE_COLOR,
         "projectile_shape": "diamond",
         "speed": 140,
         "behavior": "ranged",
@@ -400,5 +377,33 @@ FRIENDLY_AI_TEMPLATES: list[dict] = [
         "missile_burst_count": 3,
         "missile_damage": 300,
         "missile_explosion_radius": 80,
+    },
+    {
+        "type": "guardian",
+        "rect": pygame.Rect(0, 0, 32, 32),  # Large - defensive
+        "color": ALLY_COLOR,
+        "hp": 100,  # 50-100 health range (randomized at spawn)
+        "max_hp": 100,
+        "shoot_cooldown": 0.6,
+        "projectile_speed": 250,
+        "projectile_color": ALLY_PROJECTILE_COLOR,
+        "projectile_shape": "square",
+        "speed": 120,
+        "behavior": "defensive",  # Stays near player, attacks nearby enemies
+        "damage": 20,
+    },
+    {
+        "type": "tank",
+        "rect": pygame.Rect(0, 0, 38, 38),  # Largest - high HP, slow
+        "color": ALLY_COLOR,
+        "hp": 100,  # 50-100 health range (randomized at spawn)
+        "max_hp": 100,
+        "shoot_cooldown": 0.8,
+        "projectile_speed": 200,
+        "projectile_color": ALLY_PROJECTILE_COLOR,
+        "projectile_shape": "square",
+        "speed": 80,
+        "behavior": "tank",  # Slow, high HP, draws enemy fire
+        "damage": 25,
     },
 ]
