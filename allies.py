@@ -3,20 +3,27 @@ import random
 import pygame
 from entities import Friendly
 from telemetry import FriendlyAISpawnEvent, FriendlyAIShotEvent
+from physics_loader import find_nearest_index
 
 
 def find_nearest_enemy(friendly_pos: pygame.Vector2, enemies: list[dict]) -> dict | None:
-    """Find the nearest enemy to a friendly AI unit."""
+    """Find the nearest enemy to a friendly AI unit.
+    
+    Uses C-accelerated find_nearest_index for performance.
+    """
     if not enemies:
         return None
-    nearest = None
-    min_dist = float("inf")
-    for e in enemies:
-        dist = (pygame.Vector2(e["rect"].center) - friendly_pos).length_squared()
-        if dist < min_dist:
-            min_dist = dist
-            nearest = e
-    return nearest
+    
+    # Extract positions for C function
+    positions_x = [e["rect"].centerx for e in enemies]
+    positions_y = [e["rect"].centery for e in enemies]
+    
+    # Use C-accelerated function
+    idx = find_nearest_index(friendly_pos.x, friendly_pos.y, positions_x, positions_y)
+    
+    if idx < 0 or idx >= len(enemies):
+        return None
+    return enemies[idx]
 
 
 def make_friendly_from_template(t: dict, hp_scale: float, speed_scale: float) -> Friendly:

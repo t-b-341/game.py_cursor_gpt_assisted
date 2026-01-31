@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 import pygame
 
 from game_logging import get_logger
+from .perf_timing import perf_timer
 
 from config.enemy_defs import (
     BOSS_TEMPLATE,
@@ -36,8 +37,17 @@ _log = get_logger(__name__)
 _dda_integration = None
 
 
-def _get_dda():
-    """Lazy-load DDA integration to avoid circular imports."""
+def _get_dda(ctx: dict = None):
+    """Lazy-load DDA integration to avoid circular imports.
+    
+    Returns None if DDA is disabled in config or if ML module not available.
+    """
+    # Check if DDA is enabled in config
+    if ctx is not None:
+        config = ctx.get("config")
+        if config is not None and not getattr(config, "enable_dda", False):
+            return None
+    
     global _dda_integration
     if _dda_integration is None:
         try:
@@ -94,6 +104,12 @@ def _log_wave_reset(state, trigger: str, wave_num: int, enemies_before: int) -> 
 
 def _start_wave(wave_num: int, state, ctx: dict) -> None:
     """Spawn a new wave with scaling. Each level has 3 waves; boss on wave 3."""
+    with perf_timer("wave_start"):
+        _start_wave_impl(wave_num, state, ctx)
+
+
+def _start_wave_impl(wave_num: int, state, ctx: dict) -> None:
+    """Internal implementation of wave start (wrapped by perf_timer)."""
     enemies_before = len(state.enemies)
     trigger = getattr(state, "wave_start_reason", "unknown")
     _log_wave_reset(state, trigger, wave_num, enemies_before)
@@ -159,8 +175,8 @@ def _start_wave(wave_num: int, state, ctx: dict) -> None:
             )
         )
     
-    # Track wave start for DDA
-    dda = _get_dda()
+    # Track wave start for DDA (if enabled in config)
+    dda = _get_dda(ctx)
     if dda is not None:
         try:
             dda.on_wave_start(state, wave_num, hp_scale, speed_scale, count)
@@ -406,8 +422,8 @@ def _update_wave_timers(state, dt: float, ctx: dict) -> None:
     if state.time_to_next_wave < 3.0:
         return
 
-    # Log wave summary for DDA (before incrementing wave number)
-    dda = _get_dda()
+    # Log wave summary for DDA (before incrementing wave number, if enabled in config)
+    dda = _get_dda(ctx)
     telemetry = ctx.get("telemetry")
     if dda is not None:
         try:

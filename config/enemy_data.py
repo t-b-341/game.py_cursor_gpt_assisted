@@ -305,17 +305,17 @@ BOSS_TEMPLATE: dict = {
 # ----------------------------
 # Enemy Spawn Configuration
 # ----------------------------
-BASE_ENEMIES_PER_WAVE = 12  # Base enemy count per wave (increased from 9)
-MAX_ENEMIES_PER_WAVE = 72  # Maximum enemies per wave (increased from 54)
-ENEMY_SPAWN_MULTIPLIER = 3.5  # Multiplier applied to base count (increased from 3.0x)
+BASE_ENEMIES_PER_WAVE = 10  # Base enemy count per wave
+MAX_ENEMIES_PER_WAVE = 40  # Maximum enemies per wave (reduced for better performance)
+ENEMY_SPAWN_MULTIPLIER = 2.5  # Multiplier applied to base count
 
 # ----------------------------
 # Enemy Scaling Configuration
 # ----------------------------
 # These multipliers are applied when creating enemies from templates
 ENEMY_HP_SCALE_MULTIPLIER = 1.1  # 110% health multiplier
-ENEMY_SPEED_SCALE_MULTIPLIER = 2.2  # 220% speed multiplier (doubled from 1.1)
-ENEMY_FIRE_RATE_MULTIPLIER = 7.5  # 5x fire rate (cooldown / 5; was 1.5 for 150%)
+ENEMY_SPEED_SCALE_MULTIPLIER = 1.25  # 125% speed multiplier
+ENEMY_FIRE_RATE_MULTIPLIER = 2.0  # 2x fire rate (cooldown / 2; reduced from 7.5 for performance)
 ENEMY_HP_CAP = 300  # Maximum HP for non-queen enemies
 
 # Queen-specific constants (not affected by normal scaling)

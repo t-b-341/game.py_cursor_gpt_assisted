@@ -71,6 +71,7 @@ class GameConfig:
     aim_mode: str = AIM_MOUSE
     aiming_mechanic: str = "mouse"  # "mouse", "lockon", "predictive", "directional", "hybrid"
     enable_telemetry: bool = True  # Default: Enabled for analytics/debugging
+    enable_dda: bool = False  # Dynamic Difficulty Adjustment (disabled by default to avoid wave transition lag)
     show_metrics: bool = True
     show_hud: bool = True
     show_health_bars: bool = True

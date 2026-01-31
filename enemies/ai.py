@@ -12,7 +12,7 @@ from config.balance import (
     DECOY_AGGRO_RADIUS,
     DECOY_AGGRO_PRIORITY,
 )
-from physics_loader import distance_squared as c_distance_squared
+from physics_loader import distance_squared as c_distance_squared, find_dodge_threats
 
 
 def find_nearest_threat(
@@ -135,36 +135,47 @@ def find_threats_in_dodge_range(
     friendly_projectiles: list[dict],
     dodge_range: float = 200.0,
 ) -> list[pygame.Vector2]:
-    """Find bullets (player or friendly) that are close enough to dodge."""
+    """Find bullets (player or friendly) that are close enough to dodge.
+    
+    Uses C-accelerated find_dodge_threats for performance.
+    """
+    ex, ey = enemy_pos.x, enemy_pos.y
+    dodge_range_sq = dodge_range * dodge_range
+    time_threshold = 0.5  # Only dodge bullets that will hit within 0.5 seconds
+    
+    # Combine all projectiles for batch processing
+    all_projectiles = list(player_bullets) + list(friendly_projectiles)
+    if not all_projectiles:
+        return []
+    
+    # Extract data for C function
+    bullets_x = []
+    bullets_y = []
+    bullets_vx = []
+    bullets_vy = []
+    
+    for b in all_projectiles:
+        bullets_x.append(float(b["rect"].centerx))
+        bullets_y.append(float(b["rect"].centery))
+        vel = b.get("vel")
+        if vel is not None:
+            bullets_vx.append(float(vel.x) if hasattr(vel, 'x') else float(vel[0]))
+            bullets_vy.append(float(vel.y) if hasattr(vel, 'y') else float(vel[1]))
+        else:
+            bullets_vx.append(0.0)
+            bullets_vy.append(0.0)
+    
+    # Use C-accelerated function
+    threat_indices = find_dodge_threats(
+        ex, ey, dodge_range_sq, time_threshold,
+        bullets_x, bullets_y, bullets_vx, bullets_vy
+    )
+    
+    # Convert indices to Vector2 positions
     threats = []
-    enemy_v2 = pygame.Vector2(enemy_pos)
-    dodge_range_sq = dodge_range * dodge_range  # Use squared distance for faster comparison
-    
-    # Check player bullets
-    for b in player_bullets:
-        bullet_pos = pygame.Vector2(b["rect"].center)
-        dist_sq = (bullet_pos - enemy_v2).length_squared()
-        if dist_sq < dodge_range_sq:
-            # Only compute actual distance if in range
-            dist = math.sqrt(dist_sq)
-            # Predict where bullet will be
-            bullet_vel = b.get("vel", pygame.Vector2(0, 0))
-            vel_length = bullet_vel.length()
-            time_to_reach = dist / vel_length if vel_length > 0 else 999
-            if time_to_reach < 0.5:  # Only dodge if bullet will reach soon
-                threats.append(bullet_pos)
-    
-    # Check friendly projectiles
-    for fp in friendly_projectiles:
-        bullet_pos = pygame.Vector2(fp["rect"].center)
-        dist_sq = (bullet_pos - enemy_v2).length_squared()
-        if dist_sq < dodge_range_sq:
-            # Only compute actual distance if in range
-            dist = math.sqrt(dist_sq)
-            bullet_vel = fp.get("vel", pygame.Vector2(0, 0))
-            vel_length = bullet_vel.length()
-            time_to_reach = dist / vel_length if vel_length > 0 else 999
-            if time_to_reach < 0.5:
-                threats.append(bullet_pos)
+    for idx in threat_indices:
+        if 0 <= idx < len(all_projectiles):
+            b = all_projectiles[idx]
+            threats.append(pygame.Vector2(b["rect"].centerx, b["rect"].centery))
     
     return threats

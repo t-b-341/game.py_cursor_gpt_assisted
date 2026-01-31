@@ -155,7 +155,10 @@ def _process_bullet_enemy_hit(state: "GameState", ctx: dict, bullet: dict, enemy
 
 
 def handle_player_bullet_enemy_collisions(state: "GameState", ctx: dict) -> None:
-    """Handle bullet-enemy collisions using spatial grid for O(n) performance."""
+    """Handle bullet-enemy collisions using spatial grid for O(n) performance.
+    
+    Fair gameplay: Player bullets cannot hit off-screen enemies (player can't see them).
+    """
     kill = ctx.get("kill_enemy")
     if not kill:
         return
@@ -164,6 +167,10 @@ def handle_player_bullet_enemy_collisions(state: "GameState", ctx: dict) -> None
     
     if not state.player_bullets or not state.enemies:
         return
+    
+    # Get camera for visibility check (fair gameplay - can't hit what you can't see)
+    from ..camera import get_camera
+    camera = get_camera()
     
     # Build enemy grid (uses frame caching for efficiency)
     enemy_grid = build_enemy_grid(state, ctx)
@@ -181,6 +188,9 @@ def handle_player_bullet_enemy_collisions(state: "GameState", ctx: dict) -> None
             if enemy.get("hp", 1) <= 0:
                 continue
             if not bullet["rect"].colliderect(enemy["rect"]):
+                continue
+            # Fair gameplay: Skip enemies that are off-screen (player can't see them)
+            if camera and not camera.is_visible(enemy["rect"]):
                 continue
             
             _process_bullet_enemy_hit(state, ctx, bullet, enemy)

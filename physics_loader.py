@@ -96,6 +96,83 @@ def _python_get_grid_cell_indices_for_rect(rx: int, ry: int, rw: int, rh: int,
     return result
 
 
+def _python_rotate_vector(x: float, y: float, angle: float) -> tuple[float, float]:
+    """Rotate a 2D vector by angle (radians)."""
+    cos_a = math.cos(angle)
+    sin_a = math.sin(angle)
+    return (x * cos_a - y * sin_a, x * sin_a + y * cos_a)
+
+
+def _python_find_nearest_index(cx: float, cy: float, positions_x: list, positions_y: list) -> int:
+    """Find index of nearest entity from position lists. Returns -1 if empty."""
+    if not positions_x:
+        return -1
+    min_dist_sq = float('inf')
+    nearest_idx = -1
+    for i, (ex, ey) in enumerate(zip(positions_x, positions_y)):
+        dx = ex - cx
+        dy = ey - cy
+        dist_sq = dx * dx + dy * dy
+        if dist_sq < min_dist_sq:
+            min_dist_sq = dist_sq
+            nearest_idx = i
+    return nearest_idx
+
+
+def _python_find_dodge_threats(ex: float, ey: float, dodge_range_sq: float, time_threshold: float,
+                               bullets_x: list, bullets_y: list, 
+                               bullets_vx: list, bullets_vy: list) -> list:
+    """Find bullet indices that are threats within dodge range and time threshold."""
+    result = []
+    for i in range(len(bullets_x)):
+        bx, by = bullets_x[i], bullets_y[i]
+        dx = bx - ex
+        dy = by - ey
+        dist_sq = dx * dx + dy * dy
+        
+        if dist_sq < dodge_range_sq:
+            vx, vy = bullets_vx[i], bullets_vy[i]
+            vel_len_sq = vx * vx + vy * vy
+            
+            if vel_len_sq > 0.0001:
+                dist = math.sqrt(dist_sq)
+                vel_len = math.sqrt(vel_len_sq)
+                time_to_reach = dist / vel_len
+                
+                if time_to_reach < time_threshold:
+                    result.append(i)
+    return result
+
+
+def _python_batch_rect_collisions(ax: list, ay: list, aw: list, ah: list,
+                                  bx: list, by: list, bw: list, bh: list) -> list:
+    """Batch check rect-rect collisions, return list of (a_idx, b_idx) pairs."""
+    result = []
+    for i in range(len(ax)):
+        a_left, a_top, a_w, a_h = ax[i], ay[i], aw[i], ah[i]
+        a_right = a_left + a_w
+        a_bottom = a_top + a_h
+        
+        for j in range(len(bx)):
+            b_left, b_top, b_w, b_h = bx[j], by[j], bw[j], bh[j]
+            b_right = b_left + b_w
+            b_bottom = b_top + b_h
+            
+            # AABB collision check
+            if not (a_right < b_left or b_right < a_left or
+                    a_bottom < b_top or b_bottom < a_top):
+                result.append((i, j))
+    return result
+
+
+def _python_normalize(x: float, y: float) -> tuple[float, float]:
+    """Normalize a 2D vector."""
+    length = math.sqrt(x * x + y * y)
+    if length < 0.0001:
+        return (1.0, 0.0)
+    return (x / length, y / length)
+
+
 def _python_physics_namespace() -> SimpleNamespace:
     return SimpleNamespace(
         vec_toward=_python_vec_toward,
@@ -106,6 +183,11 @@ def _python_physics_namespace() -> SimpleNamespace:
         find_in_radius=_python_find_in_radius,
         get_grid_cell_index=_python_get_grid_cell_index,
         get_grid_cell_indices_for_rect=_python_get_grid_cell_indices_for_rect,
+        rotate_vector=_python_rotate_vector,
+        find_nearest_index=_python_find_nearest_index,
+        find_dodge_threats=_python_find_dodge_threats,
+        batch_rect_collisions=_python_batch_rect_collisions,
+        normalize=_python_normalize,
     )
 
 
@@ -188,3 +270,43 @@ def get_grid_cell_indices_for_rect(rx: int, ry: int, rw: int, rh: int,
     if _impl is None or not hasattr(_impl, 'get_grid_cell_indices_for_rect'):
         return _python_get_grid_cell_indices_for_rect(rx, ry, rw, rh, cell_size, cols, rows)
     return _impl.get_grid_cell_indices_for_rect(rx, ry, rw, rh, cell_size, cols, rows)
+
+
+def rotate_vector(x: float, y: float, angle: float) -> tuple[float, float]:
+    """Rotate a 2D vector by angle (radians). Uses C if available."""
+    if _impl is None or not hasattr(_impl, 'rotate_vector'):
+        return _python_rotate_vector(x, y, angle)
+    return _impl.rotate_vector(x, y, angle)
+
+
+def find_nearest_index(cx: float, cy: float, positions_x: list, positions_y: list) -> int:
+    """Find index of nearest entity from position lists. Uses C if available."""
+    if _impl is None or not hasattr(_impl, 'find_nearest_index'):
+        return _python_find_nearest_index(cx, cy, positions_x, positions_y)
+    return _impl.find_nearest_index(cx, cy, positions_x, positions_y)
+
+
+def find_dodge_threats(ex: float, ey: float, dodge_range_sq: float, time_threshold: float,
+                       bullets_x: list, bullets_y: list,
+                       bullets_vx: list, bullets_vy: list) -> list:
+    """Find bullet indices that are threats within dodge range. Uses C if available."""
+    if _impl is None or not hasattr(_impl, 'find_dodge_threats'):
+        return _python_find_dodge_threats(ex, ey, dodge_range_sq, time_threshold,
+                                          bullets_x, bullets_y, bullets_vx, bullets_vy)
+    return _impl.find_dodge_threats(ex, ey, dodge_range_sq, time_threshold,
+                                    bullets_x, bullets_y, bullets_vx, bullets_vy)
+
+
+def batch_rect_collisions(ax: list, ay: list, aw: list, ah: list,
+                          bx: list, by: list, bw: list, bh: list) -> list:
+    """Batch check rect-rect collisions. Uses C if available."""
+    if _impl is None or not hasattr(_impl, 'batch_rect_collisions'):
+        return _python_batch_rect_collisions(ax, ay, aw, ah, bx, by, bw, bh)
+    return _impl.batch_rect_collisions(ax, ay, aw, ah, bx, by, bw, bh)
+
+
+def normalize(x: float, y: float) -> tuple[float, float]:
+    """Normalize a 2D vector. Uses C if available."""
+    if _impl is None or not hasattr(_impl, 'normalize'):
+        return _python_normalize(x, y)
+    return _impl.normalize(x, y)

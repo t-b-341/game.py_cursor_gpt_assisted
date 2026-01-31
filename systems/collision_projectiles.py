@@ -66,7 +66,10 @@ def handle_hazard_enemy_collisions(state, dt: float, ctx: dict) -> None:
 
 
 def handle_laser_beam_collisions(state, dt: float, ctx: dict) -> None:
-    """Handle laser beam collisions using spatial grid for O(n) performance."""
+    """Handle laser beam collisions using spatial grid for O(n) performance.
+    
+    Fair gameplay: Player laser beams cannot hit off-screen enemies (player can't see them).
+    """
     line_rect = ctx.get("line_rect_intersection")
     kill = ctx.get("kill_enemy")
     if not line_rect or not kill:
@@ -74,6 +77,10 @@ def handle_laser_beam_collisions(state, dt: float, ctx: dict) -> None:
     
     if not state.laser_beams:
         return
+    
+    # Get camera for visibility check (fair gameplay)
+    from .camera import get_camera
+    camera = get_camera()
     
     # Build enemy grid for spatial queries
     enemy_grid = _build_enemy_grid(state, ctx)
@@ -101,6 +108,9 @@ def handle_laser_beam_collisions(state, dt: float, ctx: dict) -> None:
         nearby_enemies = enemy_grid.query(beam_rect)
         
         for enemy in nearby_enemies:
+            # Fair gameplay: Skip off-screen enemies (player can't see them)
+            if camera and not camera.is_visible(enemy["rect"]):
+                continue
             if line_rect(start, end, enemy["rect"]):
                 enemy["hp"] -= damage
                 set_enemy_damage_flash(enemy, ctx)
@@ -587,12 +597,17 @@ def handle_grenade_explosion_damage(state, dt: float, ctx: dict) -> None:
     """Handle grenade explosion damage with filter-based removal.
     
     Performance: Uses spatial grid queries to reduce O(explosions * enemies) to O(explosions * nearby_enemies).
+    Fair gameplay: Player grenades cannot hit off-screen enemies (player can't see them).
     """
     kill = ctx.get("kill_enemy")
     lev = getattr(state, "level", None)
     d_blocks = lev.destructible_blocks if lev else []
     m_blocks = lev.moveable_blocks if lev else []
     player = state.player_rect
+
+    # Get camera for visibility check (fair gameplay)
+    from .camera import get_camera
+    camera = get_camera()
 
     explosions_to_remove = set()
     friendlies_to_remove = set()
@@ -614,9 +629,15 @@ def handle_grenade_explosion_damage(state, dt: float, ctx: dict) -> None:
         damage_val = explosion.get("damage", 500)
         source = explosion.get("source", "")
         
+        # Determine if this is a player-source explosion (for fair gameplay check)
+        is_player_explosion = source in ("player", "wall_impact")
+        
         # Use spatial grid to query only enemies near explosion radius
         if source != "enemy_player_allies_only" and enemy_grid:
             for enemy in enemy_grid.query_radius(px, py, r):
+                # Fair gameplay: Skip off-screen enemies for player explosions
+                if is_player_explosion and camera and not camera.is_visible(enemy["rect"]):
+                    continue
                 # Use C-accelerated distance_squared (avoids sqrt)
                 d_sq = c_distance_squared(enemy["rect"].centerx, enemy["rect"].centery, px, py)
                 if d_sq <= r_sq:
