@@ -66,6 +66,15 @@ rocket_damage = missile_damage
 # Ally drop
 ally_drop_cooldown = 1.5
 
+# Decoy (distraction shots that draw enemy fire)
+DECOY_COOLDOWN = 1.0  # Seconds between decoy shots
+DECOY_LIFETIME = 3.0  # How long decoy persists
+DECOY_SPEED = 400  # Travel speed
+DECOY_AGGRO_RADIUS = 500.0  # Enemies within this radius target decoy
+DECOY_AGGRO_PRIORITY = 1.0  # 100% chance to draw aggro (highest priority)
+DECOY_HP = 1  # How many hits decoy can absorb (1 = destroyed on first hit)
+DECOY_MAX_COUNT = 3  # Maximum active decoys at once
+
 # Ally aggro/taunt system
 ALLY_AGGRO_RADIUS = 250.0  # Base radius where allies draw enemy attention
 ALLY_AGGRO_PRIORITY = 0.7  # Chance (0-1) that enemies in range target ally instead of player
@@ -82,10 +91,11 @@ POS_SAMPLE_INTERVAL = 0.25
 PICKUP_SPAWN_INTERVAL = 75.0  # 1/10th former rate (was 7.5)
 PICKUP_BONUS_POINTS = 5000  # Points per bonus pickup
 PICKUP_LIFETIME = 7.0  # Seconds before pickup despawns (encourages movement)
-MAX_ENEMIES_TARGETING_PLAYER = 18
+MAX_ENEMIES_TARGETING_PLAYER = 10  # Reduced from 18 for more dodgeable gameplay
 
 # Enemy appearance / projectiles
 ENEMY_COLOR = (200, 50, 50)
 ENEMY_PROJECTILE_SIZE = (10, 10)
 ENEMY_PROJECTILE_DAMAGE = 11
 ENEMY_PROJECTILES_COLOR = (200, 200, 200)
+ENEMY_PROJECTILE_SPEED_MULT = 0.7  # Global multiplier for enemy projectile speeds (1.0 = normal, 0.5 = half speed)

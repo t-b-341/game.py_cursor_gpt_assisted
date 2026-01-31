@@ -35,6 +35,7 @@ class GameState:
     pickup_particles: list = field(default_factory=list)
     collection_effects: list = field(default_factory=list)
     enemy_defeat_messages: list = field(default_factory=list)
+    decoys: list = field(default_factory=list)  # Distraction shots that draw enemy fire
     
     # Player state
     player_hp: int = 7500
@@ -87,6 +88,7 @@ class GameState:
     ally_command_target: Optional[tuple[float, float]] = None  # Mouse position for "allies go here"
     ally_command_timer: float = 0.0  # Seconds until allies stop following command
     teleporter_cooldown: float = 0.0  # Seconds after teleport before can teleport again
+    decoy_time_since_used: float = 999.0  # Cooldown timer for decoy shots
 
     # Player stat multipliers (from pickups)
     player_stat_multipliers: dict = field(default_factory=lambda: {

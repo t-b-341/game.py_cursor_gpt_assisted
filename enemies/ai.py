@@ -10,6 +10,10 @@ from constants import (
     DROPPED_ALLY_AGGRO_RADIUS,
     DROPPED_ALLY_AGGRO_PRIORITY,
 )
+from config.balance import (
+    DECOY_AGGRO_RADIUS,
+    DECOY_AGGRO_PRIORITY,
+)
 from physics_loader import distance_squared as c_distance_squared
 
 
@@ -17,23 +21,45 @@ def find_nearest_threat(
     enemy_pos: pygame.Vector2,
     player: pygame.Rect | None,
     friendly_ai: list[dict],
+    decoys: list[dict] | None = None,
     *,
     allow_player: bool = True,
 ) -> tuple[pygame.Vector2, str] | None:
-    """Find the nearest threat (player or friendly AI) to an enemy.
+    """Find the nearest threat (player or friendly AI or decoy) to an enemy.
     
     Aggro priority system:
-    1. Dropped allies have highest priority within their large aggro radius (400px, 90% chance)
+    0. Decoys have HIGHEST priority - always targeted when in range (player's tactical distraction)
+    1. Dropped allies have high priority within their large aggro radius (400px, 90% chance)
     2. Regular allies draw aggro within their radius (250px, 70% chance)
     3. Player is targeted if no allies are drawing aggro or RNG favors player
     4. Fallback to nearest friendly if player targeting not allowed
     
-    This makes allies effective at tanking and drawing enemy fire away from the player.
+    This makes allies and decoys effective at tanking and drawing enemy fire away from the player.
     """
     if player is None or not allow_player:
         player_pos = None
     else:
         player_pos = pygame.Vector2(player.center)
+
+    # Extract enemy position once for C function calls
+    ex, ey = enemy_pos.x, enemy_pos.y
+
+    # Priority 0: Check decoys first (highest priority - player's tactical distraction)
+    decoy_aggro_radius_sq = DECOY_AGGRO_RADIUS * DECOY_AGGRO_RADIUS
+    if decoys:
+        decoy_threats = []
+        for decoy in decoys:
+            if decoy.get("hp", 0) <= 0:
+                continue
+            decoy_pos = pygame.Vector2(decoy["rect"].center)
+            decoy_dist_sq = c_distance_squared(ex, ey, decoy_pos.x, decoy_pos.y)
+            if decoy_dist_sq <= decoy_aggro_radius_sq:
+                decoy_threats.append((decoy_pos, decoy_dist_sq))
+        
+        if decoy_threats:
+            # Always target nearest decoy when in range
+            decoy_threats.sort(key=lambda x: x[1])
+            return (decoy_threats[0][0], "decoy")
 
     # Use configurable aggro radii
     dropped_aggro_radius_sq = DROPPED_ALLY_AGGRO_RADIUS * DROPPED_ALLY_AGGRO_RADIUS
@@ -43,9 +69,6 @@ def find_nearest_threat(
     # Each entry: (position, distance_squared, target_type, aggro_radius_sq, aggro_priority)
     dropped_ally_threats = []
     regular_ally_threats = []
-    
-    # Extract enemy position once for C function calls
-    ex, ey = enemy_pos.x, enemy_pos.y
     
     for f in friendly_ai:
         if f.get("hp", 0) <= 0:

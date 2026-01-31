@@ -99,7 +99,7 @@ def draw_projectiles(screen: pygame.Surface, state: Any, render_ctx: RenderConte
 
 
 def draw_effects(screen: pygame.Surface, state: Any, render_ctx: RenderContext = None) -> None:
-    """Draw grenade explosions and missiles."""
+    """Draw grenade explosions, missiles, and decoys."""
     cam_x, cam_y = get_camera_offset(render_ctx)
     
     for explosion in getattr(state, "grenade_explosions", []):
@@ -121,6 +121,27 @@ def draw_effects(screen: pygame.Surface, state: Any, render_ctx: RenderContext =
             # Purple for player missiles
             pygame.draw.rect(screen, (160, 80, 220), screen_r)
             pygame.draw.rect(screen, (100, 40, 160), screen_r, 2)
+    
+    # Draw decoys - distinctive pulsing light blue with glow effect
+    for decoy in getattr(state, "decoys", []):
+        r = decoy.get("rect")
+        if not r:
+            continue
+        if render_ctx and not render_ctx.is_visible(r):
+            continue
+        # Calculate pulse based on remaining lifetime (faster pulse when about to expire)
+        lifetime = decoy.get("lifetime", 3.0)
+        import math
+        pulse = 0.5 + 0.5 * math.sin(lifetime * 8)  # Pulsing effect
+        # Draw outer glow
+        glow_color = (int(50 * pulse), int(150 * pulse), int(200 * pulse))
+        center = (r.centerx - cam_x, r.centery - cam_y)
+        pygame.draw.circle(screen, glow_color, center, r.w + 4)
+        # Draw main decoy body
+        decoy_color = decoy.get("color", (100, 200, 255))
+        pygame.draw.circle(screen, decoy_color, center, r.w // 2)
+        # Draw bright center
+        pygame.draw.circle(screen, (200, 240, 255), center, r.w // 4)
 
 
 def draw_beams(screen: pygame.Surface, state: Any, render_ctx: RenderContext = None) -> None:

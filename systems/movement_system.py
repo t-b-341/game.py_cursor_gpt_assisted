@@ -52,6 +52,8 @@ def update(state: "GameState", dt: float) -> None:
         _update_enemy_projectiles(state, dt, ctx)
         _update_friendly_projectiles(state, dt, ctx)
         _update_missiles(state, dt, ctx)
+        _update_decoys(state, dt)
+        _update_decoy_cooldown(state, dt)
         _update_ecs_position_velocity(state, dt)
         # Ally AI is run in ai_system.update()
 
@@ -180,7 +182,8 @@ def _update_enemies(state, dt: float, ctx: dict) -> None:
         # Create Vector2 only once per enemy (needed for find_nearest_threat)
         enemy_pos = pygame.Vector2(ex, ey)
         allow_player = id(enemy) in targeting_slots
-        target_info = find_nearest_threat(enemy_pos, player, state.friendly_ai, allow_player=allow_player)
+        decoys = getattr(state, "decoys", [])
+        target_info = find_nearest_threat(enemy_pos, player, state.friendly_ai, decoys, allow_player=allow_player)
 
         # When player is in main area, non-boss non-patrol enemies patrol the outer area
         if target_info and player_in_main and outer_rect and not enemy.get("is_boss") and not enemy.get("is_patrol"):
@@ -481,3 +484,37 @@ def _update_ecs_position_velocity(state: "GameState", dt: float) -> None:
             continue
         pos.rect.x += int(vel.vx * dt)
         pos.rect.y += int(vel.vy * dt)
+
+
+def _update_decoys(state: "GameState", dt: float) -> None:
+    """Update decoys: movement, lifetime countdown, and removal of expired decoys."""
+    decoys = getattr(state, "decoys", None)
+    if not decoys:
+        return
+    
+    decoys_to_remove = set()
+    
+    for decoy in decoys:
+        # Update position
+        vel = decoy.get("vel")
+        if vel:
+            decoy["rect"].x += int(vel.x * dt)
+            decoy["rect"].y += int(vel.y * dt)
+        
+        # Update lifetime
+        decoy["lifetime"] = decoy.get("lifetime", 0) - dt
+        if decoy["lifetime"] <= 0:
+            decoys_to_remove.add(id(decoy))
+        
+        # Check if decoy is destroyed (hp <= 0)
+        if decoy.get("hp", 1) <= 0:
+            decoys_to_remove.add(id(decoy))
+    
+    # Remove expired/destroyed decoys
+    if decoys_to_remove:
+        state.decoys[:] = [d for d in state.decoys if id(d) not in decoys_to_remove]
+
+
+def _update_decoy_cooldown(state: "GameState", dt: float) -> None:
+    """Update decoy cooldown timer."""
+    state.decoy_time_since_used = getattr(state, "decoy_time_since_used", 999.0) + dt

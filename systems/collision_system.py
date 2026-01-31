@@ -47,6 +47,7 @@ def update(state: "GameState", dt: float) -> None:
         collision_projectiles.handle_enemy_projectile_block_collisions(state, ctx)
         collision_player.handle_enemy_projectile_player_collisions(state, ctx)
         collision_projectiles.handle_enemy_projectile_friendly_collisions(state, ctx)
+        collision_projectiles.handle_enemy_projectile_decoy_collisions(state, ctx)
         collision_player.handle_teleporter_player(state, ctx)
         collision_pickups.handle_pickup_player_collisions(state, ctx)
         collision_player.handle_health_zone_player_dt(state, dt, ctx)

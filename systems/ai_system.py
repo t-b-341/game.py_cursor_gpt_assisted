@@ -9,9 +9,18 @@ import pygame
 
 from constants import STATE_NAME_INPUT
 from .perf_timing import perf_timer
+from .camera import get_camera
 
 if TYPE_CHECKING:
     from state import GameState
+
+
+def _enemy_is_on_screen(enemy: dict) -> bool:
+    """Check if an enemy is visible on screen. Off-screen enemies shouldn't shoot."""
+    camera = get_camera()
+    if camera is None:
+        return True  # No camera, assume on screen
+    return camera.is_visible(enemy["rect"])
 
 
 def update(state: "GameState", dt: float) -> None:
@@ -117,8 +126,8 @@ def _update_enemy_ai(state, dt: float, ctx: dict) -> None:
         if enemy.get("fires_rockets") or enemy.get("can_use_grenades_player_allies_only"):
             continue  # Super large uses only rockets + grenades, no normal projectiles
 
-        # Large laser: single beam at player
-        if enemy.get("fires_laser") and target_info and vec_toward:
+        # Large laser: single beam at player (only if on screen)
+        if enemy.get("fires_laser") and target_info and vec_toward and _enemy_is_on_screen(enemy):
             lcd = enemy.get("laser_cooldown", 0.0) + dt
             enemy["laser_cooldown"] = lcd
             if lcd >= enemy.get("laser_interval", 3.0):
@@ -145,8 +154,8 @@ def _update_enemy_ai(state, dt: float, ctx: dict) -> None:
                 enemy["laser_cooldown"] = 0.0
             continue
 
-        # Super large triple laser: three beams with spread
-        if enemy.get("fires_triple_laser") and target_info and vec_toward:
+        # Super large triple laser: three beams with spread (only if on screen)
+        if enemy.get("fires_triple_laser") and target_info and vec_toward and _enemy_is_on_screen(enemy):
             lcd = enemy.get("laser_cooldown", 0.0) + dt
             enemy["laser_cooldown"] = lcd
             if lcd >= enemy.get("laser_interval", 4.0):
@@ -175,8 +184,8 @@ def _update_enemy_ai(state, dt: float, ctx: dict) -> None:
                 enemy["laser_cooldown"] = 0.0
             continue
 
-        # Non-reflector shooting
-        if not enemy.get("has_reflective_shield") and spawn_projectile and spawn_projectile_predictive:
+        # Non-reflector shooting (only if on screen - projectile functions also check but this saves work)
+        if not enemy.get("has_reflective_shield") and spawn_projectile and spawn_projectile_predictive and _enemy_is_on_screen(enemy):
             enemy["shoot_cooldown"] = enemy.get("shoot_cooldown", 999.0) + dt
             if enemy["shoot_cooldown"] >= enemy.get("shoot_cooldown_time", 1.0):
                 if target_info:

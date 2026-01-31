@@ -264,6 +264,13 @@ def handle_gameplay_input(events, game_state, ctx) -> None:
                     game_state.laser_beams.clear()
                 game_state.current_weapon_mode = "giant"
                 _log_weapon_switch(game_state, ctx, "giant")
+            elif event.key == pygame.K_4:
+                # Decoy mode - always available, fires distraction shots
+                game_state.previous_weapon_mode = game_state.current_weapon_mode
+                if game_state.previous_weapon_mode == "laser":
+                    game_state.laser_beams.clear()
+                game_state.current_weapon_mode = "decoy"
+                _log_weapon_switch(game_state, ctx, "decoy")
 
             dash_key = controls.get("dash", pygame.K_SPACE)
             if event.key == dash_key:

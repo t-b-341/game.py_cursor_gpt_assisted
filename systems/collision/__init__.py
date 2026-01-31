@@ -47,6 +47,7 @@ from .enemy_projectiles import (
     handle_enemy_projectile_lifetime_offscreen,
     handle_enemy_projectile_block_collisions,
     handle_enemy_projectile_friendly_collisions,
+    handle_enemy_projectile_decoy_collisions,
 )
 
 from .friendly_projectiles import (
@@ -79,6 +80,7 @@ __all__ = [
     "handle_enemy_projectile_lifetime_offscreen",
     "handle_enemy_projectile_block_collisions",
     "handle_enemy_projectile_friendly_collisions",
+    "handle_enemy_projectile_decoy_collisions",
     # Friendly projectiles
     "handle_friendly_projectile_offscreen_blocks_enemies",
     # Explosions

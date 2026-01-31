@@ -18,6 +18,12 @@ from config.balance import (
     player_bullet_shapes,
     ENEMY_PROJECTILE_SIZE,
     ENEMY_PROJECTILES_COLOR,
+    ENEMY_PROJECTILE_SPEED_MULT,
+    DECOY_COOLDOWN,
+    DECOY_LIFETIME,
+    DECOY_SPEED,
+    DECOY_HP,
+    DECOY_MAX_COUNT,
 )
 from config_weapons import WEAPON_CONFIGS
 
@@ -39,12 +45,83 @@ if TYPE_CHECKING:
     from context import AppContext
 
 
+def spawn_decoy(state: GameState, ctx: AppContext) -> bool:
+    """Spawn a decoy projectile that draws enemy fire.
+    
+    Returns True if decoy was spawned, False if on cooldown or at max count.
+    """
+    if state.player_rect is None:
+        return False
+    
+    # Check cooldown
+    if state.decoy_time_since_used < DECOY_COOLDOWN:
+        return False
+    
+    # Check max active decoys
+    decoys = getattr(state, "decoys", [])
+    if len(decoys) >= DECOY_MAX_COUNT:
+        return False
+    
+    # Determine aiming direction
+    if ctx.config.aim_mode == AIM_ARROWS:
+        keys = pygame.key.get_pressed()
+        dx = 0
+        dy = 0
+        if keys[pygame.K_LEFT]:
+            dx = -1
+        if keys[pygame.K_RIGHT]:
+            dx = 1
+        if keys[pygame.K_UP]:
+            dy = -1
+        if keys[pygame.K_DOWN]:
+            dy = 1
+        
+        if dx == 0 and dy == 0:
+            if state.last_move_velocity.length_squared() > 0:
+                direction = state.last_move_velocity.normalize()
+            else:
+                direction = pygame.Vector2(1, 0)
+        else:
+            direction = pygame.Vector2(dx, dy).normalize()
+    else:
+        mx, my = ctx.get_world_mouse_pos()
+        direction = vec_toward(state.player_rect.centerx, state.player_rect.centery, mx, my)
+    
+    # Create decoy
+    decoy_size = (16, 16)
+    decoy = {
+        "rect": pygame.Rect(
+            state.player_rect.centerx - decoy_size[0] // 2,
+            state.player_rect.centery - decoy_size[1] // 2,
+            decoy_size[0],
+            decoy_size[1],
+        ),
+        "vel": direction * DECOY_SPEED,
+        "hp": DECOY_HP,
+        "lifetime": DECOY_LIFETIME,
+        "color": (100, 200, 255),  # Light blue to distinguish from regular bullets
+    }
+    
+    state.decoys.append(decoy)
+    state.decoy_time_since_used = 0.0
+    
+    # Play a sound effect
+    play_sfx("BASIC SHOT")
+    
+    return True
+
+
 def spawn_player_bullet_and_log(state: GameState, ctx: AppContext):
     """Spawn player bullet(s) based on current weapon mode and aiming direction.
     
     Handles weapon configs, stat multipliers, spread patterns, and telemetry logging.
     """
     if state.player_rect is None:
+        return
+    
+    # Handle decoy mode separately
+    if state.current_weapon_mode == "decoy":
+        spawn_decoy(state, ctx)
         return
     
     # Check projectile limit for performance
@@ -254,9 +331,16 @@ def spawn_enemy_projectile(enemy: dict, state: GameState, telemetry_client=None,
     """Spawn projectile from enemy targeting nearest threat (player or friendly AI).
     
     Respects max-enemies-targeting-player cap and projectile limits.
+    Off-screen enemies don't shoot (fair gameplay - player can't see the shots coming).
     """
     if state.player_rect is None:
         return
+    
+    # Prevent off-screen enemies from shooting (fair gameplay)
+    from systems.camera import get_camera
+    camera = get_camera()
+    if camera and not camera.is_visible(enemy["rect"]):
+        return  # Enemy is off-screen, don't let them shoot
     
     # Check projectile limit for performance
     ctx = getattr(state, "level_context", None)
@@ -267,7 +351,8 @@ def spawn_enemy_projectile(enemy: dict, state: GameState, telemetry_client=None,
     e_pos = pygame.Vector2(enemy["rect"].center)
     ctx = getattr(state, "level_context", None)
     allow_player = id(enemy) in ctx.get("_player_targeting_slots", set()) if ctx else True
-    threat_result = find_nearest_threat(e_pos, state.player_rect, state.friendly_ai, allow_player=allow_player)
+    decoys = getattr(state, "decoys", [])
+    threat_result = find_nearest_threat(e_pos, state.player_rect, state.friendly_ai, decoys, allow_player=allow_player)
     
     # Calculate direction
     if threat_result:
@@ -295,9 +380,11 @@ def spawn_enemy_projectile(enemy: dict, state: GameState, telemetry_client=None,
     bounces = enemy.get("bouncing_projectiles", False)
     
     proj_damage = enemy.get("flame_damage", enemy.get("damage", 10))
+    # Apply global speed multiplier for easier dodging
+    proj_speed = enemy["projectile_speed"] * ENEMY_PROJECTILE_SPEED_MULT
     state.enemy_projectiles.append({
         "rect": r,
-        "vel": d * enemy["projectile_speed"],
+        "vel": d * proj_speed,
         "enemy_type": enemy["type"],
         "color": proj_color,
         "shape": proj_shape,
@@ -321,7 +408,16 @@ def spawn_enemy_projectile(enemy: dict, state: GameState, telemetry_client=None,
 
 
 def spawn_enemy_projectile_predictive(enemy: dict, direction: pygame.Vector2, state: GameState):
-    """Spawn projectile from predictive enemy in a specific direction (predicted player position)."""
+    """Spawn projectile from predictive enemy in a specific direction (predicted player position).
+    
+    Off-screen enemies don't shoot (fair gameplay).
+    """
+    # Prevent off-screen enemies from shooting (fair gameplay)
+    from systems.camera import get_camera
+    camera = get_camera()
+    if camera and not camera.is_visible(enemy["rect"]):
+        return  # Enemy is off-screen, don't let them shoot
+    
     edef = get_projectile_def("enemy_default")
     proj_size = edef["size"] if edef else enemy_projectile_size
     default_color = edef["color"] if edef else enemy_projectiles_color
@@ -333,9 +429,11 @@ def spawn_enemy_projectile_predictive(enemy: dict, direction: pygame.Vector2, st
     )
     proj_color = enemy.get("projectile_color", default_color)
     proj_shape = enemy.get("projectile_shape", "diamond")  # Rhomboid shape
+    # Apply global speed multiplier for easier dodging
+    proj_speed = enemy["projectile_speed"] * ENEMY_PROJECTILE_SPEED_MULT
     state.enemy_projectiles.append({
         "rect": r,
-        "vel": direction * enemy["projectile_speed"],
+        "vel": direction * proj_speed,
         "enemy_type": enemy["type"],
         "color": proj_color,
         "shape": proj_shape,

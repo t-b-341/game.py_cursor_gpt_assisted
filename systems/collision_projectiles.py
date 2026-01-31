@@ -831,3 +831,40 @@ def handle_missile_collisions(state, ctx: dict) -> None:
         state.missiles[:] = [m for m in state.missiles if id(m) not in missiles_to_remove]
     if friendlies_to_remove:
         state.friendly_ai[:] = [f for f in state.friendly_ai if id(f) not in friendlies_to_remove]
+
+
+def handle_enemy_projectile_decoy_collisions(state: "GameState", ctx: dict) -> None:
+    """Apply enemy projectile damage to decoys; decoys absorb projectiles.
+    
+    This is the core mechanic - decoys draw fire and get destroyed, protecting the player.
+    """
+    decoys = getattr(state, "decoys", None)
+    if not state.enemy_projectiles or not decoys:
+        return
+    
+    projs_to_remove = set()
+    decoys_to_remove = set()
+    
+    for proj in state.enemy_projectiles:
+        if id(proj) in projs_to_remove:
+            continue
+        
+        for decoy in decoys:
+            if decoy.get("hp", 1) <= 0:
+                continue
+            if not proj["rect"].colliderect(decoy["rect"]):
+                continue
+            
+            # Decoy absorbs the projectile
+            decoy["hp"] = decoy.get("hp", 1) - 1
+            projs_to_remove.add(id(proj))
+            
+            if decoy["hp"] <= 0:
+                decoys_to_remove.add(id(decoy))
+            break
+    
+    # Bulk removal
+    if projs_to_remove:
+        state.enemy_projectiles[:] = [p for p in state.enemy_projectiles if id(p) not in projs_to_remove]
+    if decoys_to_remove:
+        state.decoys[:] = [d for d in state.decoys if id(d) not in decoys_to_remove]
