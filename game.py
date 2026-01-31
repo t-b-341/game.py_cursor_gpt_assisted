@@ -30,20 +30,15 @@ scenes from scenes/ and RenderContext.from_app_ctx(ctx).
 # SceneTransition objects (push, pop, replace, quit_game, or none).
 # -----------------------------------------------------------------------------
 """
-import json
 import logging
-import math
 import os
-import random
 import shutil
 import sys
-import time
 import warnings
 from datetime import datetime, timezone
 from pathlib import Path
 
 import pygame
-import sqlite3
 
 # Suppress pygame's pkg_resources deprecation warning (pygame internal, not our code)
 warnings.filterwarnings("ignore", message="pkg_resources is deprecated")
@@ -61,27 +56,7 @@ except Exception as e:
     logging.getLogger(__name__).debug("gpu_physics unavailable (%s), using CPU physics.", e)
 
 from telemetry.event_bus_handlers import register_telemetry_event_handlers
-from telemetry import (
-    Telemetry,
-    NoOpTelemetry,
-    EnemySpawnEvent,
-    PlayerPosEvent,
-    ShotEvent,
-    EnemyHitEvent,
-    PlayerDamageEvent,
-    PlayerDeathEvent,
-    WaveEvent,
-    WaveEnemyTypeEvent,
-    EnemyPositionEvent,
-    PlayerVelocityEvent,
-    BulletMetadataEvent,
-    PlayerActionEvent,
-    ZoneVisitEvent,
-    FriendlyAISpawnEvent,
-    FriendlyAIPositionEvent,
-    FriendlyAIShotEvent,
-    FriendlyAIDeathEvent,
-)
+from telemetry import Telemetry, NoOpTelemetry
 
 # -----------------------------------------------------------------------------
 # Internal: constants and config
@@ -187,7 +162,6 @@ from state import GameState
 from context import AppContext
 from event_bus import EventBus, GameEvent
 from config import GameConfig, apply_safe_mode, log_startup_config
-from config.projectile_defs import get_projectile_def
 # -----------------------------------------------------------------------------
 # SCENE MIGRATION STATUS: COMPLETE
 # -----------------------------------------------------------------------------
@@ -244,11 +218,10 @@ except ImportError:
     _perf_record_frame = lambda _dt: None
 from controls_io import _key_name_to_code, load_controls
 from physics_loader import resolve_physics
+from game_utils import init_high_scores_db
 from geometry_utils import (
     clamp_rect_to_screen,
     vec_toward,
-    line_rect_intersection,
-    can_move_rect,
     rect_offscreen,
     filter_blocks_too_close_to_player,
     set_screen_dimensions,
@@ -866,38 +839,6 @@ def main():
     """Thin entrypoint: create GameApp and run the main loop."""
     from game_app import GameApp
     GameApp().run()
-
-
-# -----------------------------------------------------------------------------
-# LEGACY MODULE-LEVEL STATE (MINIMAL)
-# All game state is in GameState. These are kept only for external compatibility.
-# New code should use state.xxx instead.
-# -----------------------------------------------------------------------------
-controls = {}  # Initialized in _create_app() after pygame.init()
-
-# Weapon key mapping (uses pygame constants)
-WEAPON_KEY_MAP = {
-    pygame.K_1: "triple",
-    pygame.K_2: "laser",
-    pygame.K_3: "giant",
-}
-
-# Lowercase aliases for constants (external compatibility)
-enemy_projectile_size = ENEMY_PROJECTILE_SIZE
-enemy_projectile_damage = ENEMY_PROJECTILE_DAMAGE
-enemy_projectiles_color = ENEMY_PROJECTILES_COLOR
-
-# Template aliases (external compatibility)
-enemy_templates = ENEMY_TEMPLATES
-boss_template = BOSS_TEMPLATE
-friendly_ai_templates = FRIENDLY_AI_TEMPLATES
-
-# -----------------------------------------------------------------------------
-# RE-EXPORTS (functions that other modules import from game.py)
-# -----------------------------------------------------------------------------
-from game_utils import init_high_scores_db, get_high_scores, save_high_score, is_high_score, calculate_kill_score
-from systems.spawn_helpers import random_spawn_position, spawn_pickup, spawn_weapon_in_center, spawn_weapon_drop, create_pickup_collection_effect
-from systems.enemy_death import kill_enemy, reset_after_death
 
 
 if __name__ == "__main__":

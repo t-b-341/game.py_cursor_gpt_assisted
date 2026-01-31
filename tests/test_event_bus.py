@@ -99,7 +99,7 @@ def test_handler_raises_others_still_run(caplog: pytest.LogCaptureFixture):
 
 def test_enemy_killed_integration():
     """When kill_enemy is called with an event_bus, 'enemy_killed' is published with expected payload."""
-    import game
+    from systems.enemy_death import kill_enemy
     from state import GameState
 
     bus = EventBus()
@@ -126,7 +126,7 @@ def test_enemy_killed_integration():
     }
     state.enemies.append(enemy)
 
-    game.kill_enemy(enemy, state, 800, 600, event_bus=bus)
+    kill_enemy(enemy, state, 800, 600, event_bus=bus)
 
     assert len(received) == 1
     assert received[0].type == "enemy_killed"

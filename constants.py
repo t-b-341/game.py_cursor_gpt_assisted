@@ -4,6 +4,21 @@ These are extracted from game.py for better organization.
 """
 
 # ----------------------------
+# Display defaults
+# ----------------------------
+DEFAULT_DISPLAY_WIDTH = 1920
+DEFAULT_DISPLAY_HEIGHT = 1080
+
+# ----------------------------
+# Font sizes (in pixels)
+# ----------------------------
+FONT_SIZE_SMALL = 20
+FONT_SIZE_MEDIUM = 28
+FONT_SIZE_LARGE = 56
+FONT_SIZE_TITLE = 72
+FONT_SIZE_HUD = 24
+
+# ----------------------------
 # File paths (relative to project root; controls live under assets/data/)
 # ----------------------------
 CONTROLS_PATH = "assets/data/controls.json"
