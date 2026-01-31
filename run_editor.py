@@ -14,6 +14,7 @@ Controls:
     G: Toggle grid overlay
     S: Save map
     H: Toggle help
+    F11: Toggle fullscreen
     Arrow keys: Pan camera
     Ctrl+F: Fill entire map with selected tile
     Left click: Place tile
@@ -34,11 +35,12 @@ def main():
     pygame.init()
     pygame.font.init()
     
-    # Window setup
-    screen_width = 1280
-    screen_height = 720
+    # Window setup - start windowed
+    windowed_size = (1280, 720)
+    screen_width, screen_height = windowed_size
+    is_fullscreen = False
     
-    screen = pygame.display.set_mode((screen_width, screen_height))
+    screen = pygame.display.set_mode((screen_width, screen_height), pygame.RESIZABLE)
     pygame.display.set_caption("Map Editor - game.py")
     clock = pygame.time.Clock()
     
@@ -60,6 +62,32 @@ def main():
         else:
             print(f"Could not load map: {map_name}, starting with new map")
     
+    def toggle_fullscreen():
+        """Toggle between fullscreen and windowed mode."""
+        nonlocal screen, is_fullscreen, screen_width, screen_height
+        is_fullscreen = not is_fullscreen
+        
+        if is_fullscreen:
+            # Get current display info for fullscreen resolution
+            info = pygame.display.Info()
+            screen_width, screen_height = info.current_w, info.current_h
+            screen = pygame.display.set_mode((screen_width, screen_height), pygame.FULLSCREEN)
+        else:
+            screen_width, screen_height = windowed_size
+            screen = pygame.display.set_mode((screen_width, screen_height), pygame.RESIZABLE)
+        
+        # Update editor dimensions
+        editor.screen_width = screen_width
+        editor.screen_height = screen_height
+        return screen
+    
+    def handle_resize(new_width, new_height):
+        """Handle window resize."""
+        nonlocal screen_width, screen_height
+        screen_width, screen_height = new_width, new_height
+        editor.screen_width = screen_width
+        editor.screen_height = screen_height
+    
     # Main loop
     running = True
     while running:
@@ -67,6 +95,17 @@ def main():
         
         # Handle events
         for event in pygame.event.get():
+            # Handle fullscreen toggle before editor
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_F11:
+                screen = toggle_fullscreen()
+                continue
+            
+            # Handle window resize
+            if event.type == pygame.VIDEORESIZE and not is_fullscreen:
+                handle_resize(event.w, event.h)
+                screen = pygame.display.set_mode((event.w, event.h), pygame.RESIZABLE)
+                continue
+            
             if editor.handle_event(event):
                 running = False
         

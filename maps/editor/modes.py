@@ -141,6 +141,10 @@ class ModesMixin:
         self._undo_stack.clear()
         self._redo_stack.clear()
         
+        # Reset camera to origin to show resized map
+        self.camera_x = 0.0
+        self.camera_y = 0.0
+        
         self._resize_mode = False
         self._set_status(f"Resized {old_size} -> {new_width}x{new_height} (anchor: {anchor})")
     

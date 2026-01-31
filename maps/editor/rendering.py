@@ -75,6 +75,47 @@ class RenderingMixin:
                 
                 rect = pygame.Rect(screen_x, screen_y, TILE_SIZE, TILE_SIZE)
                 pygame.draw.rect(screen, tile.color, rect)
+        
+        # Draw map boundary indicator
+        self._render_map_boundary(screen, map_area_width)
+    
+    def _render_map_boundary(self: "MapEditor", screen: pygame.Surface, map_area_width: int) -> None:
+        """Render a visible boundary around the map edges."""
+        # Calculate map bounds in screen coordinates
+        map_pixel_width = self.map_grid.width * TILE_SIZE
+        map_pixel_height = self.map_grid.height * TILE_SIZE
+        
+        # Map boundary rectangle in screen space
+        left = int(-self.camera_x)
+        top = int(-self.camera_y)
+        right = int(map_pixel_width - self.camera_x)
+        bottom = int(map_pixel_height - self.camera_y)
+        
+        # Clamp to visible area
+        visible_left = max(0, left)
+        visible_top = max(0, top)
+        visible_right = min(map_area_width, right)
+        visible_bottom = min(self.screen_height, bottom)
+        
+        # Draw dashed boundary lines in yellow/orange
+        boundary_color = (255, 180, 50)
+        line_width = 3
+        
+        # Draw right edge of map (if visible)
+        if 0 < right <= map_area_width:
+            pygame.draw.line(screen, boundary_color, (right, visible_top), (right, visible_bottom), line_width)
+        
+        # Draw bottom edge of map (if visible)  
+        if 0 < bottom <= self.screen_height:
+            pygame.draw.line(screen, boundary_color, (visible_left, bottom), (visible_right, bottom), line_width)
+        
+        # Draw left edge (if camera is past left boundary)
+        if left > 0:
+            pygame.draw.line(screen, boundary_color, (left, visible_top), (left, visible_bottom), line_width)
+        
+        # Draw top edge (if camera is past top boundary)
+        if top > 0:
+            pygame.draw.line(screen, boundary_color, (visible_left, top), (visible_right, top), line_width)
     
     def _render_grid(self: "MapEditor", screen: pygame.Surface) -> None:
         """Render grid lines."""
@@ -261,6 +302,7 @@ class RenderingMixin:
                 "Ctrl+Y: Redo",
                 "Arrows: Pan camera",
                 "Ctrl+F: Fill all",
+                "F11: Fullscreen",
                 "Left click: Paint",
                 "Right click: Erase",
                 "ESC: Quit",
