@@ -117,8 +117,8 @@ def handle_scene_events(events: list, ctx: AppContext, game_state: GameState, ui
 
 
 def handle_debug_keys(events: list, ctx: AppContext) -> None:
-    """Handle debug keys (F3). Delegates to engine.input_loop."""
-    _engine_handle_debug_keys(events, ctx.config)
+    """Handle debug keys (F3 shader info, F6 map cycle). Delegates to engine.input_loop."""
+    _engine_handle_debug_keys(events, ctx.config, ctx)
 
 
 # -----------------------------------------------------------------------------

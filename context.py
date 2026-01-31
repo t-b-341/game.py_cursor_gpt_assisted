@@ -66,6 +66,9 @@ class AppContext:
     # Event bus for decoupling systems (optional; None or no-op when not set)
     event_bus: Optional[Any] = None
     
+    # Map manager for tile-based maps (optional; None when not in use)
+    map_manager: Optional[Any] = None
+    
     def get_world_mouse_pos(self) -> tuple[int, int]:
         """Get mouse position in world coordinates (scaled from display coordinates).
         

@@ -152,6 +152,18 @@ def build_app_context(
     )
     print(f"Camera initialized: viewport {display_width}x{display_height}, world {world_width}x{world_height}")
     
+    # Initialize map manager (optional tile-based maps)
+    try:
+        from maps import MapManager, load_map
+        from maps.map_loader import map_exists
+        ctx.map_manager = MapManager(tile_size=64)
+        # Try to load test_map if it exists
+        if map_exists("test_map"):
+            ctx.map_manager.load_map_by_name("test_map")
+            print("[maps] Loaded test_map")
+    except ImportError:
+        ctx.map_manager = None  # Maps module not available
+    
     return ctx
 
 

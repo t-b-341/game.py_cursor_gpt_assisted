@@ -71,12 +71,14 @@ def handle_scene_events(
         return None
 
 
-def handle_debug_keys(events: list, config) -> None:
-    """Handle global debug keys (F3 for shader profile info)."""
+def handle_debug_keys(events: list, config, ctx=None) -> None:
+    """Handle global debug keys (F3 for shader profile info, F6 for map cycling)."""
     for event in events:
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_F3:
                 _print_active_shader_profiles(config)
+            elif event.key == pygame.K_F6 and ctx is not None:
+                _cycle_map(ctx)
 
 
 def _print_active_shader_profiles(config) -> None:
@@ -94,6 +96,21 @@ def _print_active_shader_profiles(config) -> None:
         print(f"[Shader profiles] menu={mp} (len={len(menu)}) pause={pp} (len={len(pause)}) gameplay={gp} (len={len(gameplay)})")
     except Exception as e:
         print(f"[Shader profiles] could not report: {e}")
+
+
+def _cycle_map(ctx) -> None:
+    """Debug-only: cycle to the next available map."""
+    if ctx is None or ctx.map_manager is None:
+        print("[maps] Map manager not available")
+        return
+    try:
+        new_map = ctx.map_manager.cycle_map()
+        if new_map:
+            print(f"[maps] Switched to map: {new_map}")
+        else:
+            print("[maps] No maps available to cycle")
+    except Exception as e:
+        print(f"[maps] Error cycling map: {e}")
 
 
 def process_scene_transition(

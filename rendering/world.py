@@ -533,6 +533,21 @@ def _draw_beams(screen: pygame.Surface, state: Any, render_ctx: RenderContext = 
 from systems.perf_timing import perf_timer
 
 
+def _draw_tile_map(screen: pygame.Surface, ctx: dict, render_ctx: RenderContext) -> None:
+    """Draw tile-based map layer (if map_manager is available in app_ctx)."""
+    app_ctx = ctx.get("app_ctx")
+    if app_ctx is None:
+        return
+    
+    map_manager = getattr(app_ctx, "map_manager", None)
+    if map_manager is None or map_manager.current_map is None:
+        return
+    
+    # Use camera from render_ctx if available
+    camera = render_ctx.camera if render_ctx else None
+    map_manager.render(screen, camera)
+
+
 def _track_culling_stats(render_ctx: RenderContext, total: int, visible: int) -> None:
     """Track entity culling stats on the camera."""
     if render_ctx and render_ctx.camera:
@@ -541,7 +556,7 @@ def _track_culling_stats(render_ctx: RenderContext, total: int, visible: int) ->
 
 
 def render_background(state: Any, ctx: dict, render_ctx: RenderContext) -> None:
-    """Draw background (theme fill), terrain/obstacles, and pickups. First layer of the frame."""
+    """Draw background (theme fill), tile maps, terrain/obstacles, and pickups. First layer of the frame."""
     with perf_timer("render_background"):
         if not ctx:
             return
@@ -550,6 +565,10 @@ def render_background(state: Any, ctx: dict, render_ctx: RenderContext) -> None:
         theme = level_themes.get(getattr(state, "current_level", 1), default_theme)
         bg = theme.get("bg_color", (0, 0, 0))
         render_ctx.screen.fill(bg)
+        
+        # Render tile map (if available) - drawn below terrain/entities
+        _draw_tile_map(render_ctx.screen, ctx, render_ctx)
+        
         _draw_terrain(render_ctx.screen, state, ctx, render_ctx)
         _draw_pickups(render_ctx.screen, state, ctx, render_ctx)
 
