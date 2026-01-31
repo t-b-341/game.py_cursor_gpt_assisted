@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 import pygame
 
 from .collision_common import apply_player_damage, set_enemy_damage_flash
-from .spatial_grid import get_projectile_grid, get_enemy_grid, get_block_grid, SpatialGrid
+from .spatial_grid import get_projectile_grid, get_enemy_grid, get_block_grid, SpatialGrid, invalidate_block_grid
 from physics_loader import distance_squared as c_distance_squared
 
 if TYPE_CHECKING:
@@ -119,22 +119,51 @@ def handle_hazard_enemy_collisions(state, dt: float, ctx: dict) -> None:
 
 
 def handle_laser_beam_collisions(state, dt: float, ctx: dict) -> None:
+    """Handle laser beam collisions using spatial grid for O(n) performance."""
     line_rect = ctx.get("line_rect_intersection")
     kill = ctx.get("kill_enemy")
     if not line_rect or not kill:
         return
-    for beam in state.laser_beams[:]:
+    
+    if not state.laser_beams:
+        return
+    
+    # Build enemy grid for spatial queries
+    enemy_grid = _build_enemy_grid(state, ctx)
+    
+    beams_to_remove = []
+    for beam in state.laser_beams:
         beam["timer"] = beam.get("timer", 0.1) - dt
         if beam["timer"] <= 0:
-            state.laser_beams.remove(beam)
+            beams_to_remove.append(beam)
             continue
+        
         damage = beam.get("damage", 50) * dt * 60
-        for enemy in state.enemies[:]:
-            if line_rect(beam["start"], beam["end"], enemy["rect"]):
+        
+        # Calculate beam bounding rect for spatial query
+        start = beam["start"]
+        end = beam["end"]
+        min_x = min(start[0], end[0])
+        max_x = max(start[0], end[0])
+        min_y = min(start[1], end[1])
+        max_y = max(start[1], end[1])
+        # Add padding for enemy sizes
+        beam_rect = pygame.Rect(min_x - 50, min_y - 50, max_x - min_x + 100, max_y - min_y + 100)
+        
+        # Query only nearby enemies using spatial grid
+        nearby_enemies = enemy_grid.query(beam_rect)
+        
+        for enemy in nearby_enemies:
+            if line_rect(start, end, enemy["rect"]):
                 enemy["hp"] -= damage
                 set_enemy_damage_flash(enemy, ctx)
                 if enemy["hp"] <= 0:
                     kill(enemy, state)
+    
+    # Remove expired beams
+    for beam in beams_to_remove:
+        if beam in state.laser_beams:
+            state.laser_beams.remove(beam)
 
 
 def handle_dead_enemies(state, ctx: dict) -> None:
@@ -405,8 +434,10 @@ def handle_player_bullet_block_collisions(state, dt: float, ctx: dict) -> None:
         state.player_bullets[:] = [b for b in state.player_bullets if id(b) not in bullets_to_remove]
     if d_blocks_to_remove:
         lev.destructible_blocks[:] = [b for b in d_blocks if id(b) not in d_blocks_to_remove]
+        invalidate_block_grid()
     if m_blocks_to_remove:
         lev.moveable_blocks[:] = [b for b in m_blocks if id(b) not in m_blocks_to_remove]
+        invalidate_block_grid()
 
 
 def handle_enemy_projectile_lifetime_offscreen(state, ctx: dict) -> None:
@@ -467,8 +498,10 @@ def handle_enemy_projectile_block_collisions(state, ctx: dict) -> None:
         state.enemy_projectiles[:] = [p for p in state.enemy_projectiles if id(p) not in projs_to_remove]
     if d_blocks_to_remove:
         lev.destructible_blocks[:] = [b for b in d_blocks if id(b) not in d_blocks_to_remove]
+        invalidate_block_grid()
     if m_blocks_to_remove:
         lev.moveable_blocks[:] = [b for b in m_blocks if id(b) not in m_blocks_to_remove]
+        invalidate_block_grid()
 
 
 def handle_enemy_projectile_friendly_collisions(state, ctx: dict) -> None:
@@ -581,8 +614,10 @@ def handle_friendly_projectile_offscreen_blocks_enemies(state, ctx: dict) -> Non
         state.friendly_projectiles[:] = [p for p in state.friendly_projectiles if id(p) not in projs_to_remove]
     if d_blocks_to_remove and lev:
         lev.destructible_blocks[:] = [b for b in d_blocks if id(b) not in d_blocks_to_remove]
+        invalidate_block_grid()
     if m_blocks_to_remove and lev:
         lev.moveable_blocks[:] = [b for b in m_blocks if id(b) not in m_blocks_to_remove]
+        invalidate_block_grid()
 
 
 def handle_grenade_explosion_damage(state, dt: float, ctx: dict) -> None:
@@ -684,8 +719,10 @@ def handle_grenade_explosion_damage(state, dt: float, ctx: dict) -> None:
         state.friendly_ai[:] = [f for f in state.friendly_ai if id(f) not in friendlies_to_remove]
     if d_blocks_to_remove and lev:
         lev.destructible_blocks[:] = [b for b in d_blocks if id(b) not in d_blocks_to_remove]
+        invalidate_block_grid()
     if m_blocks_to_remove and lev:
         lev.moveable_blocks[:] = [b for b in m_blocks if id(b) not in m_blocks_to_remove]
+        invalidate_block_grid()
 
 
 def handle_missile_collisions(state, ctx: dict) -> None:

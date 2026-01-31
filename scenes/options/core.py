@@ -21,39 +21,23 @@ from constants import (
     weapon_selection_options,
 )
 from rendering import RenderContext, draw_centered_text
-from scenes.transitions import SceneTransition
+from ..transitions import SceneTransition
 from profile_system import load_profiles, save_profile, delete_profile, get_profile_display_text
+
+from .constants import (
+    NAV_UP as _NAV_UP,
+    NAV_DOWN as _NAV_DOWN,
+    NAV_LEFT as _NAV_LEFT,
+    NAV_RIGHT as _NAV_RIGHT,
+    NAV_CONFIRM as _NAV_CONFIRM,
+    NAV_CONFIRM_RIGHT as _NAV_CONFIRM_RIGHT,
+    cycle_selection as _cycle_selection,
+    get_menu_option_rects as _get_menu_option_rects,
+)
 
 if TYPE_CHECKING:
     from state import GameState
     from context import AppContext
-
-
-def _get_menu_option_rects(width: int, height: int, y_start: int, num_options: int, line_height: int = 40) -> list[pygame.Rect]:
-    """Calculate clickable rectangles for centered menu options."""
-    rects = []
-    option_width = 400  # Approximate clickable width
-    for i in range(num_options):
-        y = y_start + i * line_height
-        rect = pygame.Rect((width - option_width) // 2, y - 15, option_width, line_height)
-        rects.append(rect)
-    return rects
-
-
-# -----------------------------------------------------------------------------
-# Navigation key helpers
-# -----------------------------------------------------------------------------
-_NAV_UP = (pygame.K_UP, pygame.K_w)
-_NAV_DOWN = (pygame.K_DOWN, pygame.K_s)
-_NAV_LEFT = (pygame.K_LEFT, pygame.K_a)
-_NAV_RIGHT = (pygame.K_RIGHT, pygame.K_d)
-_NAV_CONFIRM = (pygame.K_RETURN, pygame.K_KP_ENTER, pygame.K_SPACE)
-_NAV_CONFIRM_RIGHT = _NAV_RIGHT + _NAV_CONFIRM
-
-
-def _cycle_selection(current: int, delta: int, num_options: int) -> int:
-    """Cycle selection index with wraparound."""
-    return (current + delta) % num_options
 
 
 class OptionsScene:

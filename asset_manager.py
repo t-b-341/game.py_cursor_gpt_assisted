@@ -378,3 +378,132 @@ def wait_for_preload(timeout: Optional[float] = None) -> bool:
         return True
     done, not_done = wait(_preload_futures, timeout=timeout, return_when=ALL_COMPLETED)
     return len(not_done) == 0
+
+
+def preload_all_assets(on_complete: Optional[Callable[[], None]] = None) -> None:
+    """Preload all images and sounds in background threads.
+    
+    Call this early (e.g., on title screen) to eliminate first-use stutter.
+    
+    Args:
+        on_complete: Optional callback when all assets are loaded
+    """
+    # Track completion of both
+    completed = [0]
+    total = 2
+    
+    def check_complete():
+        completed[0] += 1
+        if completed[0] >= total and on_complete:
+            on_complete()
+    
+    preload_all_sfx(check_complete)
+    preload_all_images(check_complete)
+
+
+def get_asset_stats() -> dict:
+    """Get asset loading statistics for debugging.
+    
+    Returns:
+        Dict with image_count, sound_count, font_count, preload_progress
+    """
+    completed, total = get_preload_progress()
+    return {
+        "images_cached": len(_image_cache),
+        "sounds_cached": len(_sound_cache),
+        "fonts_cached": len(_font_cache),
+        "preload_completed": completed,
+        "preload_total": total,
+        "is_preloading": is_preloading(),
+    }
+
+
+class LazySound:
+    """Lazy-loading sound proxy.
+    
+    Defers sound loading until first play() call.
+    Use when sound might not be needed.
+    
+    Usage:
+        # Create lazy reference
+        explosion_sound = LazySound("explosion")
+        
+        # Sound loads on first play
+        explosion_sound.play()
+    """
+    __slots__ = ("name", "_sound", "_loaded")
+    
+    def __init__(self, name: str):
+        self.name = name
+        self._sound: Optional[pygame.mixer.Sound] = None
+        self._loaded = False
+    
+    def _ensure_loaded(self) -> Optional[pygame.mixer.Sound]:
+        if not self._loaded:
+            self._sound = get_sound(self.name)
+            self._loaded = True
+        return self._sound
+    
+    def play(self, *args, **kwargs) -> Optional[pygame.mixer.Channel]:
+        sound = self._ensure_loaded()
+        if sound:
+            return sound.play(*args, **kwargs)
+        return None
+    
+    def stop(self) -> None:
+        if self._sound:
+            self._sound.stop()
+    
+    def set_volume(self, volume: float) -> None:
+        sound = self._ensure_loaded()
+        if sound:
+            sound.set_volume(volume)
+    
+    def get_volume(self) -> float:
+        sound = self._ensure_loaded()
+        return sound.get_volume() if sound else 0.0
+    
+    def is_loaded(self) -> bool:
+        return self._loaded
+
+
+class LazyImage:
+    """Lazy-loading image proxy.
+    
+    Defers image loading until first access.
+    Use when image might not be displayed immediately.
+    
+    Usage:
+        # Create lazy reference
+        player_sprite = LazyImage("player")
+        
+        # Image loads on first access
+        screen.blit(player_sprite.surface, (x, y))
+    """
+    __slots__ = ("name", "_surface", "_loaded", "convert_alpha")
+    
+    def __init__(self, name: str, convert_alpha: bool = True):
+        self.name = name
+        self.convert_alpha = convert_alpha
+        self._surface: Optional[pygame.Surface] = None
+        self._loaded = False
+    
+    @property
+    def surface(self) -> pygame.Surface:
+        """Get the loaded surface, loading on first access."""
+        if not self._loaded:
+            self._surface = get_image(self.name, self.convert_alpha)
+            self._loaded = True
+        return self._surface
+    
+    def get_size(self) -> tuple[int, int]:
+        return self.surface.get_size()
+    
+    def get_width(self) -> int:
+        return self.surface.get_width()
+    
+    def get_height(self) -> int:
+        return self.surface.get_height()
+    
+    def is_loaded(self) -> bool:
+        return self._loaded

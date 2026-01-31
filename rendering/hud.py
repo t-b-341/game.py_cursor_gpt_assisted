@@ -5,9 +5,10 @@ from __future__ import annotations
 
 import pygame
 
+from .text_cache import get_text_surface, render_text_centered
+
 # Module-level caches for rendering optimization
 _health_bar_cache = {}
-_hud_text_cache = {}
 
 
 def draw_health_bar(screen: pygame.Surface, x: int, y: int, w: int, h: int, hp: float, max_hp: float) -> None:
@@ -53,11 +54,9 @@ def draw_centered_text(
     color=(235, 235, 235),
     use_big=False,
 ) -> None:
-    """Draw centered text on screen."""
+    """Draw centered text on screen (uses cached text surface)."""
     f = big_font if use_big else font
-    surf = f.render(text, True, color)
-    rect = surf.get_rect(center=(width // 2, y))
-    screen.blit(surf, rect)
+    render_text_centered(screen, f, text, color, width // 2, y - f.get_height() // 2)
 
 
 def render_hud_text(
@@ -67,9 +66,7 @@ def render_hud_text(
     y: int,
     color=(230, 230, 230),
 ) -> int:
-    """Render HUD text at position and return next Y position (uses cached surface when possible)."""
-    cache_key = (text, color)
-    if cache_key not in _hud_text_cache:
-        _hud_text_cache[cache_key] = font.render(text, True, color)
-    screen.blit(_hud_text_cache[cache_key], (10, y))
+    """Render HUD text at position and return next Y position (uses cached surface)."""
+    surf = get_text_surface(font, text, color)
+    screen.blit(surf, (10, y))
     return y + 24

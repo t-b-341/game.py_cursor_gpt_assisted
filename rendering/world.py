@@ -12,7 +12,7 @@ from typing import Any
 
 import pygame
 
-from .context import RenderContext
+from .context import RenderContext, get_camera_offset
 
 # Module-level caches for rendering optimization
 _wall_texture_cache = {}
@@ -160,7 +160,7 @@ def draw_projectile(screen: pygame.Surface, rect: pygame.Rect, color: tuple[int,
 def _draw_terrain(screen: pygame.Surface, state: Any, ctx: dict, render_ctx: RenderContext = None) -> None:
     """Draw static obstacles: trapezoid/triangle blocks, destructible/giant blocks, hazards, health zone."""
     # Get camera offset for positioning
-    cam_x, cam_y = render_ctx.camera_offset if render_ctx else (0, 0)
+    cam_x, cam_y = get_camera_offset(render_ctx)
     
     trapezoid_blocks = ctx.get("trapezoid_blocks", [])
     triangle_blocks = ctx.get("triangle_blocks", [])
@@ -322,7 +322,7 @@ def _draw_terrain(screen: pygame.Surface, state: Any, ctx: dict, render_ctx: Ren
 
 def _draw_pickups(screen: pygame.Surface, state: Any, ctx: dict, render_ctx: RenderContext = None) -> None:
     """Draw pickups and their labels."""
-    cam_x, cam_y = render_ctx.camera_offset if render_ctx else (0, 0)
+    cam_x, cam_y = get_camera_offset(render_ctx)
     weapon_names = ctx.get("weapon_names", {})
     small_font = ctx.get("small_font")
     for pickup in getattr(state, "pickups", []):
@@ -352,7 +352,7 @@ def _draw_projectiles(screen: pygame.Surface, state: Any, render_ctx: RenderCont
     Uses pre-rendered cached surfaces instead of drawing primitives each frame.
     Groups by cache key (color, shape, size) for efficient batch processing.
     """
-    cam_x, cam_y = render_ctx.camera_offset if render_ctx else (0, 0)
+    cam_x, cam_y = get_camera_offset(render_ctx)
     
     # Collect all projectiles grouped by their visual cache key
     # cache_key -> list of (x, y) positions
@@ -398,7 +398,7 @@ def _draw_projectiles(screen: pygame.Surface, state: Any, render_ctx: RenderCont
 
 def _draw_allies_and_enemies(screen: pygame.Surface, state: Any, render_ctx: RenderContext = None) -> None:
     """Draw friendly AI and enemies (unified entity.draw or rect fallback)."""
-    cam_x, cam_y = render_ctx.camera_offset if render_ctx else (0, 0)
+    cam_x, cam_y = get_camera_offset(render_ctx)
     
     for friendly in getattr(state, "friendly_ai", []):
         r = friendly.get("rect")
@@ -455,7 +455,7 @@ def _draw_allies_and_enemies(screen: pygame.Surface, state: Any, render_ctx: Ren
 
 def _draw_effects(screen: pygame.Surface, state: Any, render_ctx: RenderContext = None) -> None:
     """Draw grenade explosions and missiles."""
-    cam_x, cam_y = render_ctx.camera_offset if render_ctx else (0, 0)
+    cam_x, cam_y = get_camera_offset(render_ctx)
     
     for explosion in getattr(state, "grenade_explosions", []):
         ex, ey = explosion["x"] - cam_x, explosion["y"] - cam_y
@@ -480,7 +480,7 @@ def _draw_effects(screen: pygame.Surface, state: Any, render_ctx: RenderContext 
 
 def _draw_player(screen: pygame.Surface, state: Any, render_ctx: RenderContext = None) -> None:
     """Draw player circle (and border); shield-active uses light blue tint."""
-    cam_x, cam_y = render_ctx.camera_offset if render_ctx else (0, 0)
+    cam_x, cam_y = get_camera_offset(render_ctx)
     
     player = getattr(state, "player_rect", None)
     if player is None:
@@ -500,7 +500,7 @@ def _draw_player(screen: pygame.Surface, state: Any, render_ctx: RenderContext =
 
 def _draw_beams(screen: pygame.Surface, state: Any, render_ctx: RenderContext = None) -> None:
     """Draw laser and wave beams (player and enemy)."""
-    cam_x, cam_y = render_ctx.camera_offset if render_ctx else (0, 0)
+    cam_x, cam_y = get_camera_offset(render_ctx)
     
     for beam in getattr(state, "laser_beams", []):
         if "start" in beam and "end" in beam:

@@ -132,6 +132,10 @@ _block_grid: SpatialGrid | None = None
 _last_frame_id: int = -1
 _grids_built_this_frame: set[str] = set()
 
+# Block grid invalidation: only rebuild when blocks change
+_block_grid_version: int = 0
+_block_grid_last_version: int = -1
+
 
 def _check_frame_cache(grid_name: str, frame_id: int) -> bool:
     """Check if this grid was already built this frame. Returns True if cached."""
@@ -189,21 +193,65 @@ def get_block_grid(width: int, height: int, cell_size: int = 128, frame_id: int 
     
     Args:
         frame_id: If provided, enables frame-based caching (grid only rebuilt once per frame).
-    """
-    global _block_grid
     
-    # Check if we should reuse cached grid
-    if frame_id >= 0 and _check_frame_cache("block", frame_id) and _block_grid is not None:
+    Note: Block grid uses version-based invalidation in addition to frame caching.
+          Call invalidate_block_grid() when blocks are destroyed or level changes.
+    """
+    global _block_grid, _block_grid_last_version
+    
+    # Check if we should reuse cached grid (version-based)
+    if (_block_grid is not None and 
+        _block_grid_last_version == _block_grid_version and
+        _block_grid.width == width and 
+        _block_grid.height == height and
+        len(_block_grid._obj_cells) > 0):
+        # Grid is still valid, return cached
         return _block_grid
+    
+    # Check frame cache
+    if frame_id >= 0 and _check_frame_cache("block", frame_id) and _block_grid is not None:
+        if _block_grid_last_version == _block_grid_version and len(_block_grid._obj_cells) > 0:
+            return _block_grid
     
     if _block_grid is None or _block_grid.width != width or _block_grid.height != height:
         _block_grid = SpatialGrid(width, height, cell_size)
     else:
         _block_grid.clear()
+    
+    _block_grid_last_version = _block_grid_version
     return _block_grid
+
+
+def invalidate_block_grid() -> None:
+    """Invalidate the block grid cache.
+    
+    Call this when:
+    - A destructible block is destroyed
+    - A new level is loaded
+    - Blocks are added/removed
+    
+    The grid will be rebuilt on next access.
+    """
+    global _block_grid_version
+    _block_grid_version += 1
 
 
 def reset_frame_cache() -> None:
     """Force grids to rebuild on next access. Call at start of frame if needed."""
     global _last_frame_id
     _last_frame_id = -1
+
+
+def reset_all_grids() -> None:
+    """Reset all grids. Call when loading a new level."""
+    global _projectile_grid, _enemy_grid, _block_grid
+    global _last_frame_id, _grids_built_this_frame
+    global _block_grid_version, _block_grid_last_version
+    
+    _projectile_grid = None
+    _enemy_grid = None
+    _block_grid = None
+    _last_frame_id = -1
+    _grids_built_this_frame.clear()
+    _block_grid_version += 1
+    _block_grid_last_version = -1

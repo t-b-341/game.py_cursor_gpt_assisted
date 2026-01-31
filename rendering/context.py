@@ -146,6 +146,25 @@ class RenderContext:
         if self.camera:
             return (int(self.camera.x), int(self.camera.y))
         return (0, 0)
+    
+    def get_camera_xy(self) -> tuple[float, float]:
+        """Get camera x, y as floats. Always returns valid tuple even if no camera."""
+        if self.camera:
+            return (self.camera.x, self.camera.y)
+        return (0.0, 0.0)
+
+
+def get_camera_offset(render_ctx: RenderContext | None) -> tuple[int, int]:
+    """Get camera offset from RenderContext, handling None safely.
+    
+    Use this helper to replace the common pattern:
+        cam_x, cam_y = render_ctx.camera_offset if render_ctx else (0, 0)
+    With:
+        cam_x, cam_y = get_camera_offset(render_ctx)
+    """
+    if render_ctx is None:
+        return (0, 0)
+    return render_ctx.camera_offset
 
 
 def build_gameplay_ctx(

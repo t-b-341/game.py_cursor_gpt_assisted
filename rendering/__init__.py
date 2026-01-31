@@ -9,7 +9,7 @@ Re-exports from context, world, hud, overlays, and menu_helpers so existing impo
 """
 from __future__ import annotations
 
-from .context import RenderContext, build_gameplay_ctx
+from .context import RenderContext, build_gameplay_ctx, get_camera_offset
 from .hud import draw_centered_text, draw_health_bar, render_hud_text
 from .menu_helpers import (
     get_menu_option_rects,
@@ -20,6 +20,14 @@ from .menu_helpers import (
     clear_menu_cache,
 )
 from .overlays import render_debug_overlay
+from .text_cache import (
+    get_text_surface,
+    get_text_surface_with_bg,
+    clear_text_cache,
+    get_cache_stats,
+    render_text_centered,
+    render_text_right,
+)
 from .world import (
     render_background,
     render_entities,
@@ -30,6 +38,7 @@ from .world import (
 __all__ = [
     "RenderContext",
     "build_gameplay_ctx",
+    "get_camera_offset",
     "draw_centered_text",
     "draw_health_bar",
     "render_hud_text",
@@ -45,4 +54,11 @@ __all__ = [
     "handle_menu_navigation",
     "render_confirmation_dialog",
     "clear_menu_cache",
+    # Text caching
+    "get_text_surface",
+    "get_text_surface_with_bg",
+    "clear_text_cache",
+    "get_cache_stats",
+    "render_text_centered",
+    "render_text_right",
 ]

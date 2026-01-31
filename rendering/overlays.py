@@ -6,6 +6,7 @@ from __future__ import annotations
 import pygame
 
 from .context import RenderContext
+from .text_cache import get_text_surface
 
 
 def render_debug_overlay(
@@ -38,10 +39,11 @@ def render_debug_overlay(
 
     font = render_ctx.small_font
     x, y = PAD, PAD
-    max_w = 0
-    for s in lines:
-        surf = font.render(s, True, DEBUG_TEXT_COLOR)
-        max_w = max(max_w, surf.get_width())
+    
+    # Pre-render all text surfaces using cache
+    text_surfaces = [get_text_surface(font, s, DEBUG_TEXT_COLOR) for s in lines]
+    max_w = max(surf.get_width() for surf in text_surfaces) if text_surfaces else 0
+    
     line_height = font.get_height() + LINE_SPACING
     total_h = len(lines) * line_height - LINE_SPACING + 2 * PAD
     total_w = max_w + 2 * PAD
@@ -52,7 +54,6 @@ def render_debug_overlay(
     render_ctx.screen.blit(bg, (x, y))
 
     ty = y + PAD
-    for s in lines:
-        ts = font.render(s, True, DEBUG_TEXT_COLOR)
-        render_ctx.screen.blit(ts, (x + PAD, ty))
+    for surf in text_surfaces:
+        render_ctx.screen.blit(surf, (x + PAD, ty))
         ty += line_height
