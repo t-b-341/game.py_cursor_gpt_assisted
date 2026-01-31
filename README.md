@@ -1,3 +1,7 @@
+
+The shaders are in progress lol
+
+
 # Bullet Hell Arena
 
 A fast-paced top-down bullet hell shooter built with Python and Pygame. Survive waves of increasingly difficult enemies, collect powerful weapons, and command AI allies in your fight for survival.
@@ -84,7 +88,7 @@ Command allies with right-click to send them to a location. They'll explode on c
 
 ### Pickups
 
-Defeated enemies drop various pickups: health, ammo, weapon upgrades, and more.
+Defeated enemies drop various pickups: health, ammo, and more.
 
 ## Map Editor
 
