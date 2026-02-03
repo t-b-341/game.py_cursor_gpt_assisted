@@ -28,7 +28,7 @@ def handle_enemy_laser_beam_collisions(state, dt: float, ctx: dict) -> None:
         if line_rect(beam["start"], beam["end"], player):
             if state.shield_active:
                 continue  # Shield blocks enemy laser beams
-            apply_player_damage(state, int(damage_per_sec * dt), ctx)
+            apply_player_damage(state, int(damage_per_sec * dt), ctx, source_type="enemy_laser")
     
     # O(n) bulk removal instead of O(n²) .remove() in loop
     if beams_to_remove:
@@ -52,7 +52,7 @@ def handle_enemy_projectile_player_collisions(state, ctx: dict) -> None:
             projs_to_remove.add(id(proj))
             continue
         damage = proj.get("damage", 10)
-        apply_player_damage(state, damage, ctx)
+        apply_player_damage(state, damage, ctx, source_type="enemy_projectile", source_enemy_type=proj.get("source_enemy_type"))
         projs_to_remove.add(id(proj))
     
     # O(n) bulk removal instead of O(n²) .remove() in loop

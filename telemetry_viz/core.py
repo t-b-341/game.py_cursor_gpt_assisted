@@ -59,6 +59,10 @@ from telemetry_viz.plots_performance import (
     draw_frame_drops_analysis,
     draw_performance_summary,
 )
+from telemetry_viz.plots_3d import (
+    draw_player_path_3d,
+    draw_damage_events_3d,
+)
 
 
 @dataclass
@@ -66,6 +70,7 @@ class Page:
     title: str
     filename: str
     draw: Callable[[plt.Axes, sqlite3.Connection, int], bool]
+    projection: str | None = None  # e.g. '3d' for Axes3D
 
 
 def get_pages() -> List[Page]:
@@ -85,6 +90,9 @@ def get_pages() -> List[Page]:
         Page("Movement path with velocity", "movement_path_velocity.png", draw_movement_path_with_velocity),
         Page("Player velocity over time", "player_velocity.png", draw_player_velocity_over_time),
         Page("Shots scatter", "shots_scatter.png", draw_shots_scatter),
+        # 3D
+        Page("Player path (3D)", "player_path_3d.png", draw_player_path_3d, projection="3d"),
+        Page("Damage events (3D)", "damage_events_3d.png", draw_damage_events_3d, projection="3d"),
         # Damage
         Page("Damage taken timeline", "damage_taken_timeline.png", draw_damage_taken_timeline),
         Page("Damage taken by enemy type", "damage_taken_by_enemy.png", draw_damage_taken_by_enemy),
@@ -127,6 +135,5 @@ def get_pages_all_runs() -> List[Page]:
     """Return only the pages that show data aggregated over all runs."""
     all_pages = get_pages()
     # Indices (0-based) of cross-run / all-runs pages in get_pages() order
-    # (Updated after adding 7 performance plots at the start)
-    all_runs_indices = {44, 45}  # Accuracy over runs, Damage totals over runs
+    all_runs_indices = {40, 41}  # Accuracy over runs, Damage totals over runs
     return [p for i, p in enumerate(all_pages) if i in all_runs_indices]

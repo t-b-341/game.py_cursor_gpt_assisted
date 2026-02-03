@@ -1,7 +1,41 @@
-"""Shared collision helpers: enemy damage flash, player damage application."""
+"""Shared collision helpers: enemy damage flash, player damage application, enemy hit recording."""
 from __future__ import annotations
 
+from typing import Optional
+
 from constants import STATE_GAME_OVER
+
+
+def record_enemy_hit(
+    state,
+    ctx: dict,
+    enemy: dict,
+    damage: int,
+    hp_after: int,
+    killed: bool,
+) -> None:
+    """Record player-sourced damage to an enemy for telemetry and run stats.
+    Call after applying damage (enemy['hp'] already updated). Increments state.damage_dealt.
+    """
+    if damage <= 0:
+        return
+    state.damage_dealt += damage
+    if ctx.get("telemetry_enabled") and ctx.get("telemetry"):
+        from telemetry.events import EnemyHitEvent
+        rect = enemy.get("rect")
+        x = rect.centerx if rect is not None else 0
+        y = rect.centery if rect is not None else 0
+        ctx["telemetry"].log_enemy_hit(
+            EnemyHitEvent(
+                t=getattr(state, "run_time", 0.0),
+                enemy_type=str(enemy.get("type", "unknown")),
+                enemy_x=x,
+                enemy_y=y,
+                damage=damage,
+                enemy_hp_after=hp_after,
+                killed=killed,
+            )
+        )
 
 
 def set_enemy_damage_flash(enemy: dict, ctx: dict) -> None:
@@ -10,7 +44,13 @@ def set_enemy_damage_flash(enemy: dict, ctx: dict) -> None:
         enemy["damage_flash_timer"] = ctx.get("damage_flash_duration", 0.12)
 
 
-def apply_player_damage(state, damage: int, ctx: dict) -> None:
+def apply_player_damage(
+    state,
+    damage: int,
+    ctx: dict,
+    source_type: str = "unknown",
+    source_enemy_type: Optional[str] = None,
+) -> None:
     """Apply damage to player (overshield then HP); trigger death/game-over if needed.
     
     Player is invincible during dash (is_jumping=True) to reward quick movement.
@@ -36,6 +76,22 @@ def apply_player_damage(state, damage: int, ctx: dict) -> None:
         pf = ctx.get("play_sfx")
         if callable(pf):
             pf("player_hit")
+        # Telemetry: log player damage event for viz (e.g. damage heatmap, 3D)
+        if ctx.get("telemetry_enabled") and ctx.get("telemetry"):
+            from telemetry.events import PlayerDamageEvent
+            player = state.player_rect
+            if player is not None:
+                ctx["telemetry"].log_player_damage(
+                    PlayerDamageEvent(
+                        t=getattr(state, "run_time", 0.0),
+                        amount=damage,
+                        source_type=source_type,
+                        source_enemy_type=source_enemy_type,
+                        player_x=player.centerx,
+                        player_y=player.centery,
+                        player_hp_after=state.player_hp,
+                    )
+                )
         # Play low health warning when HP drops below 25% (and not dead)
         max_hp = getattr(state, "player_max_hp", 100)
         if state.player_hp > 0 and state.player_hp <= max_hp * 0.25:

@@ -21,7 +21,12 @@ def save_pngs(
     os.makedirs(out_dir, exist_ok=True)
 
     for p in pages:
-        fig, ax = plt.subplots()
+        proj = getattr(p, "projection", None)
+        if proj == "3d":
+            fig = plt.figure()
+            ax = fig.add_subplot(111, projection="3d")
+        else:
+            fig, ax = plt.subplots()
         try:
             ax.clear()
             ok = p.draw(ax, conn, run_id)
@@ -45,7 +50,9 @@ def save_pngs(
 def run_single_popup(conn: sqlite3.Connection, run_id: int, pages: List[Page]) -> None:
     available: List[Page] = []
     for p in pages:
-        fig_probe, ax_probe = plt.subplots()
+        proj = getattr(p, "projection", None) or "rectilinear"
+        fig_probe = plt.figure()
+        ax_probe = fig_probe.add_subplot(111, projection=proj)
         ok = False
         try:
             ax_probe.clear()
@@ -63,7 +70,7 @@ def run_single_popup(conn: sqlite3.Connection, run_id: int, pages: List[Page]) -
     idx = 0
     quit_program: dict = {"flag": False}
 
-    fig, ax = plt.subplots()
+    fig = plt.figure()
     try:
         fig.canvas.manager.set_window_title("Telemetry Viewer (single window)")
     except Exception:
@@ -71,8 +78,10 @@ def run_single_popup(conn: sqlite3.Connection, run_id: int, pages: List[Page]) -
 
     def render() -> None:
         nonlocal idx
-        ax.clear()
+        fig.clf()
         page = available[idx]
+        proj = getattr(page, "projection", None) or "rectilinear"
+        ax = fig.add_subplot(111, projection=proj)
         ok = False
         try:
             ok = page.draw(ax, conn, run_id)

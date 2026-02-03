@@ -62,7 +62,26 @@ sqlite> .read telemetry/sql/weapon_accuracy.sql
 2. In the **Telemetry** step, choose **Enabled**.
 3. Start a run. Events are written to `game_telemetry.db` in the working directory.
 
-Runs, shots, player position, damage, deaths, waves, and run-state samples (HP, enemy count over time) are logged when telemetry is enabled.
+## Data collected (when telemetry is enabled)
+
+The following are written every run:
+
+| Data | When | Table |
+|------|------|--------|
+| Run start/end | Run start; run end (with shots_fired, hits, damage_taken, damage_dealt, enemies_killed, deaths, max_wave, final_score) | **runs** |
+| Player position | Sampled at `POS_SAMPLE_INTERVAL` (see config/balance.py) | **player_positions** |
+| Run state | Same interval (HP, enemy count) | **run_state_samples** |
+| Frame times | Sampled at ~20 Hz (FPS, entity counts) | **frame_times** |
+| Shots | Each player shot (origin, target, direction) | **shots** |
+| Bullet metadata | Player and enemy bullet type/shape/color | **bullet_metadata** |
+| Enemy spawns | Each spawned enemy (type, position, HP) | **enemy_spawns** |
+| Waves | Wave start/end, spawn counts, scales | **waves**, **wave_enemy_types** |
+| Enemy hits | Each player-sourced hit on an enemy (bullets, laser, grenade, missile); updates run `damage_dealt` | **enemy_hits** |
+| Player damage | Each hit on the player (projectile, laser, explosion, missile) with source and position | **player_damage** |
+| Player deaths | Each death (position, lives left, wave) | **player_deaths** |
+| Score events | Score changes (e.g. on enemy kill) | **score_events** |
+
+**Not currently sampled** (schema exists for future use): `enemy_positions`, `player_velocities`.
 
 ## Running the visualizer
 

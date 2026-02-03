@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ..collision_common import apply_player_damage, set_enemy_damage_flash
+from ..collision_common import apply_player_damage, record_enemy_hit, set_enemy_damage_flash
 from ..spatial_grid import get_enemy_grid, SpatialGrid, invalidate_block_grid
 from physics_loader import distance_squared as c_distance_squared
 
@@ -62,6 +62,7 @@ def handle_grenade_explosion_damage(state: "GameState", dt: float, ctx: dict) ->
         r_sq = r * r  # Use squared radius to avoid sqrt
         damage_val = explosion.get("damage", 500)
         source = explosion.get("source", "")
+        is_player_explosion = source in ("player", "wall_impact")
         
         # Use spatial grid to query only enemies near explosion radius
         if source != "enemy_player_allies_only" and enemy_grid:
@@ -70,6 +71,8 @@ def handle_grenade_explosion_damage(state: "GameState", dt: float, ctx: dict) ->
                 d_sq = c_distance_squared(enemy["rect"].centerx, enemy["rect"].centery, px, py)
                 if d_sq <= r_sq:
                     enemy["hp"] -= damage_val
+                    if is_player_explosion:
+                        record_enemy_hit(state, ctx, enemy, damage_val, enemy["hp"], enemy["hp"] <= 0)
                     set_enemy_damage_flash(enemy, ctx)
                     state.damage_numbers.append(_create_damage_number(
                         enemy["rect"].centerx, enemy["rect"].y - 20, damage_val, (255, 200, 100)
@@ -92,7 +95,7 @@ def handle_grenade_explosion_damage(state: "GameState", dt: float, ctx: dict) ->
             pd_sq = c_distance_squared(player.centerx, player.centery, px, py)
             if pd_sq <= r_sq and source not in ("player", "wall_impact", "ally_explosion"):
                 if not state.shield_active:
-                    apply_player_damage(state, damage_val, ctx)
+                    apply_player_damage(state, damage_val, ctx, source_type="explosion")
         
         # Damage destructible blocks using spatial grid
         if source != "enemy_player_allies_only":
@@ -185,7 +188,7 @@ def handle_missile_collisions(state: "GameState", ctx: dict) -> None:
             if not hit and player and missile["rect"].colliderect(player) and not is_dashing:
                 hit = True
                 if not state.shield_active:
-                    apply_player_damage(state, missile.get("damage", md), ctx)
+                    apply_player_damage(state, missile.get("damage", md), ctx, source_type="missile")
         elif missile.get("target_enemy") and missile["target_enemy"] in state.enemies:
             if missile["rect"].colliderect(missile["target_enemy"]["rect"]):
                 hit = True
@@ -207,6 +210,8 @@ def handle_missile_collisions(state: "GameState", ctx: dict) -> None:
                         continue
                     if c_distance_squared(enemy["rect"].centerx, enemy["rect"].centery, mx, my) <= rad_sq:
                         enemy["hp"] -= dmg
+                        if is_player_missile:
+                            record_enemy_hit(state, ctx, enemy, dmg, enemy["hp"], enemy["hp"] <= 0)
                         set_enemy_damage_flash(enemy, ctx)
                         state.damage_numbers.append(_create_damage_number(
                             enemy["rect"].centerx, enemy["rect"].y - 20, dmg, (255, 150, 50)
@@ -232,7 +237,7 @@ def handle_missile_collisions(state: "GameState", ctx: dict) -> None:
             # Damage player if in explosion radius (and no shield)
             if missile.get("target_player") and player:
                 if c_distance_squared(player.centerx, player.centery, mx, my) <= rad_sq and not state.shield_active:
-                    apply_player_damage(state, dmg, ctx)
+                    apply_player_damage(state, dmg, ctx, source_type="explosion")
             
             missiles_to_remove.add(id(missile))
     
