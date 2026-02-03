@@ -14,7 +14,7 @@ Tuning guide (which values to tweak for feel):
 - On-screen debug info (wave, enemy count, player HP): set debug_draw_overlay=True to enable the debug HUD in gameplay.
 - GPU physics: set use_gpu_physics=True (requires CUDA_AVAILABLE from gpu_physics).
 - Post-process profile: shader_profile "none" | "cpu_tint" | "gl_basic" (only when use_shaders=True).
-- Lightweight CPU effects: enable_menu_shaders + menu_effect_profile ("crt" | "soft_glow"), enable_gameplay_shaders + gameplay_effect_profile ("subtle_vignette" | "crt_light"), enable_damage_wobble (see visual_effects).
+- Lightweight CPU effects (no GPU shaders): enable_menu_shaders + menu_effect_profile ("crt" | "soft_glow" | "grainy" | "swirly"), enable_gameplay_shaders + gameplay_effect_profile ("subtle_vignette" | "crt_light" | "film_grain" | "atmospheric"), enable_damage_wobble (see visual_effects).
 - Shader stacks: enable_menu_shaders + menu_shader_profile, enable_pause_shaders + pause_shader_profile, enable_gameplay_shaders + gameplay_shader_profile (see shader_effects.SHADER_PROFILES, get_*_shader_stack).
 """
 from __future__ import annotations
@@ -90,12 +90,12 @@ class GameConfig:
     debug_draw_overlay: bool = False  # When True, gameplay shows a small debug HUD (wave, enemies, HP, lives).
     use_shaders: bool = False  # When True, use GPU shaders for rendering (requires moderngl).
     shader_profile: str = "none"  # "none" | "cpu_tint" | "gl_basic"; only applies when use_shaders=True.
-    # Lightweight CPU effect toggles and profiles (visual_effects module)
-    enable_menu_shaders: bool = False  # Apply effect stack to title/options/pause (scanlines, vignette, tint).
-    enable_gameplay_shaders: bool = False  # Apply subtle vignette/scanlines to gameplay.
-    menu_effect_profile: str = "none"  # "none" | "crt" | "soft_glow"; used when enable_menu_shaders=True.
-    gameplay_effect_profile: str = "none"  # "none" | "subtle_vignette" | "crt_light"; used when enable_gameplay_shaders=True.
-    enable_damage_wobble: bool = False  # Brief screen jitter when player takes damage (if gameplay style fits).
+    # Lightweight CPU effect toggles and profiles (visual_effects module; no GPU shaders)
+    enable_menu_shaders: bool = False  # Apply effect stack to title/options/pause (scanlines, vignette, tint, grain).
+    enable_gameplay_shaders: bool = False  # Apply vignette/scanlines/grain/low-HP pulse to gameplay.
+    menu_effect_profile: str = "none"  # "none" | "crt" | "soft_glow" | "grainy" | "swirly"
+    gameplay_effect_profile: str = "none"  # "none" | "subtle_vignette" | "crt_light" | "film_grain" | "atmospheric"
+    enable_damage_wobble: bool = False  # Brief screen jitter when player takes damage (eased decay).
     # Shader/effect stack toggles and profile names (shader_effects.SHADER_PROFILES + get_*_shader_stack)
     enable_pause_shaders: bool = False  # Apply effect stack to pause overlay when True.
     menu_shader_profile: str = "none"  # "none" | "menu_crt" | "menu_neon"; used when enable_menu_shaders=True.

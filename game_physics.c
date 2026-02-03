@@ -1,11 +1,16 @@
 /* High-performance physics and collision detection module for game.py
  * Compile with: python setup.py build_ext --inplace
+ *
+ * Efficiency: hot paths avoid sqrt where possible (e.g. find_dodge_threats uses
+ * squared time comparison). Batch functions pre-allocate result lists or cache
+ * rect/position arrays to reduce Python API calls and list reallocs.
  */
 
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
 #include <math.h>
 #include <stdbool.h>
+#include <stdlib.h>
 
 /* Vector2 structure for efficient calculations */
 typedef struct {
@@ -61,14 +66,14 @@ static PyObject* can_move_rect_c(PyObject* self, PyObject* args) {
     test_rect.w = rect_w;
     test_rect.h = rect_h;
     
-    // Check screen bounds
     if (test_rect.x < 0 || test_rect.x + test_rect.w > screen_width ||
         test_rect.y < 0 || test_rect.y + test_rect.h > screen_height) {
         Py_RETURN_FALSE;
     }
-    
-    // Check collisions with other rects
+
     Py_ssize_t len = PyList_Size(other_rects_list);
+    if (len == 0)
+        Py_RETURN_TRUE;
     for (Py_ssize_t i = 0; i < len; i++) {
         PyObject* other_rect = PyList_GetItem(other_rects_list, i);
         if (!other_rect) continue;
@@ -283,52 +288,63 @@ static bool extract_rect_components(PyObject* obj, Rect* out) {
     return success;
 }
 
-/* Batch collision check between bullets and targets */
+/* Batch collision check between bullets and targets.
+ * Caches target rects once to avoid O(bullets * targets) Python attribute lookups. */
 static PyObject* check_bullet_collisions_c(PyObject* self, PyObject* args) {
     PyObject* bullets_list;
     PyObject* targets_list;
-    
+
     if (!PyArg_ParseTuple(args, "OO", &bullets_list, &targets_list)) {
         return NULL;
     }
-    
+
     Py_ssize_t bullets_len = PyList_Size(bullets_list);
     Py_ssize_t targets_len = PyList_Size(targets_list);
-    
+
     PyObject* collisions = PyList_New(0);
     if (!collisions) return NULL;
-    
+
+    if (targets_len <= 0) return collisions;
+
+    /* Cache all target rects once (invalid entries use .w = -1) */
+    Rect* target_rects = (Rect*)malloc((size_t)targets_len * sizeof(Rect));
+    if (!target_rects) {
+        Py_DECREF(collisions);
+        return PyErr_NoMemory();
+    }
+    for (Py_ssize_t j = 0; j < targets_len; j++) {
+        PyObject* target = PyList_GetItem(targets_list, j);
+        if (!target || !extract_rect_components(target, &target_rects[j])) {
+            PyErr_Clear();
+            target_rects[j].w = -1;
+        }
+    }
+
     for (Py_ssize_t i = 0; i < bullets_len; i++) {
         PyObject* bullet = PyList_GetItem(bullets_list, i);
         if (!bullet) continue;
-        
+
         Rect bullet_r;
         if (!extract_rect_components(bullet, &bullet_r)) {
             PyErr_Clear();
             continue;
         }
-        
+
         for (Py_ssize_t j = 0; j < targets_len; j++) {
-            PyObject* target = PyList_GetItem(targets_list, j);
-            if (!target) continue;
-            
-            Rect target_r;
-            if (!extract_rect_components(target, &target_r)) {
-                PyErr_Clear();
-                continue;
-            }
-            
-            if (rect_collide(&bullet_r, &target_r)) {
+            if (target_rects[j].w < 0) continue;
+            if (rect_collide(&bullet_r, &target_rects[j])) {
+                PyObject* target = PyList_GetItem(targets_list, j);
                 PyObject* collision = Py_BuildValue("(OO)", bullet, target);
                 if (collision) {
                     PyList_Append(collisions, collision);
                     Py_DECREF(collision);
                 }
-                break;  // One collision per bullet
+                break;
             }
         }
     }
-    
+
+    free(target_rects);
     return collisions;
 }
 
@@ -379,26 +395,39 @@ static PyObject* find_in_radius_c(PyObject* self, PyObject* args) {
     }
     
     Py_ssize_t len = PyList_Size(entities_x);
-    
-    PyObject* result = PyList_New(0);
-    if (!result) return NULL;
-    
+    if (len == 0) {
+        return PyList_New(0);
+    }
+
+    /* First pass: count how many are in radius */
+    Py_ssize_t count = 0;
     for (Py_ssize_t i = 0; i < len; i++) {
         double ex = PyFloat_AsDouble(PyList_GetItem(entities_x, i));
         double ey = PyFloat_AsDouble(PyList_GetItem(entities_y, i));
         double dx = ex - cx;
         double dy = ey - cy;
-        double dist_sq = dx * dx + dy * dy;
-        
-        if (dist_sq <= r_sq) {
+        if (dx * dx + dy * dy <= r_sq)
+            count++;
+    }
+
+    PyObject* result = PyList_New(count);
+    if (!result) return NULL;
+
+    /* Second pass: fill pre-allocated list (no realloc) */
+    Py_ssize_t out = 0;
+    for (Py_ssize_t i = 0; i < len && out < count; i++) {
+        double ex = PyFloat_AsDouble(PyList_GetItem(entities_x, i));
+        double ey = PyFloat_AsDouble(PyList_GetItem(entities_y, i));
+        double dx = ex - cx;
+        double dy = ey - cy;
+        if (dx * dx + dy * dy <= r_sq) {
             PyObject* idx = PyLong_FromSsize_t(i);
             if (idx) {
-                PyList_Append(result, idx);
-                Py_DECREF(idx);
+                PyList_SET_ITEM(result, out, idx);
+                out++;
             }
         }
     }
-    
     return result;
 }
 
@@ -424,36 +453,48 @@ static PyObject* get_grid_cell_index_c(PyObject* self, PyObject* args) {
  * Returns: list of cell indices */
 static PyObject* get_grid_cell_indices_for_rect_c(PyObject* self, PyObject* args) {
     int rx, ry, rw, rh, cell_size, cols, rows;
-    
+
     if (!PyArg_ParseTuple(args, "iiiiiii", &rx, &ry, &rw, &rh, &cell_size, &cols, &rows)) {
         return NULL;
     }
-    
+
+    if (cell_size <= 0 || cols <= 0 || rows <= 0 || rw <= 0 || rh <= 0) {
+        return PyList_New(0);
+    }
+
     int min_col = rx / cell_size;
     int max_col = (rx + rw) / cell_size;
     int min_row = ry / cell_size;
     int max_row = (ry + rh) / cell_size;
-    
-    // Clamp to valid range
+
     if (min_col < 0) min_col = 0;
     if (max_col >= cols) max_col = cols - 1;
     if (min_row < 0) min_row = 0;
     if (max_row >= rows) max_row = rows - 1;
-    
-    PyObject* result = PyList_New(0);
+
+    int row_count = max_row - min_row + 1;
+    int col_count = max_col - min_col + 1;
+    if (row_count <= 0 || col_count <= 0) {
+        return PyList_New(0);
+    }
+    Py_ssize_t total = (Py_ssize_t)row_count * (Py_ssize_t)col_count;
+
+    PyObject* result = PyList_New(total);
     if (!result) return NULL;
-    
+
+    Py_ssize_t k = 0;
     for (int row = min_row; row <= max_row; row++) {
         for (int col = min_col; col <= max_col; col++) {
             int idx = row * cols + col;
-            PyObject* py_idx = PyLong_FromLong(idx);
-            if (py_idx) {
-                PyList_Append(result, py_idx);
-                Py_DECREF(py_idx);
+            PyObject* py_idx = PyLong_FromLong((long)idx);
+            if (!py_idx) {
+                Py_DECREF(result);
+                return NULL;
             }
+            PyList_SET_ITEM(result, k, py_idx);
+            k++;
         }
     }
-    
     return result;
 }
 
@@ -529,81 +570,94 @@ static PyObject* find_dodge_threats_c(PyObject* self, PyObject* args) {
     PyObject* result = PyList_New(0);
     if (!result) return NULL;
     
+    /* Avoid sqrt: time_to_reach < T  <=>  dist/vel_len < T  <=>  dist_sq < T^2 * vel_len_sq */
+    const double t_sq = time_threshold * time_threshold;
+    const double eps_sq = 0.0001;
+
     for (Py_ssize_t i = 0; i < len; i++) {
         double bx = PyFloat_AsDouble(PyList_GetItem(bx_list, i));
         double by = PyFloat_AsDouble(PyList_GetItem(by_list, i));
         double dx = bx - ex;
         double dy = by - ey;
         double dist_sq = dx * dx + dy * dy;
-        
-        if (dist_sq < dodge_range_sq) {
-            double vx = PyFloat_AsDouble(PyList_GetItem(vx_list, i));
-            double vy = PyFloat_AsDouble(PyList_GetItem(vy_list, i));
-            double vel_len_sq = vx * vx + vy * vy;
-            
-            if (vel_len_sq > 0.0001) {
-                double dist = sqrt(dist_sq);
-                double vel_len = sqrt(vel_len_sq);
-                double time_to_reach = dist / vel_len;
-                
-                if (time_to_reach < time_threshold) {
-                    PyObject* idx = PyLong_FromSsize_t(i);
-                    if (idx) {
-                        PyList_Append(result, idx);
-                        Py_DECREF(idx);
-                    }
-                }
+
+        if (dist_sq >= dodge_range_sq)
+            continue;
+
+        double vx = PyFloat_AsDouble(PyList_GetItem(vx_list, i));
+        double vy = PyFloat_AsDouble(PyList_GetItem(vy_list, i));
+        double vel_len_sq = vx * vx + vy * vy;
+
+        if (vel_len_sq <= eps_sq)
+            continue;
+
+        if (dist_sq < t_sq * vel_len_sq) {
+            PyObject* idx = PyLong_FromSsize_t(i);
+            if (idx) {
+                PyList_Append(result, idx);
+                Py_DECREF(idx);
             }
         }
     }
-    
+
     return result;
 }
 
 /* Batch rect-rect collision check.
+ * Caches B rects once to avoid repeated PyList_GetItem in inner loop.
  * Args: (rects_a_x, rects_a_y, rects_a_w, rects_a_h,
  *        rects_b_x, rects_b_y, rects_b_w, rects_b_h)
  * Returns: list of (a_idx, b_idx) tuples for colliding pairs */
 static PyObject* batch_rect_collisions_c(PyObject* self, PyObject* args) {
     PyObject *ax_list, *ay_list, *aw_list, *ah_list;
     PyObject *bx_list, *by_list, *bw_list, *bh_list;
-    
+
     if (!PyArg_ParseTuple(args, "OOOOOOOO",
                           &ax_list, &ay_list, &aw_list, &ah_list,
                           &bx_list, &by_list, &bw_list, &bh_list)) {
         return NULL;
     }
-    
+
     Py_ssize_t len_a = PyList_Size(ax_list);
     Py_ssize_t len_b = PyList_Size(bx_list);
-    
+
     PyObject* result = PyList_New(0);
     if (!result) return NULL;
-    
+
+    if (len_b <= 0) return result;
+
+    /* Cache all B rects once */
+    Rect* rb_cache = (Rect*)malloc((size_t)len_b * sizeof(Rect));
+    if (!rb_cache) {
+        Py_DECREF(result);
+        return PyErr_NoMemory();
+    }
+    for (Py_ssize_t j = 0; j < len_b; j++) {
+        rb_cache[j].x = (int)PyLong_AsLong(PyList_GetItem(bx_list, j));
+        rb_cache[j].y = (int)PyLong_AsLong(PyList_GetItem(by_list, j));
+        rb_cache[j].w = (int)PyLong_AsLong(PyList_GetItem(bw_list, j));
+        rb_cache[j].h = (int)PyLong_AsLong(PyList_GetItem(bh_list, j));
+    }
+
     for (Py_ssize_t i = 0; i < len_a; i++) {
-        int ax = (int)PyLong_AsLong(PyList_GetItem(ax_list, i));
-        int ay = (int)PyLong_AsLong(PyList_GetItem(ay_list, i));
-        int aw = (int)PyLong_AsLong(PyList_GetItem(aw_list, i));
-        int ah = (int)PyLong_AsLong(PyList_GetItem(ah_list, i));
-        
-        Rect ra = {ax, ay, aw, ah};
-        
+        Rect ra;
+        ra.x = (int)PyLong_AsLong(PyList_GetItem(ax_list, i));
+        ra.y = (int)PyLong_AsLong(PyList_GetItem(ay_list, i));
+        ra.w = (int)PyLong_AsLong(PyList_GetItem(aw_list, i));
+        ra.h = (int)PyLong_AsLong(PyList_GetItem(ah_list, i));
+
         for (Py_ssize_t j = 0; j < len_b; j++) {
-            int bx = (int)PyLong_AsLong(PyList_GetItem(bx_list, j));
-            int by = (int)PyLong_AsLong(PyList_GetItem(by_list, j));
-            int bw = (int)PyLong_AsLong(PyList_GetItem(bw_list, j));
-            int bh = (int)PyLong_AsLong(PyList_GetItem(bh_list, j));
-            
-            Rect rb = {bx, by, bw, bh};
-            
-            if (rect_collide(&ra, &rb)) {
-                PyObject* pair = Py_BuildValue("(nn)", i, j);
-                PyList_Append(result, pair);
-                Py_DECREF(pair);
+            if (rect_collide(&ra, &rb_cache[j])) {
+                PyObject* pair = Py_BuildValue("(nn)", (Py_ssize_t)i, j);
+                if (pair) {
+                    PyList_Append(result, pair);
+                    Py_DECREF(pair);
+                }
             }
         }
     }
-    
+
+    free(rb_cache);
     return result;
 }
 

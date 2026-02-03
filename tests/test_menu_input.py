@@ -187,7 +187,7 @@ class TestPauseSubmenus:
             assert game_state.ui.pause_audio_options_row == expected
 
     def test_shader_submenu_navigation(self):
-        """Shader/settings submenu navigation cycles through 6 options."""
+        """Shader/settings submenu navigation cycles through 8 options."""
         from screens.pause import _handle_shader_submenu
         
         game_state = MockGameState()
@@ -195,8 +195,8 @@ class TestPauseSubmenus:
         cfg = MockConfig()
         out = {}
         
-        # Navigate down through all options (6 options including Game Speed)
-        for expected in [1, 2, 3, 4, 5, 0]:  # 6 options, wraps around
+        # Navigate down through all options (8: Gameplay, Gameplay Profile, Menu Effects, Menu Profile, Pause, Pause Profile, Game Speed, Full Settings)
+        for expected in [1, 2, 3, 4, 5, 6, 7, 0]:
             event = make_keydown_event(pygame.K_DOWN)
             _handle_shader_submenu(event, game_state, cfg, out)
             assert game_state.ui.pause_shader_options_row == expected
@@ -441,18 +441,18 @@ class TestGameConfigTimescale:
         assert cfg.timescale == 1.5
 
     def test_shader_submenu_adjusts_timescale(self):
-        """Settings submenu can adjust timescale."""
+        """Settings submenu can adjust timescale (row 6 = Game Speed)."""
         from screens.pause import _adjust_shader_setting
         
         cfg = MockConfig()
         cfg.timescale = 1.0
         timescales = [0.5, 0.75, 1.0, 1.25, 1.5]
+        pause_profiles = ["none", "pause_dim_vignette"]
         
-        # Row 4 is game speed
-        _adjust_shader_setting(4, 1, cfg, [], [], timescales)
+        _adjust_shader_setting(6, 1, cfg, pause_profiles, timescales)
         assert cfg.timescale == 1.25  # 1.0 -> 1.25
         
-        _adjust_shader_setting(4, -1, cfg, [], [], timescales)
+        _adjust_shader_setting(6, -1, cfg, pause_profiles, timescales)
         assert cfg.timescale == 1.0  # 1.25 -> 1.0
 
 

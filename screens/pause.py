@@ -86,56 +86,65 @@ def _adjust_audio_setting(row: int, delta: float, cfg) -> None:
             cfg.mute_music = is_muted_music()
 
 
+# CPU visual effect profiles (visual_effects module; no GPU shaders)
+_GAMEPLAY_EFFECT_PROFILES = ["none", "subtle_vignette", "crt_light", "film_grain", "atmospheric"]
+_MENU_EFFECT_PROFILES = ["none", "crt", "soft_glow", "grainy", "swirly"]
+
+
 def _handle_shader_submenu(event: pygame.event.Event, game_state: "GameState", cfg, out: dict) -> dict | None:
-    """Handle input for the shader/settings submenu."""
+    """Handle input for the shader/settings submenu (CPU effects + GPU shader options)."""
     if not hasattr(game_state.ui, 'pause_shader_options_row'):
         game_state.ui.pause_shader_options_row = 0
     row = game_state.ui.pause_shader_options_row
 
     _pp = ["none", "pause_dim_vignette"]
-    _gp = ["none", "gameplay_subtle_vignette", "gameplay_retro"]
     _ts = [0.5, 0.75, 1.0, 1.25, 1.5]  # Timescale options
+    _num_rows = 8
 
     if event.key == pygame.K_ESCAPE:
         game_state.ui.pause_submenu = None
         return {"handled": True}
     elif event.key in _NAV_UP:
-        game_state.ui.pause_shader_options_row = (row - 1) % 6
+        game_state.ui.pause_shader_options_row = (row - 1) % _num_rows
     elif event.key in _NAV_DOWN:
-        game_state.ui.pause_shader_options_row = (row + 1) % 6
+        game_state.ui.pause_shader_options_row = (row + 1) % _num_rows
     elif event.key in _NAV_LEFT and cfg is not None:
-        _adjust_shader_setting(row, -1, cfg, _gp, _pp, _ts)
+        _adjust_shader_setting(row, -1, cfg, _pp, _ts)
     elif event.key in _NAV_RIGHT and cfg is not None:
-        _adjust_shader_setting(row, 1, cfg, _gp, _pp, _ts)
+        _adjust_shader_setting(row, 1, cfg, _pp, _ts)
     elif event.key in _NAV_CONFIRM:
         row = game_state.ui.pause_shader_options_row
-        if row == 5:  # "Full Settings" option
+        if row == 7:  # "Full Settings" option
             out["screen"] = "SHADER_SETTINGS"
             return out
     return None
 
 
-def _adjust_shader_setting(row: int, direction: int, cfg, gameplay_profiles: list, pause_profiles: list, timescales: list = None) -> None:
-    """Adjust shader/game setting based on row index and direction."""
+def _adjust_shader_setting(row: int, direction: int, cfg, pause_profiles: list, timescales: list = None) -> None:
+    """Adjust visual effect / shader setting by row. Rows: Gameplay, Gameplay Profile, Menu Effects, Menu Profile, Pause, Pause Profile, Game Speed."""
     if timescales is None:
         timescales = [0.5, 0.75, 1.0, 1.25, 1.5]
-    
+
     if row == 0:
         cfg.enable_gameplay_shaders = not cfg.enable_gameplay_shaders
     elif row == 1:
-        cfg.enable_pause_shaders = not cfg.enable_pause_shaders
+        cur = getattr(cfg, "gameplay_effect_profile", "none")
+        i = (_GAMEPLAY_EFFECT_PROFILES.index(cur) if cur in _GAMEPLAY_EFFECT_PROFILES else 0) + direction
+        cfg.gameplay_effect_profile = _GAMEPLAY_EFFECT_PROFILES[i % len(_GAMEPLAY_EFFECT_PROFILES)]
     elif row == 2:
-        cur = getattr(cfg, "gameplay_shader_profile", "none")
-        i = (gameplay_profiles.index(cur) if cur in gameplay_profiles else 0) + direction
-        cfg.gameplay_shader_profile = gameplay_profiles[i % len(gameplay_profiles)]
+        cfg.enable_menu_shaders = not cfg.enable_menu_shaders
     elif row == 3:
+        cur = getattr(cfg, "menu_effect_profile", "none")
+        i = (_MENU_EFFECT_PROFILES.index(cur) if cur in _MENU_EFFECT_PROFILES else 0) + direction
+        cfg.menu_effect_profile = _MENU_EFFECT_PROFILES[i % len(_MENU_EFFECT_PROFILES)]
+    elif row == 4:
+        cfg.enable_pause_shaders = not cfg.enable_pause_shaders
+    elif row == 5:
         cur = getattr(cfg, "pause_shader_profile", "none")
         i = (pause_profiles.index(cur) if cur in pause_profiles else 0) + direction
         cfg.pause_shader_profile = pause_profiles[i % len(pause_profiles)]
-    elif row == 4:
-        # Game Speed (timescale)
+    elif row == 6:
         cur = getattr(cfg, "timescale", 1.0)
-        # Find closest matching timescale
         try:
             i = timescales.index(cur)
         except ValueError:
@@ -375,21 +384,26 @@ def _render_audio_submenu(screen, font, big_font, WIDTH, HEIGHT, game_state) -> 
 def _render_shader_submenu(screen, font, big_font, WIDTH, HEIGHT, game_state, cfg) -> None:
     """Render the shader/settings submenu."""
     row = getattr(game_state.ui, 'pause_shader_options_row', 0)
-    row = max(0, min(5, row))
+    row = max(0, min(7, row))
 
     if cfg is not None:
         timescale = getattr(cfg, 'timescale', 1.0)
         speed_text = f"{int(timescale * 100)}%" if timescale != 1.0 else "Normal"
         lines = [
-            f"Gameplay Shaders: {'On' if getattr(cfg, 'enable_gameplay_shaders', False) else 'Off'}",
+            f"Gameplay Effects: {'On' if getattr(cfg, 'enable_gameplay_shaders', False) else 'Off'}",
+            f"Gameplay Profile: {getattr(cfg, 'gameplay_effect_profile', 'none')}",
+            f"Menu Effects: {'On' if getattr(cfg, 'enable_menu_shaders', False) else 'Off'}",
+            f"Menu Profile: {getattr(cfg, 'menu_effect_profile', 'none')}",
             f"Pause Shaders: {'On' if getattr(cfg, 'enable_pause_shaders', False) else 'Off'}",
-            f"Gameplay Profile: {getattr(cfg, 'gameplay_shader_profile', 'none')}",
             f"Pause Profile: {getattr(cfg, 'pause_shader_profile', 'none')}",
             f"Game Speed: {speed_text}",
             "Open Full Settings",
         ]
     else:
-        lines = ["Gameplay Shaders", "Pause Shaders", "Gameplay Profile", "Pause Profile", "Game Speed", "Open Full Settings"]
+        lines = [
+            "Gameplay Effects", "Gameplay Profile", "Menu Effects", "Menu Profile",
+            "Pause Shaders", "Pause Profile", "Game Speed", "Open Full Settings",
+        ]
 
     draw_centered_text(screen, font, big_font, WIDTH, "Settings", HEIGHT // 2 - 160, use_big=True)
     for i, line in enumerate(lines):

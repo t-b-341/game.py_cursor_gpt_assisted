@@ -81,9 +81,11 @@ def _python_get_grid_cell_index(x: int, y: int, cell_size: int, cols: int) -> in
     return row * cols + col
 
 
-def _python_get_grid_cell_indices_for_rect(rx: int, ry: int, rw: int, rh: int, 
+def _python_get_grid_cell_indices_for_rect(rx: int, ry: int, rw: int, rh: int,
                                             cell_size: int, cols: int, rows: int) -> list:
     """Get all grid cell indices a rect overlaps."""
+    if cell_size <= 0 or cols <= 0 or rows <= 0 or rw <= 0 or rh <= 0:
+        return []
     min_col = max(0, rx // cell_size)
     max_col = min(cols - 1, (rx + rw) // cell_size)
     min_row = max(0, ry // cell_size)
