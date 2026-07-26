@@ -11,6 +11,7 @@ import pygame
 
 from game_logging import get_logger
 from .perf_timing import perf_timer
+from .spawn_helpers import log_wave_reset as _log_wave_reset
 
 from config.enemy_defs import (
     BOSS_TEMPLATE,
@@ -81,25 +82,6 @@ def start_wave(wave_num: int, state) -> None:
     _start_wave(wave_num, state, ctx)
 
 
-def _log_wave_reset(state, trigger: str, wave_num: int, enemies_before: int) -> None:
-    """Append to wave_reset_log and print so we can trace spurious resets."""
-    entry = {
-        "run_time": getattr(state, "run_time", 0.0),
-        "trigger": trigger,
-        "wave_num": wave_num,
-        "enemies_before": enemies_before,
-    }
-    log = getattr(state, "wave_reset_log", None)
-    if log is not None:
-        log.append(entry)
-        # Keep last 20 entries
-        while len(log) > 20:
-            log.pop(0)
-    msg = (
-        f"[WAVE-RESET] run_time={entry['run_time']:.1f}s trigger={trigger!r} "
-        f"wave_num={wave_num} enemies_before={enemies_before}"
-    )
-    print(msg)
 
 
 def _start_wave(wave_num: int, state, ctx: dict) -> None:

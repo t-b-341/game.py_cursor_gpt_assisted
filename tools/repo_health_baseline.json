@@ -1,8 +1,6 @@
 {
   "forked": [
-    "_log_wave_reset :: systems/spawn_system.py, systems/spawning/map_spawn.py",
     "_process_bullet_enemy_hit :: systems/collision/player_bullets.py, systems/collision_projectiles.py",
-    "detect_startup_mechanism :: display_profiling_results.py, profile_game.py",
     "handle_enemy_projectile_block_collisions :: systems/collision/enemy_projectiles.py, systems/collision_projectiles.py",
     "handle_enemy_projectile_decoy_collisions :: systems/collision/enemy_projectiles.py, systems/collision_projectiles.py",
     "handle_enemy_projectile_friendly_collisions :: systems/collision/enemy_projectiles.py, systems/collision_projectiles.py",
@@ -13,8 +11,7 @@
     "handle_laser_beam_collisions :: systems/collision/hazards.py, systems/collision_projectiles.py",
     "handle_missile_collisions :: systems/collision/explosions.py, systems/collision_projectiles.py",
     "handle_player_bullet_block_collisions :: systems/collision/player_bullets.py, systems/collision_projectiles.py",
-    "handle_player_bullet_enemy_collisions :: systems/collision/player_bullets.py, systems/collision_projectiles.py",
-    "summarize_slowest_functions :: display_profiling_results.py, profile_game.py"
+    "handle_player_bullet_enemy_collisions :: systems/collision/player_bullets.py, systems/collision_projectiles.py"
   ],
   "shadowed": [],
   "unreached": []

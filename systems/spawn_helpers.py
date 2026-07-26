@@ -187,3 +187,24 @@ def create_pickup_collection_effect(x: int, y: int, color: tuple[int, int, int],
             "life": 0.4,
             "size": random.randint(3, 6),
         })
+
+
+def log_wave_reset(state, trigger: str, wave_num: int, enemies_before: int) -> None:
+    """Append to wave_reset_log and print so we can trace spurious resets."""
+    entry = {
+        "run_time": getattr(state, "run_time", 0.0),
+        "trigger": trigger,
+        "wave_num": wave_num,
+        "enemies_before": enemies_before,
+    }
+    log = getattr(state, "wave_reset_log", None)
+    if log is not None:
+        log.append(entry)
+        # Keep last 20 entries
+        while len(log) > 20:
+            log.pop(0)
+    msg = (
+        f"[WAVE-RESET] run_time={entry['run_time']:.1f}s trigger={trigger!r} "
+        f"wave_num={wave_num} enemies_before={enemies_before}"
+    )
+    print(msg)

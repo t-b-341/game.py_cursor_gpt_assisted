@@ -1,59 +1,13 @@
 """Display profiling results from existing files."""
 import os
 import pstats
+
+from profile_game import detect_startup_mechanism, summarize_slowest_functions
 from io import StringIO
 
 
-def detect_startup_mechanism():
-    """Detect how game.py starts."""
-    try:
-        with open("game.py", "r", encoding="utf-8") as f:
-            content = f.read()
-        
-        if 'if __name__ == "__main__":' in content:
-            if "main()" in content:
-                return "if __name__ == '__main__': main()"
-            else:
-                return "if __name__ == '__main__': (direct execution)"
-        elif "pygame.init()" in content:
-            return "pygame.init() on import (runs immediately)"
-        else:
-            return "Unknown (likely runs on import)"
-    except Exception as e:
-        return f"Error detecting: {e}"
 
 
-def summarize_slowest_functions(stats_lines):
-    """Extract top ~10 slowest functions from stats."""
-    slowest = []
-    for line in stats_lines:
-        # Skip header lines
-        if not line.strip() or line.startswith("ncalls") or line.startswith("---"):
-            continue
-        
-        # Parse pstats format: ncalls  tottime  percall  cumtime  percall filename:lineno(function)
-        parts = line.split()
-        if len(parts) >= 5:
-            try:
-                # Try to extract cumulative time (usually 4th column)
-                cumtime = float(parts[3])
-                # Extract function name (last part after colon)
-                func_part = parts[-1] if parts else ""
-                if ":" in func_part:
-                    func_name = func_part.split(":")[-1].strip("()")
-                else:
-                    func_name = func_part.strip("()")
-                
-                if func_name and cumtime > 0:
-                    slowest.append((cumtime, func_name, line))
-            except (ValueError, IndexError):
-                continue
-        
-        # Stop after collecting ~10 meaningful entries
-        if len(slowest) >= 10:
-            break
-    
-    return slowest
 
 
 def main():
