@@ -1,0 +1,136 @@
+--- AGENTS.md.orig	2026-07-26 01:04:00.113490963 +0000
++++ AGENTS.md	2026-07-26 01:04:14.566587593 +0000
+@@ -241,8 +241,10 @@
+   `config/projectile_defs.py` (`WEAPON_CONFIGS`, unlock order), `config/balance.py` (canonical
+   numeric tuning — damage, cooldowns, speeds, aggro, scoring).
+ 
+-Module‑layout caveat: **`enemies.py` (root) is a compat re‑export** of the `enemies/` package
+-(`ai.py`, `factory.py`, `movement.py`). New code should import from the package.
++Module‑layout caveat: **`enemies.py` (root) is unreachable, not a shim.** Python resolves the
++`enemies/` package before a same‑named module, so `import enemies` always loads
++`enemies/__init__.py`. That file's body is `from enemies import (...)` — a self‑import that could
++never execute. It is scheduled for deletion; import from the package.
+ 
+ ---
+ 
+@@ -336,33 +338,60 @@
+   that flips `game_state.current_screen` directly (game over / victory / name input) relies on the
+   loop to resync the stack.
+ - **Prefer bulk/id‑based removal** over `list.remove()` in hot loops (existing pattern).
++- **`GameState` is a dataclass with declared defaults — read fields directly.** Use
++  `state.field`, not `getattr(state, "field", default)`. ~155 such defensive lookups already
++  exist for fields that *are* declared; each converts a typo from an `AttributeError` into a
++  silent default. Reserve `getattr` for the genuinely dynamic attributes
++  (`_collision_frame_id`, `fire_pressed`, `dda_adjustment`, `custom_map`, render caches) — and
++  prefer declaring those on the dataclass instead.
++- **Use `game_logging.get_logger(__name__)`, not `print()`.** 363 `print()` calls across 44
++  modules currently bypass the logging module that exists for exactly this. Don't add more.
+ - **Guard optional deps** (`moderngl`, `torch`, C ext, CUDA) behind try/except or config flags;
+   the game and tests must run with core deps only (CI enforces this).
+-- **Keep backward‑compat shims working** if you touch a module that re‑exports from a package
+-  (see §10) — or update all call sites.
++- **Keep the three *live* compat shims working** if you touch what they re‑export
++  (`rendering_shaders.py`, `systems/ui_system.py`, `scenes/shader_settings.py` — see §10) — or
++  update all call sites. **Do not create new compat shims.** If a module moves, update the
++  importers. Re‑export modules are how this codebase ended up with three of several things.
+ - **Follow existing docstring style** (module‑level summary describing role + key functions) and
+   avoid narrating obvious code in comments.
+ 
+ ---
+ 
+-## 10. Code‑review hotspots (verify these carefully)
++## 10. Known debt — removal work order
+ 
+-These are known rough edges surfaced during a codebase survey. They are *starting points for
+-scrutiny*, not confirmed bugs — verify against the current tree before acting.
++Treat this section as a **work order, not a field guide.** The duplication below is debt
++scheduled for removal, not architecture to navigate around.
++
++**Do not add to this list.** Do not introduce a fourth entity model, a third collision path, or a
++new compat shim. If you find yourself writing a parallel implementation "for safety," delete the
++old one instead.
++
++✅ = verified against the tree. Unmarked items still need checking before acting.
+ 
+ **Duplicate / parallel implementations (dead‑vs‑live confusion):**
+-- `systems/collision/` subpackage (`helpers/hazards/player_bullets/enemy_projectiles/
+-  friendly_projectiles/explosions.py`) looks like an **unwired parallel refactor**; the live path
+-  uses monolithic `collision_projectiles.py` + `collision_player/pickups/common/movement.py`.
+-  Confirm which one a change should touch (and whether tests reference the other).
+-- Compat re‑export shims: `enemies.py`→`enemies/`, `rendering/world.py`→`rendering/world/`,
+-  `rendering_shaders.py`→`rendering/shaders/pipeline.py`, `systems/ui_system.py`→`systems/ui/core.py`,
+-  `maps/editor.py`→`maps/editor/`, `scenes/shader_settings.py`→split modules.
+-- `enemies/movement.py:move_enemy_with_push_cached` appears superseded by
+-  `collision_movement.move_enemy_with_push` (wired via `level_context`).
++- ✅ `systems/collision/` subpackage (`helpers/hazards/player_bullets/enemy_projectiles/
++  friendly_projectiles/explosions.py`) **is an unwired parallel refactor.** The live path uses
++  monolithic `collision_projectiles.py` + `collision_player/pickups/common/movement.py`. They
++  share 14 function names at 85–95% similarity — except `handle_player_bullet_block_collisions`
++  (41%) and `handle_player_bullet_enemy_collisions` (35%), which have **already diverged**. Only
++  `tests/test_integration.py` imports the package. **Consolidation direction: move the live
++  monolith's code into the package's file layout and delete the package's untested copies.** Do
++  not swap implementations — the package version has never run in an actual game.
++- **Live compat shims — keep these working:** `rendering_shaders.py`→`rendering/shaders/pipeline.py`
++  (7 importers), `systems/ui_system.py`→`systems/ui/core.py` (2), `scenes/shader_settings.py`→
++  split modules (32). No name collision; these actually load.
++- ✅ **Shadowed files — DELETE ON SIGHT, do not repair:** `enemies.py`, `rendering/world.py`,
++  `maps/editor.py`. Each is shadowed by a same‑named package, so Python never loads it
++  (`import enemies` → `enemies/__init__.py`). Their bodies are self‑imports (`from enemies
++  import ...`, `from .editor import ...`) that would fail or recurse if they ever ran. These are
++  **not shims** — they are unreachable files that look like shims.
++- ✅ `enemies/movement.py:move_enemy_with_push_cached` (124 lines) has **zero call sites**;
++  superseded by `collision_movement.move_enemy_with_push` (wired via `level_context`). Delete.
++- ✅ `screens/__init__.py:SCREEN_HANDLERS` has **zero references repo‑wide** — a dead registry
++  left from the pre‑scene‑stack state machine. Delete.
+ - Two CPU effect systems (`visual_effects.py` vs `shader_effects/`) with overlapping profiles;
+-  they can stack unintentionally. `apply_pause_effects()` reportedly checks `enable_menu_shaders`
+-  rather than `enable_pause_shaders`.
++  they can stack unintentionally. ✅ `apply_pause_effects()` (`visual_effects.py:379`) checks
++  `enable_menu_shaders`, not `enable_pause_shaders` — confirmed bug.
+ 
+ **Wiring gaps:**
+ - The GPU `ShaderPipelineManager` built from `config/shaders.json`
+@@ -375,11 +404,14 @@
+   several places; `map_spawn.py` couples to `maps.editor`.
+ 
+ **Telemetry/ML:**
+-- Several `log_*` methods and wave `"end"` events have schema/writer support but **no live call
+-  sites**, so some plots may show "no data". `map_spawn.py` reportedly calls a non‑existent
+-  `log_wave_start` inside a swallowed `try/except`.
+-- `wave_summaries` (DDA training data) are only produced when `enable_dda` is on; `ml/ab_test.py`
+-  enables the DDA singleton but may not set `config.enable_dda`, so the spawn hook can stay off.
++- ✅ `map_spawn.py:173` calls `telemetry.log_wave_start(...)`, which **is not defined anywhere
++  in the repo** (`log_wave`, `log_wave_enemy_types`, `log_wave_summary` exist). It sits inside
++  `except Exception: pass`, so custom‑map wave starts have silently never been recorded.
++- ✅ `ml/ab_test.py:_enable_dda()` calls `dda.enable()` on the singleton but never sets
++  `config.enable_dda`; `spawn_system.py:48` gates on that flag (default `False`), so the
++  "DDA on" arm runs with DDA off. Any A/B results collected so far are a null comparison.
++- Several other `log_*` methods and wave `"end"` events have schema/writer support but no live
++  call sites, so some plots may show "no data".
+ 
+ **Config defaults that surprise reviewers:** `testing_mode=True` and `enable_telemetry=True` by
+ default in `game_init.build_app_context`; `world_scale=1.33`; `target_fps=0` (uncapped).
+@@ -416,6 +448,12 @@
+   maps (`test_maps`), telemetry (`test_telemetry_init`, `test_telemetry_enemy_killed_event`,
+   `test_event_bus`), ML (`test_ml_dda`), effects (`test_visual_effects`, `test_shader_effects`),
+   plus asset/audio/camera/respawn/save/import smoke tests.
++- ⚠️ **Coverage is 36% overall and inverted:** the largest, riskiest modules are the least
++  tested — `game_app.py` 5%, `systems/collision/explosions.py` 5%, `systems/ui/core.py` 8%
++  (462 stmts), `rendering/shaders/pipeline.py` 9%, `scenes/options/core.py` 20% (513 stmts),
++  `collision_projectiles.py` 28% (567 stmts). The suite is 439 fast unit tests over pure
++  helpers; it will **not** catch a regression in collision, movement, or rendering. Do not
++  treat green CI as proof a gameplay change is safe.
+ - **CI must stay green with core deps only** (no torch/matplotlib/moderngl guaranteed). New tests
+   should skip gracefully when an optional dependency is missing.
+ 
+@@ -423,7 +461,9 @@
+ 
+ ## 13. Quick orientation checklist for a reviewer
+ 
+-1. Is the change in the **live path** or a parallel/legacy module (see §10)? Grep for call sites.
++1. Is the change in the **live path** or a parallel/legacy module (see §10)? Grep for call
++   sites. If it lands in a parallel module, the correct fix is usually to **delete that module**,
++   not to patch both copies.
+ 2. Does it respect the **fixed‑step sim** (uses `sim_dt`) and the **system order**?
+ 3. Does it thread new deps through `level_context`/`gameplay_ctx`/`screen_ctx` (not new globals)?
+ 4. Does it keep **optional deps** guarded so `pytest` and `python game.py` work with core deps?
