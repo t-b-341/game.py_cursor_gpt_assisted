@@ -47,3 +47,11 @@ Thumbs.db
 
 # Generated DBs under assets/data/ (if used later)
 assets/data/*.db
+
+# Build artifact - was committed at 102MB
+dist.zip
+*.zip
+
+# Runtime state (written by save_system.py / profile_system.py)
+saves.json
+profiles.json
