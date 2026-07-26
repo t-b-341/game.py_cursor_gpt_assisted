@@ -17,23 +17,5 @@
     "summarize_slowest_functions :: display_profiling_results.py, profile_game.py"
   ],
   "shadowed": [],
-  "unreached": [
-    "diagnose_cuda",
-    "display_profiling_results",
-    "file_utils",
-    "gpu_integration_example",
-    "gpu_sandbox.animated_effect_demo",
-    "gpu_sandbox.pygame_to_gl_demo",
-    "gpu_sandbox.quad_effect_demo",
-    "gpu_sandbox.triangle_demo",
-    "ml.ab_test",
-    "ml.debug",
-    "ml.evaluate",
-    "ml.train",
-    "ml.view_data",
-    "shader_effects.uniforms",
-    "telemetry.reader",
-    "test_gpu",
-    "threading_utils"
-  ]
+  "unreached": []
 }

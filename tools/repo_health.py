@@ -34,8 +34,10 @@ BASELINE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "repo_health
 # Directories never scanned.
 SKIP_DIRS = {".git", "__pycache__", ".venv", "venv", "env", "build", "dist", ".pytest_cache"}
 
-# Scripts that are legitimately roots of the import graph.
-ENTRY_POINTS = ["game", "run_editor", "setup", "profile_game", "visualize"]
+# Scripts that are legitimately roots of the import graph but have no `__main__` guard
+# (their executable code sits at module top level). Anything WITH a guard is auto-detected.
+ENTRY_POINTS = ["game", "run_editor", "setup", "profile_game", "visualize",
+                "diagnose_cuda", "ml.view_data"]
 
 # Names that are meant to repeat - scene/system/screen interfaces, not forks.
 INTERFACE_NAMES = {
@@ -110,8 +112,23 @@ def build_edges(mods: dict[str, str]) -> dict[str, set[str]]:
     return edges
 
 
+def has_main_guard(path: str) -> bool:
+    """True if the module contains `if __name__ == "__main__":` - i.e. it is a runnable script."""
+    try:
+        tree = ast.parse(open(path, encoding="utf-8", errors="replace").read())
+    except SyntaxError:
+        return False
+    for node in tree.body:
+        if not isinstance(node, ast.If):
+            continue
+        for sub in ast.walk(node.test):
+            if isinstance(sub, ast.Name) and sub.id == "__name__":
+                return True
+    return False
+
+
 def find_unreached(mods: dict[str, str], edges: dict[str, set[str]]) -> list[str]:
-    """Modules no entry point and no test file can reach."""
+    """Modules that no entry point, script, or test file can reach."""
     known = set(mods)
 
     def resolve(target: str) -> set[str]:
@@ -125,6 +142,7 @@ def find_unreached(mods: dict[str, str], edges: dict[str, set[str]]) -> list[str
     roots = [e for e in ENTRY_POINTS if e in known]
     roots += [m for m in known if m.startswith("tests")]
     roots += [m for m in known if m.startswith("tools")]  # standalone tooling, not game code
+    roots += [m for m, p in mods.items() if has_main_guard(p)]  # runnable scripts
     seen = set(roots)
     queue = deque(roots)
     while queue:
