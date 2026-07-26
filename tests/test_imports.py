@@ -107,8 +107,8 @@ class TestCriticalImports:
         assert callable(render_current_scene)
 
     def test_collision_projectiles_helpers(self):
-        """collision_projectiles helpers should be importable and work correctly."""
-        from systems.collision_projectiles import _create_damage_number, _bulk_remove
+        """collision package helpers should be importable and work correctly."""
+        from systems.collision.helpers import create_damage_number as _create_damage_number, bulk_remove as _bulk_remove
         
         # Test _create_damage_number
         dmg = _create_damage_number(100, 200, 50)

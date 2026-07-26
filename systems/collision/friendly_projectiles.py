@@ -1,9 +1,7 @@
-"""Friendly AI projectile collision handling.
+"""Friendly (allied AI) projectile collisions vs blocks and enemies.
 
-Handles:
-- Friendly projectiles vs enemies
-- Friendly projectiles vs destructible blocks
-- Offscreen projectile cleanup
+Moved verbatim from systems/collision_projectiles.py - this is the implementation
+that has actually been running. See AGENTS.md §10.
 """
 from __future__ import annotations
 
@@ -11,13 +9,18 @@ from typing import TYPE_CHECKING
 
 from ..collision_common import set_enemy_damage_flash
 from ..spatial_grid import invalidate_block_grid
-from .helpers import create_damage_number, build_enemy_grid, build_block_grid
+from .helpers import (
+    build_block_grid as _build_block_grid,
+    build_enemy_grid as _build_enemy_grid,
+    create_damage_number as _create_damage_number,
+)
 
 if TYPE_CHECKING:
     from state import GameState
 
 
-def handle_friendly_projectile_offscreen_blocks_enemies(state: "GameState", ctx: dict) -> None:
+
+def handle_friendly_projectile_offscreen_blocks_enemies(state, ctx: dict) -> None:
     """Handle friendly projectile collisions with spatial grid and filter-based removal."""
     offscreen = ctx.get("rect_offscreen")
     kill = ctx.get("kill_enemy")
@@ -33,8 +36,8 @@ def handle_friendly_projectile_offscreen_blocks_enemies(state: "GameState", ctx:
         m_blocks = lev.moveable_blocks
     
     # Build spatial grids
-    block_grid = build_block_grid(state, ctx)
-    enemy_grid = build_enemy_grid(state, ctx)
+    block_grid = _build_block_grid(state, ctx)
+    enemy_grid = _build_enemy_grid(state, ctx)
     
     projs_to_remove = set()
     d_blocks_to_remove = set()
@@ -81,7 +84,7 @@ def handle_friendly_projectile_offscreen_blocks_enemies(state: "GameState", ctx:
             dmg = proj.get("damage", 20)
             enemy["hp"] -= dmg
             set_enemy_damage_flash(enemy, ctx)
-            state.damage_numbers.append(create_damage_number(
+            state.damage_numbers.append(_create_damage_number(
                 enemy["rect"].centerx, enemy["rect"].y - 20, dmg
             ))
             if enemy["hp"] <= 0 and kill:

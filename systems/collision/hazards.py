@@ -1,8 +1,7 @@
-"""Hazard and laser beam collision handling.
+"""Hazard and laser-beam collisions against enemies.
 
-Handles:
-- Hazard damage to enemies (environmental damage)
-- Player laser beam damage to enemies
+Moved verbatim from systems/collision_projectiles.py - this is the implementation
+that has actually been running. See AGENTS.md §10.
 """
 from __future__ import annotations
 
@@ -10,26 +9,17 @@ from typing import TYPE_CHECKING
 
 import pygame
 
-from ..collision_common import set_enemy_damage_flash
-from ..spatial_grid import get_enemy_grid, SpatialGrid
+from ..collision_common import record_enemy_hit, set_enemy_damage_flash
+from .helpers import (
+    build_enemy_grid as _build_enemy_grid,
+)
 
 if TYPE_CHECKING:
     from state import GameState
 
 
-def _build_enemy_grid(state: "GameState", ctx: dict) -> SpatialGrid:
-    """Build spatial grid containing all enemies."""
-    width: int = ctx.get("width", 1920)
-    height: int = ctx.get("height", 1080)
-    frame_id: int = ctx.get("frame_id", -1)
-    grid = get_enemy_grid(width, height, frame_id=frame_id)
-    if len(grid._obj_cells) == 0 and state.enemies:
-        grid.insert_all(state.enemies)
-    return grid
 
-
-def handle_hazard_enemy_collisions(state: "GameState", dt: float, ctx: dict) -> None:
-    """Apply hazard damage to enemies that touch hazard zones."""
+def handle_hazard_enemy_collisions(state, dt: float, ctx: dict) -> None:
     lev = getattr(state, "level", None)
     hazards = lev.hazard_obstacles if lev else []
     for hazard in hazards:
@@ -49,8 +39,11 @@ def handle_hazard_enemy_collisions(state: "GameState", dt: float, ctx: dict) -> 
                     kill(enemy, state)
 
 
-def handle_laser_beam_collisions(state: "GameState", dt: float, ctx: dict) -> None:
-    """Handle laser beam collisions using spatial grid for O(n) performance."""
+def handle_laser_beam_collisions(state, dt: float, ctx: dict) -> None:
+    """Handle laser beam collisions using spatial grid for O(n) performance.
+    
+    Fair gameplay: Player laser beams cannot hit off-screen enemies (player can't see them).
+    """
     line_rect = ctx.get("line_rect_intersection")
     kill = ctx.get("kill_enemy")
     if not line_rect or not kill:
@@ -58,6 +51,10 @@ def handle_laser_beam_collisions(state: "GameState", dt: float, ctx: dict) -> No
     
     if not state.laser_beams:
         return
+    
+    # Get camera for visibility check (fair gameplay)
+    from ..camera import get_camera
+    camera = get_camera()
     
     # Build enemy grid for spatial queries
     enemy_grid = _build_enemy_grid(state, ctx)
@@ -85,8 +82,12 @@ def handle_laser_beam_collisions(state: "GameState", dt: float, ctx: dict) -> No
         nearby_enemies = enemy_grid.query_rect(beam_rect)
         
         for enemy in nearby_enemies:
+            # Fair gameplay: Skip off-screen enemies (player can't see them)
+            if camera and not camera.is_visible(enemy["rect"]):
+                continue
             if line_rect(start, end, enemy["rect"]):
                 enemy["hp"] -= damage
+                record_enemy_hit(state, ctx, enemy, int(damage), enemy["hp"], enemy["hp"] <= 0)
                 set_enemy_damage_flash(enemy, ctx)
                 if enemy["hp"] <= 0:
                     kill(enemy, state)

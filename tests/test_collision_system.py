@@ -12,7 +12,7 @@ from level_state import LevelState
 from state import GameState
 from systems.collision_system import update as collision_update
 from systems import collision_pickups
-from systems import collision_projectiles
+from systems import collision as collision_projectiles
 
 
 def _make_kill_enemy():

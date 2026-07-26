@@ -1,47 +1,40 @@
-"""Explosion and missile collision handling.
+"""Explosive collisions: grenade blast damage and missile impacts.
 
-Handles:
-- Grenade explosions (damage to enemies, player, friendlies, blocks)
-- Missile collisions and explosions
+Moved verbatim from systems/collision_projectiles.py - this is the implementation
+that has actually been running. See AGENTS.md §10.
 """
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
 from ..collision_common import apply_player_damage, record_enemy_hit, set_enemy_damage_flash
-from ..spatial_grid import get_enemy_grid, SpatialGrid, invalidate_block_grid
+from ..spatial_grid import invalidate_block_grid
 from physics_loader import distance_squared as c_distance_squared
+from .helpers import (
+    build_enemy_grid as _build_enemy_grid,
+    create_damage_number as _create_damage_number,
+)
 
 if TYPE_CHECKING:
     from state import GameState
 
 
-def _create_damage_number(x, y, damage, color=(255, 255, 100), timer=2.0):
-    """Create a damage number dict for display."""
-    return {"x": x, "y": y, "damage": int(damage), "timer": timer, "color": color}
 
-
-def _build_enemy_grid(state: "GameState", ctx: dict) -> SpatialGrid:
-    """Build spatial grid containing all enemies."""
-    width: int = ctx.get("width", 1920)
-    height: int = ctx.get("height", 1080)
-    frame_id: int = ctx.get("frame_id", -1)
-    grid = get_enemy_grid(width, height, frame_id=frame_id)
-    if len(grid._obj_cells) == 0 and state.enemies:
-        grid.insert_all(state.enemies)
-    return grid
-
-
-def handle_grenade_explosion_damage(state: "GameState", dt: float, ctx: dict) -> None:
+def handle_grenade_explosion_damage(state, dt: float, ctx: dict) -> None:
     """Handle grenade explosion damage with filter-based removal.
     
     Performance: Uses spatial grid queries to reduce O(explosions * enemies) to O(explosions * nearby_enemies).
+    Fair gameplay: Player grenades cannot hit off-screen enemies (player can't see them).
     """
     kill = ctx.get("kill_enemy")
     lev = getattr(state, "level", None)
     d_blocks = lev.destructible_blocks if lev else []
     m_blocks = lev.moveable_blocks if lev else []
     player = state.player_rect
+
+    # Get camera for visibility check (fair gameplay)
+    from ..camera import get_camera
+    camera = get_camera()
 
     explosions_to_remove = set()
     friendlies_to_remove = set()
@@ -62,11 +55,16 @@ def handle_grenade_explosion_damage(state: "GameState", dt: float, ctx: dict) ->
         r_sq = r * r  # Use squared radius to avoid sqrt
         damage_val = explosion.get("damage", 500)
         source = explosion.get("source", "")
+        
+        # Determine if this is a player-source explosion (for fair gameplay check)
         is_player_explosion = source in ("player", "wall_impact")
         
         # Use spatial grid to query only enemies near explosion radius
         if source != "enemy_player_allies_only" and enemy_grid:
             for enemy in enemy_grid.query_radius(px, py, r):
+                # Fair gameplay: Skip off-screen enemies for player explosions
+                if is_player_explosion and camera and not camera.is_visible(enemy["rect"]):
+                    continue
                 # Use C-accelerated distance_squared (avoids sqrt)
                 d_sq = c_distance_squared(enemy["rect"].centerx, enemy["rect"].centery, px, py)
                 if d_sq <= r_sq:
@@ -78,10 +76,7 @@ def handle_grenade_explosion_damage(state: "GameState", dt: float, ctx: dict) ->
                         enemy["rect"].centerx, enemy["rect"].y - 20, damage_val, (255, 200, 100)
                     ))
                     if enemy["hp"] <= 0 and kill:
-                        enemy["killed_by"] = "grenade"  # Tag for DDA tracking
                         kill(enemy, state)
-        
-        # Damage friendlies if explosion targets player/allies
         if source == "enemy_player_allies_only":
             for friendly in state.friendly_ai:
                 d_sq = c_distance_squared(friendly["rect"].centerx, friendly["rect"].centery, px, py)
@@ -89,15 +84,13 @@ def handle_grenade_explosion_damage(state: "GameState", dt: float, ctx: dict) ->
                     friendly["hp"] = friendly.get("hp", friendly.get("max_hp", 100)) - damage_val
                     if friendly["hp"] <= 0:
                         friendlies_to_remove.add(id(friendly))
-        
-        # Damage player
         if player:
             pd_sq = c_distance_squared(player.centerx, player.centery, px, py)
             if pd_sq <= r_sq and source not in ("player", "wall_impact", "ally_explosion"):
                 if not state.shield_active:
                     apply_player_damage(state, damage_val, ctx, source_type="explosion")
         
-        # Damage destructible blocks using spatial grid
+        # Use block grid for destructible blocks near explosion
         if source != "enemy_player_allies_only":
             block_grid = ctx.get("_block_grid")
             if block_grid:
@@ -145,19 +138,12 @@ def handle_grenade_explosion_damage(state: "GameState", dt: float, ctx: dict) ->
         invalidate_block_grid()
 
 
-def handle_missile_collisions(state: "GameState", ctx: dict) -> None:
-    """Handle missile collisions with filter-based removal.
-    
-    Fair gameplay: Player missiles cannot hit off-screen enemies (player can't see them).
-    """
+def handle_missile_collisions(state, ctx: dict) -> None:
+    """Handle missile collisions with filter-based removal."""
     player = state.player_rect
     offscreen = ctx.get("rect_offscreen")
     kill = ctx.get("kill_enemy")
     md = ctx.get("missile_damage", 800)
-    
-    # Get camera for visibility check (fair gameplay)
-    from ..camera import get_camera
-    camera = get_camera()
 
     missiles_to_remove = set()
     friendlies_to_remove = set()
@@ -200,14 +186,10 @@ def handle_missile_collisions(state: "GameState", ctx: dict) -> None:
             dmg = missile.get("damage", md)
             
             # Use spatial grid to query only enemies near explosion radius
-            # Fair gameplay: Player missiles only damage on-screen enemies
-            is_player_missile = missile.get("target_enemy") is not None
             enemy_grid = _build_enemy_grid(state, ctx) if state.enemies else None
+            is_player_missile = missile.get("target_enemy") is not None
             if enemy_grid:
                 for enemy in enemy_grid.query_radius(mx, my, rad):
-                    # Fair gameplay: Skip off-screen enemies for player missiles
-                    if is_player_missile and camera and not camera.is_visible(enemy["rect"]):
-                        continue
                     if c_distance_squared(enemy["rect"].centerx, enemy["rect"].centery, mx, my) <= rad_sq:
                         enemy["hp"] -= dmg
                         if is_player_missile:
@@ -217,7 +199,6 @@ def handle_missile_collisions(state: "GameState", ctx: dict) -> None:
                             enemy["rect"].centerx, enemy["rect"].y - 20, dmg, (255, 150, 50)
                         ))
                         if enemy["hp"] <= 0 and kill:
-                            enemy["killed_by"] = "rocket"  # Tag for DDA tracking
                             kill(enemy, state)
             
             # Damage the ally that was directly hit
