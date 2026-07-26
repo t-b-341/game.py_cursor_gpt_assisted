@@ -41,6 +41,11 @@ jobs:
         with:
           python-version: "3.12"
 
+      # Runs before install to prove it needs nothing but stdlib.
+      # Fails only on violations that are NEW since tools/repo_health_baseline.json.
+      - name: Structural health check
+        run: python tools/repo_health.py
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
