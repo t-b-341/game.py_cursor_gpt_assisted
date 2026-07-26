@@ -16,6 +16,7 @@ from config.enemy_defs import (
     get_enemy_def,
 )
 from constants import difficulty_multipliers
+from telemetry.events import WaveEvent
 from enemies import log_enemy_spawns, make_enemy_from_template
 
 if TYPE_CHECKING:
@@ -170,11 +171,27 @@ def start_wave_from_map(wave_num: int, state: "GameState", map_grid, ctx: dict) 
     # Log to telemetry
     telemetry = ctx.get("telemetry")
     if telemetry and ctx.get("telemetry_enabled"):
+        diff_settings = difficulty_multipliers.get(
+            ctx.get("difficulty", "NORMAL"), difficulty_multipliers["NORMAL"]
+        )
+        hp_scale = (1.0 + (wave_num - 1) * 0.1) * diff_settings.get("enemy_hp", 1.0)
+        speed_scale = (
+            1.0 + (wave_num - 1) * ENEMY_SPEED_SCALE_MULTIPLIER
+        ) * diff_settings.get("enemy_speed", 1.0)
         try:
-            telemetry.log_wave_start(
-                wave_num, state.run_id, state.run_time, spawned
+            telemetry.log_wave(
+                WaveEvent(
+                    t=state.run_time,
+                    wave_number=wave_num,
+                    event_type="start",
+                    enemies_spawned=spawned,
+                    hp_scale=hp_scale,
+                    speed_scale=speed_scale,
+                )
             )
         except Exception:
-            pass
+            # Telemetry must never break gameplay, but log it - a silent `pass`
+            # here hid a call to a non-existent method for a long time.
+            _log.exception("Failed to log wave-start telemetry for custom map")
 
 

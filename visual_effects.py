@@ -371,12 +371,12 @@ def apply_menu_effects(surface: pygame.Surface, ctx: Any) -> None:
 
 
 def apply_pause_effects(surface: pygame.Surface, ctx: Any) -> None:
-    """Apply pause-screen effect stack. No-op if menu shaders disabled.
-    ctx: app context or dict with app_ctx.config.
+    """Apply pause-screen effect stack. No-op if pause shaders disabled.
+    ctx: app context or dict with app_ctx.config (enable_pause_shaders).
     """
     try:
         config = _get_config(ctx)
-        if config is None or not getattr(config, "enable_menu_shaders", False):
+        if config is None or not getattr(config, "enable_pause_shaders", False):
             return
         _apply_pause_profile(surface)
     except Exception:

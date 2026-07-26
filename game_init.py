@@ -340,6 +340,10 @@ def create_app() -> AppResult:
     
     # Resolve physics backend
     force_python = "--python-physics" in sys.argv or os.environ.get("USE_PYTHON_PHYSICS", "").strip() == "1"
+
+    # Dynamic Difficulty Adjustment. Off by default; this is the only way to turn it
+    # on, so without the flag the entire ml/ DDA pipeline is unreachable.
+    enable_dda = "--dda" in sys.argv or os.environ.get("GAME_ENABLE_DDA", "").strip() == "1"
     _physics_impl, using_c_physics = resolve_physics(force_python=force_python)
 
     init_pygame_and_mixer()
@@ -350,6 +354,9 @@ def create_app() -> AppResult:
     if safe_mode:
         ctx.config.safe_mode = True
         apply_safe_mode(ctx.config)
+
+    if enable_dda:
+        ctx.config.enable_dda = True
     
     # Log startup configuration summary
     log_startup_config(ctx.config)

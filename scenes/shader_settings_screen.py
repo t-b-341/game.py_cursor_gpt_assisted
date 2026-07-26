@@ -505,7 +505,7 @@ class ShaderSettingsScreen:
         apply_text = font.render("Ctrl+A: Apply to Game", True, (150, 255, 150))
         screen.blit(apply_text, (width - 250, controls_y + 20))
         
-        note_text = font.render("Note: Enable 'use_gpu_shader_pipeline' in config for shaders to work", True, (200, 200, 150))
+        note_text = font.render("Note: these settings apply to the preview and shader-test scenes only", True, (200, 200, 150))
         screen.blit(note_text, (10, controls_y + 40))
     
     def _render_debug_overlay(self, screen: pygame.Surface, render_ctx: RenderContext) -> None:
