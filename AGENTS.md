@@ -44,6 +44,7 @@ Linux too (CI runs on Ubuntu).
 | CUDA diagnostic | `python diagnose_cuda.py` |
 | Safe mode (disable GPU/CUDA/telemetry) | `python game.py --safe-mode` or `GAME_SAFE_MODE=1` |
 | Force Python physics | `python game.py --python-physics` or `USE_PYTHON_PHYSICS=1` |
+| Enable dynamic difficulty (DDA) | `python game.py --dda` or `GAME_ENABLE_DDA=1` |
 
 Useful env vars: `GAME_DEBUG_PERF=1` (frame ring buffer in `telemetry/perf.py`),
 `GAME_PERF_TIMING=1` (per‑system timers in `systems/perf_timing.py`),
@@ -87,7 +88,7 @@ rendering_shaders.py, gpu_gl_utils.py  # GPU (moderngl) helpers + gameplay post-
 assets/            # fonts, images, music, sfx, shaders/*.frag, data/
 maps/              # Tile map system + map editor (editor/ subpackage) + data/*.json
 level_builder.py, level_state.py, level_utils.py, hazards.py  # Procedural arena geometry
-enemies/, entities/, allies.py, pickups.py, enemies.py  # Entity factories/AI/wrappers (see §5)
+enemies/, entities/, allies.py, pickups.py  # Entity factories/AI/wrappers (see §5)
 telemetry/, telemetry_viz/  # SQLite event logging + matplotlib visualization
 ml/                # Dynamic Difficulty Adjustment (PyTorch), offline training/eval, A/B test
 game_physics.c, physics_loader.py, setup.py  # Optional C extension + resolver + build
@@ -144,8 +145,8 @@ Each frame:
   `ui: UiState`, `level: LevelState`, `level_context`, and an **optional ECS registry**
   (`ecs_entities`, `create_entity`, `get_entities_with`) that runs *in parallel* with the lists.
 - **`GameConfig`** (`config/game_config.py`) — every difficulty/feel/juice/graphics toggle.
-  Notable **dev defaults**: `enable_telemetry=True`, `testing_mode=True`, `enable_dda=False`,
-  `target_fps=0`, `world_scale=1.33`. `apply_safe_mode()` disables GPU/CUDA/telemetry.
+  Notable **dev defaults**: `enable_telemetry=True`, `testing_mode=True`, `enable_dda=False`
+  (enable with `--dda`/`GAME_ENABLE_DDA=1`), `target_fps=0`, `world_scale=1.33`. `apply_safe_mode()` disables GPU/CUDA/telemetry.
 - **`LevelState`** (`level_state.py`) — arena geometry: trapezoid/triangle walls,
   destructible/moveable/giant/super_giant blocks, `hazard_obstacles`, `moving_health_zone`.
 
@@ -155,6 +156,8 @@ input/update/render. State ids are the `STATE_*` strings in `constants.py`:
 `TITLE, MENU, QUICK_LAUNCH, PLAYING, PAUSED, ENDURANCE, GAME_OVER, SAVE_GAME, LOAD_GAME,
 TELEMETRY_VIEWER, NAME_INPUT, HIGH_SCORES, VICTORY, MAP_TEST` (+ string‑literal
 `"SHADER_TEST"`/`"SHADER_SETTINGS"` used by some scenes but not in `constants.py`).
+`constants.py` also declares `STATE_CONTINUE/MODS/WAVE_BUILDER/CONTROLS`, but these have **no
+scene in `create_scene_for_state`** and are otherwise unreferenced (declared, not yet wired).
 
 Typical flow: `TITLE → MENU(OptionsScene) → PLAYING → (push) PAUSED → pop`, and on death/win
 `PLAYING → GAME_OVER` or `PLAYING → VICTORY → NAME_INPUT → HIGH_SCORES`.
@@ -241,10 +244,9 @@ actually receive `Enemy`. Treat that as intentional duck typing during migration
   `config/projectile_defs.py` (`WEAPON_CONFIGS`, unlock order), `config/balance.py` (canonical
   numeric tuning — damage, cooldowns, speeds, aggro, scoring).
 
-Module‑layout caveat: **`enemies.py` (root) is unreachable, not a shim.** Python resolves the
-`enemies/` package before a same‑named module, so `import enemies` always loads
-`enemies/__init__.py`. That file's body is `from enemies import (...)` — a self‑import that could
-never execute. It is scheduled for deletion; import from the package.
+Module‑layout note: the old shadowed **`enemies.py` (root) has been deleted.** It was unreachable
+anyway — Python resolves the `enemies/` package before a same‑named module, so `import enemies`
+always loads `enemies/__init__.py`. Import factories/AI from the `enemies/` package.
 
 ---
 
@@ -253,9 +255,10 @@ never execute. It is scheduled for deletion; import from the package.
 **In the fixed‑step registry (order matters):**
 - `movement_system.py` — player/enemy/bullet/projectile/missile motion; targeting‑slot cache;
   optional GPU bullet batch when `config.use_gpu_physics`.
-- `collision_system.py` — orchestrator; builds per‑frame block grid, then delegates to
-  `collision_projectiles.py` (monolith), `collision_player.py`, `collision_pickups.py`,
-  `collision_common.py`. (⚠️ see §10 re: the parallel `systems/collision/` subpackage.)
+- `collision_system.py` — orchestrator; builds a per‑frame block grid, then delegates to the
+  `systems/collision/` package (projectile/hazard/explosion handlers + grid helpers) plus
+  `collision_player.py` and `collision_pickups.py`; shared helpers live in `collision_common.py`.
+  (The old monolithic `collision_projectiles.py` was consolidated into this package — see §10.)
 - `spawn_system.py` — wave timers, spawner minions, next‑wave/victory; `start_wave(...)`;
   custom‑map spawns via `systems/spawning/map_spawn.py`.
 - `ai_system.py` — enemy special behaviors + shooting; ally AI via `level_context`.
@@ -289,8 +292,9 @@ slice reassignment (avoid `list.remove()` in loops), and per‑entity caps enfor
   (matplotlib). See `telemetry/README.md` and `telemetry/sql/`.
 - **DDA / ML (`ml/`)** — offline **PyTorch** model (`dda_model.py`, saved `dda_model.pt`) trained
   from telemetry `wave_summaries` (`features.py`, `train.py`, `evaluate.py`, `ab_test.py`).
-  Runtime hook is gated by `config.enable_dda` (**default False**; no in‑game toggle) and
-  consumed in `spawn_system.py` via `ml/dda_integration.py`.
+  Runtime hook is gated by `config.enable_dda` (**default False**; enable with `--dda` or
+  `GAME_ENABLE_DDA=1` — there is no in‑game menu toggle) and consumed in `spawn_system.py` via
+  `ml/dda_integration.py`.
 - **Physics (`physics_loader.py`)** — `resolve_physics()` picks the compiled C extension
   (`game_physics.c` via `setup.py build_ext --inplace`) or a pure‑Python fallback; sets
   `AppContext.using_c_physics`. Consumers use `get_physics()` for vec/distance/grid helpers.
@@ -369,29 +373,26 @@ old one instead.
 ✅ = verified against the tree. Unmarked items still need checking before acting.
 
 **Duplicate / parallel implementations (dead‑vs‑live confusion):**
-- ✅ `systems/collision/` subpackage (`helpers/hazards/player_bullets/enemy_projectiles/
-  friendly_projectiles/explosions.py`) **is an unwired parallel refactor.** The live path uses
-  monolithic `collision_projectiles.py` + `collision_player/pickups/common/movement.py`. They
-  share 14 function names at 85–95% similarity — except `handle_player_bullet_block_collisions`
-  (41%) and `handle_player_bullet_enemy_collisions` (35%), which have **already diverged**. Only
-  `tests/test_integration.py` imports the package. **Consolidation direction: move the live
-  monolith's code into the package's file layout and delete the package's untested copies.** Do
-  not swap implementations — the package version has never run in an actual game.
+- ✅ **Collision consolidation — DONE.** The monolithic `systems/collision_projectiles.py` was
+  merged into the `systems/collision/` package (`helpers/hazards/player_bullets/enemy_projectiles/
+  friendly_projectiles/explosions.py`) and **deleted**. `collision_system.py` now delegates to
+  that package (the live path) alongside `collision_player.py`/`collision_pickups.py`/
+  `collision_common.py`; no parallel copy remains. `collision_movement.py` (wired via
+  `level_context`) still holds `move_enemy_with_push`.
 - **Live compat shims — keep these working:** `rendering_shaders.py`→`rendering/shaders/pipeline.py`
-  (7 importers), `systems/ui_system.py`→`systems/ui/core.py` (2), `scenes/shader_settings.py`→
-  split modules (32). No name collision; these actually load.
-- ✅ **Shadowed files — DELETE ON SIGHT, do not repair:** `enemies.py`, `rendering/world.py`,
-  `maps/editor.py`. Each is shadowed by a same‑named package, so Python never loads it
-  (`import enemies` → `enemies/__init__.py`). Their bodies are self‑imports (`from enemies
-  import ...`, `from .editor import ...`) that would fail or recurse if they ever ran. These are
-  **not shims** — they are unreachable files that look like shims.
+  (5 importers), `systems/ui_system.py`→`systems/ui/core.py` (2), `scenes/shader_settings.py`→
+  split modules (3 importers). No name collision; these actually load.
+- ✅ **Shadowed files — DELETED.** `enemies.py`, `rendering/world.py`, and `maps/editor.py`
+  (each shadowed by a same‑named package, so never importable) have been removed, together with
+  six other unreachable modules (`file_utils.py`, `threading_utils.py`, `gpu_integration_example.py`,
+  `shader_effects/uniforms.py`, `telemetry/reader.py`, `test_gpu.py`).
 - ✅ `enemies/movement.py:move_enemy_with_push_cached` (124 lines) has **zero call sites**;
   superseded by `collision_movement.move_enemy_with_push` (wired via `level_context`). Delete.
 - ✅ `screens/__init__.py:SCREEN_HANDLERS` has **zero references repo‑wide** — a dead registry
   left from the pre‑scene‑stack state machine. Delete.
 - Two CPU effect systems (`visual_effects.py` vs `shader_effects/`) with overlapping profiles;
-  they can stack unintentionally. ✅ `apply_pause_effects()` (`visual_effects.py:379`) checks
-  `enable_menu_shaders`, not `enable_pause_shaders` — confirmed bug.
+  they can stack unintentionally. ✅ The `apply_pause_effects()` (`visual_effects.py`) flag bug —
+  it gated on `enable_menu_shaders` instead of `enable_pause_shaders` — has been **fixed**.
 
 **Wiring gaps:**
 - The GPU `ShaderPipelineManager` built from `config/shaders.json`
@@ -404,11 +405,13 @@ old one instead.
   several places; `map_spawn.py` couples to `maps.editor`.
 
 **Telemetry/ML:**
-- ✅ `map_spawn.py:173` calls `telemetry.log_wave_start(...)`, which **is not defined anywhere
-  in the repo** (`log_wave`, `log_wave_enemy_types`, `log_wave_summary` exist). It sits inside
-  `except Exception: pass`, so custom‑map wave starts have silently never been recorded.
+- ✅ **Fixed:** `map_spawn.py` used to call a non‑existent `telemetry.log_wave_start(...)` inside
+  `except Exception: pass`, so custom‑map wave starts were silently never recorded. It now calls
+  `telemetry.log_wave(WaveEvent(..., event_type="start"))` and logs failures instead of swallowing
+  them.
 - ✅ `ml/ab_test.py:_enable_dda()` calls `dda.enable()` on the singleton but never sets
-  `config.enable_dda`; `spawn_system.py:48` gates on that flag (default `False`), so the
+  `config.enable_dda`; `spawn_system.py:49` gates on that flag (default `False`; the real enable
+  path is now the `--dda`/`GAME_ENABLE_DDA` flag), so the
   "DDA on" arm runs with DDA off. Any A/B results collected so far are a null comparison.
 - Several other `log_*` methods and wave `"end"` events have schema/writer support but no live
   call sites, so some plots may show "no data".
@@ -451,7 +454,8 @@ synced back to the stack (game over/victory are; a name‑input path from `ai_sy
 - ⚠️ **Coverage is 36% overall and inverted:** the largest, riskiest modules are the least
   tested — `game_app.py` 5%, `systems/collision/explosions.py` 5%, `systems/ui/core.py` 8%
   (462 stmts), `rendering/shaders/pipeline.py` 9%, `scenes/options/core.py` 20% (513 stmts),
-  `collision_projectiles.py` 28% (567 stmts). The suite is 439 fast unit tests over pure
+  and the `systems/collision/` package (projectile-collision code, formerly the
+  `collision_projectiles.py` monolith). The suite is 439 fast unit tests over pure
   helpers; it will **not** catch a regression in collision, movement, or rendering. Do not
   treat green CI as proof a gameplay change is safe.
 - **CI must stay green with core deps only** (no torch/matplotlib/moderngl guaranteed). New tests
